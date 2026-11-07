@@ -96,7 +96,46 @@ Every stage is written against the `CellGraph` interface (research §9.1), so ev
 
 ### Sandbox 2
 
-Future work - not defined yet.
+Focus on Voronoi Cell generation
+
+* Include minimum five different distance options
+* Include zoom and pan on the resulting cells
+* One use case is determaning water from land. The water/land ration should be variable
+* Include a "fractal" version - with multiple (2-3) octaves of Voronoi cells
+
+**What is implemented** (left panel = generation, right panel = display and analysis):
+
+The cells are a stateless lattice Voronoi diagram, the Worley / Quilez construction. Each lattice cell holds one site at a hashed offset, so the diagram is a pure function of position. It needs no mesh, has no edge, and stays pixel-exact at any zoom. The nearest and second-nearest sites come from a ring search with Worley's pruning. One lower-bound factor per metric keeps that search exact for every distance function, jitter and weighting. The tests check this against brute force.
+
+| Area | Methods and parameters |
+|---|---|
+| **Distance functions (8)** | Euclidean L2 · squared Euclidean (same cells, different F-values) · Manhattan L1 · Chebyshev L∞ · Minkowski Lp (p 0.3–8; below 1 gives star shards) · octagonal · hexagonal · triangular (asymmetric quasi-metric). All of them can be rotated and anisotropically stretched. Octaves 2+ can use a different metric |
+| **Sites** | Cell size · jitter (0 = perfect squares) · additive or multiplicative per-site weights (squared Euclidean + additive = power diagram) |
+| **Fractal octaves** | 1–4 layered Voronoi diagrams · lacunarity (cell-size ratio) · gain (octave weight) · per-octave domain warp that bends the cell borders |
+| **Land & water** | Every cell takes a value from fBm or ridged noise at its site, plus per-cell randomness and an optional island / twin / atoll / west-coast shape. The field is the gain-weighted sum over octaves. The land/water threshold is the quantile that gives the **target land %** (0–100), so coastlines run along Voronoi edges at every scale. **Random oceans** shape: ⌈water % / 10⌉ random octave-1 cells seed oceans (≤ 10 % water → 1, 10–20 % → 2, …). A multi-source flood then turns neighbouring cells to water, cheapest first, until the water share is met; value noise and cell randomness set the flood cost. Finer octaves follow the octave-1 cell their site lies in |
+
+**Evaluating the cells:**
+
+- **Zoom and pan:** wheel, drag, pinch, double-click, keyboard, minimap and scale bar. Zoom goes from the whole map down to single pixels of the finest octave. A coarse preview renders first, then full resolution.
+- **Colour by:** land & water (relief or flat), cell value, cell IDs, an octave mosaic, Worley F1, F2, F2−F1, F1/F2 and fractal F1 (Σ octaves). Overlays: cell edges (octave 1, all octaves or the selected one), coastline, sites, lattice grid and a cell bevel.
+- **Distance probe:** under the cursor, the metric balls of radius F1 and F2. They touch the nearest and second-nearest sites, so you can see the metric's geometry.
+- **Metric gallery:** the same seed and parameters rendered under all eight metrics, each with its unit ball. Click one to switch.
+- **Inspector:** per-octave cell, F1, F2 and cell value, plus the field value, threshold and cells searched. Click pins a cell.
+- **Statistics:** achieved vs target land %, islands, lakes, largest island, coastline length, the coastline's box-counting dimension, a value histogram with the threshold, cells per octave, search cost, timings and a determinism fingerprint.
+- **Sharing:** the seed and every non-default parameter live in the URL hash. There are 13 presets and PNG export.
+
+Keyboard: `+`/`−` zoom · `0`/`F` fit · arrows pan · `R` random seed · `M`/`Shift+M` next/previous metric · `[`/`]` colour mode · `1`–`4` octaves · `E` edges · `S` sites · `G` lattice · `P` probe · `Esc` unpin · `?` help.
+
+**Code map** (`sandboxes/sandbox2/`):
+
+```
+src/voronoi/   metrics (8 distance functions + pruning bound), lattice (stateless Voronoi query),
+               field (fractal octaves, cell values, land/water calibration), analysis (map statistics)
+src/render/    per-pixel raster source (pixel-exact edges and coast), vector overlays and probe
+src/ui/        legend, inspector, statistics, metric gallery
+src/params.ts  parameter schema; src/presets.ts presets
+tests/         metric invariants, brute-force search check for every metric, determinism, land ratio
+```
 
 ## Research
 

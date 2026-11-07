@@ -22,9 +22,10 @@ export const SANDBOXES: SandboxInfo[] = [
   },
   {
     id: 'sandbox2',
-    title: 'Sandbox 2',
-    summary: 'Future work — not defined yet.',
-    status: 'planned',
-    tags: [],
+    title: 'Sandbox 2 · Voronoi cells',
+    summary:
+      'Stateless lattice Voronoi under eight distance functions (L2, L2², L1, L∞, Lp, octagonal, hexagonal, triangular), layered into 1–4 fractal octaves, with a land/water split at an exact chosen ratio. Deep zoom and pan, a distance probe, a metric gallery and coastline statistics.',
+    status: 'ready',
+    tags: ['Voronoi', 'distance functions', 'fractal octaves', 'land/water', 'Worley'],
   },
 ];

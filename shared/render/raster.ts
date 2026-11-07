@@ -145,10 +145,14 @@ export class RasterLayer {
     } else ctx.drawImage(canvas, dx, dy, dw, dh);
   }
 
-  /** Draw into a context whose transform is identity in device pixels. */
-  draw(ctx: CanvasRenderingContext2D, cam: Camera, vp: Viewport, dpr: number, key: string, smooth: boolean): void {
+  /**
+   * Draw into a context whose transform is identity in device pixels. With `stale`,
+   * the last finished image is drawn even if it belongs to an older key (avoids a
+   * blank frame while a new image is in progress, e.g. while dragging a slider).
+   */
+  draw(ctx: CanvasRenderingContext2D, cam: Camera, vp: Viewport, dpr: number, key: string, smooth: boolean, stale = false): void {
     ctx.imageSmoothingEnabled = smooth;
-    if (this.frontSnap && this.frontKey === key) this.drawSnap(ctx, this.front, this.frontSnap, cam, vp, dpr);
+    if (this.frontSnap && (this.frontKey === key || stale)) this.drawSnap(ctx, this.front, this.frontSnap, cam, vp, dpr);
     if (this.job && this.job.src.key === key && this.backRows > 0) this.drawSnap(ctx, this.back, this.job.snap, cam, vp, dpr, this.backRows);
     ctx.imageSmoothingEnabled = true;
   }
