@@ -54,6 +54,13 @@ export interface TerrainParams {
   theta: Theta;
   /** multiplier on the hillslope steepness of every land type */
   hill: number;
+  /** hillslope steepness per land type (index = LAND_TYPES order), m/m */
+  hillType: number[];
+  /**
+   * Levelling of low-gradient biomes, 0–1: a biome with river gradient factor c < 1 has
+   * its river entries lowered by level × (1 − c) of the way to its lowest entry.
+   */
+  level: number;
   /**
    * River gradient factor per land type (index = LAND_TYPES order): how fast the bed
    * rises upstream there, relative to S₀.
@@ -95,21 +102,28 @@ const CACHE_CELLS = 12_000_000;
  * Relief per cosmetic land type (index = LAND_TYPES order in render/source.ts).
  * Starting points from the report's §7.2 table, not sourced values.
  */
-const TYPES: { hill: number; amp: number; ridged: number }[] = [
-  { hill: 0.03, amp: 10, ridged: 0 }, // Grassland
-  { hill: 0.05, amp: 20, ridged: 0 }, // Forest
-  { hill: 0.05, amp: 20, ridged: 0 }, // Old forest
-  { hill: 0.03, amp: 10, ridged: 0 }, // Steppe
-  { hill: 0.04, amp: 25, ridged: 1 }, // Desert (dune-like ridges)
-  { hill: 0.07, amp: 30, ridged: 0.3 }, // Tundra
-  { hill: 0.01, amp: 2, ridged: 0 }, // Marsh
-  { hill: 0.15, amp: 80, ridged: 1 }, // Hills
-  { hill: 0.03, amp: 10, ridged: 0 }, // Savanna
-  { hill: 0.05, amp: 20, ridged: 0 }, // Taiga
-  { hill: 0.07, amp: 30, ridged: 0.3 }, // Scrub
-  { hill: 0.07, amp: 30, ridged: 0.3 }, // Heath
-  { hill: 0.3, amp: 180, ridged: 1 }, // Mountains
+const TYPES: { amp: number; ridged: number }[] = [
+  { amp: 10, ridged: 0 }, // Grassland
+  { amp: 20, ridged: 0 }, // Forest
+  { amp: 20, ridged: 0 }, // Old forest
+  { amp: 10, ridged: 0 }, // Steppe
+  { amp: 25, ridged: 1 }, // Desert (dune-like ridges)
+  { amp: 30, ridged: 0.3 }, // Tundra
+  { amp: 2, ridged: 0 }, // Marsh
+  { amp: 80, ridged: 1 }, // Hills
+  { amp: 10, ridged: 0 }, // Savanna
+  { amp: 20, ridged: 0 }, // Taiga
+  { amp: 30, ridged: 0.3 }, // Scrub
+  { amp: 30, ridged: 0.3 }, // Heath
+  { amp: 180, ridged: 1 }, // Mountains
 ];
+
+/**
+ * Default hillslope steepness per land type (m/m): how fast the land rises away from
+ * its rivers and the coast. Plains (marsh, steppe, savanna, grassland) are near flat,
+ * hills and mountains steep, so they read as different kinds of land.
+ */
+export const DEFAULT_HILL = [0.008, 0.02, 0.025, 0.006, 0.01, 0.02, 0.002, 0.15, 0.006, 0.02, 0.03, 0.03, 0.3];
 
 /**
  * Default river gradient factor per land type (the report's §7.2 "Channel ×S₀"
@@ -185,6 +199,13 @@ const DIVIDE_W = 6_000;
 const SEA_W = 40_000;
 /** height above the river (path cost from the channel) over which noise and ridges fade in, metres */
 const MASK_H = 40;
+/** cell size of the coarse per-region envelope that keeps river beds below their land, metres */
+const BED_GRID = 2000;
+/** slack of the bed caps, and the smallest lowering of a cap that counts (convergence), metres */
+const BED_SLACK = 5;
+/** gradient of a river below a cap (through a gorge): it only has to keep descending */
+const GORGE_SLOPE = 0.0005;
+const BED_TOL = 1;
 /** ε of the Priority-Flood fill, metres */
 const EPS = 0.01;
 const ST_RELIEF = 0x7e11;
@@ -258,6 +279,8 @@ export class Terrain {
   /** tiles the view still needs: never evicted */
   private needed = new Set<number>();
   private beds = new Map<number, Float64Array>();
+  private bases = new Map<number, { z: Float64Array; cap: Float64Array }>();
+  private grids = new Map<number, { i0: number; j0: number; nx: number; ny: number; ocean: Uint8Array; reg: Float64Array; hill: Float64Array; relief: Float64Array }>();
   private readonly seedR: number;
   private readonly seedN: number;
   /** floodplain half-width (m) at a bed height (m) */
@@ -329,6 +352,12 @@ export class Terrain {
   }
 
   /** River gradient factor of a land type (falls back to 1 for an unknown index). */
+  /** Hillslope steepness of a land type (falls back to the default for an unknown index). */
+  hillOf(type: number): number {
+    const v = this.p.hillType?.[type];
+    return v === undefined ? (DEFAULT_HILL[type] ?? 0.03) : Math.max(0, v);
+  }
+
   chanOf(type: number): number {
     const f = this.p.chanFactor[type];
     return f === undefined ? 1 : f;
@@ -355,26 +384,197 @@ export class Terrain {
     return Math.max(0.25, 1 + this.p.relief * 1.6 * f);
   }
 
-  /** Bed elevation of every node of a region's rivers (step 0). */
+  /**
+   * Bed elevation of every node of a region's rivers (step 0).
+   *
+   *   Rise      z_k = z_parent + Δx·S₀·c·A^−θ (c = gradient factor × relief), but never
+   *             steeper than the hillslope of the land around (a river climbing faster than
+   *             its valley sides would stand above the land).
+   *   Levelling a biome with factor c < 1 is a plain: its rivers may enter it at several
+   *             points (they wander out into steeper neighbours and back), each carrying the
+   *             height it climbed to outside. Every entry is lowered by level × (1 − c) of
+   *             the way to the biome's lowest entry. A river cannot run uphill, so the cap
+   *             is pushed downstream: the stretch between the sea and a lowered entry is cut
+   *             down to it (a gorge through the steeper land). Lowering one entry can lower
+   *             another biome's lowest entry, so this repeats until nothing changes.
+   *
+   * A pure function of the region (its rivers and the map), so every tile agrees.
+   */
   bed(rkey: number): Float64Array {
     let z = this.beds.get(rkey);
     if (z) return z;
-    const rr = this.rivers.get(rkey);
-    const w = this.world;
-    const P = this.p;
-    z = new Float64Array(rr.n);
-    // parents always have smaller indices than their children
-    for (let k = 0; k < rr.n; k++) {
-      const p = rr.parent[k];
-      if (p < 0 || rr.wet[k]) continue; // roots and the stretch over the sea sit at sea level
-      const dx = Math.sqrt((rr.x[k] - rr.x[p]) ** 2 + (rr.y[k] - rr.y[p]) ** 2);
-      const c = w.cellAt(rr.x[k], rr.y[k], true);
-      const mult = c.ocean ? 1 : this.chanOf(landType(c.biome)) * this.reliefAt(rr.x[k], rr.y[k]);
-      z[k] = z[p] + dx * P.chSlope * mult * invPowTheta(Math.max(1, rr.flow[k]), P.theta);
-    }
+    z = this.solveBed(rkey, true).z;
     if (this.beds.size > 4000) this.beds.clear();
     this.beds.set(rkey, z);
     return z;
+  }
+
+  /** A region's beds with rise and levelling only (no envelope caps): the neighbours' sources in `bed`. */
+  private baseBed(rkey: number): { z: Float64Array; cap: Float64Array } {
+    let b = this.bases.get(rkey);
+    if (b) return b;
+    b = this.solveBed(rkey, false);
+    if (this.bases.size > 4000) this.bases.clear();
+    this.bases.set(rkey, b);
+    return b;
+  }
+
+  /**
+   * Bed profile of a region: rise and levelling; with `cross`, also capped by the bed
+   * envelope over all land around the region, whose sources are the coast, the region's
+   * own rivers and the neighbouring regions' rivers at their levelled beds (the land
+   * between two regions follows the lower one, so a bed standing higher than a
+   * neighbour's river allows must cut down too). Neighbours enter without their own caps,
+   * so this stays local: a pure function of the region and its neighbours.
+   */
+  private solveBed(rkey: number, cross: boolean): { z: Float64Array; cap: Float64Array } {
+    const rr = this.rivers.get(rkey);
+    const w = this.world;
+    const P = this.p;
+    const n = rr.n;
+    const par = rr.parent;
+    // per node: biome (merged root, −1 over the sea), rise above the parent, levelling share
+    const env = cross ? this.bedEnvelope(rkey, rr, this.neighbourSources(rkey, rr), null) : null;
+    const bio = new Float64Array(n).fill(-1);
+    const rise = new Float64Array(n);
+    /** segment length to the parent */
+    const len = new Float64Array(n);
+    /** share of an entry's excess over the lowest entry that is kept: 1 = no levelling */
+    const keep = new Float64Array(n).fill(1);
+    for (let k = 0; k < n; k++) {
+      const p = par[k];
+      if (p < 0 || rr.wet[k]) continue; // roots and the stretch over the sea sit at sea level
+      const x = rr.x[k];
+      const y = rr.y[k];
+      const c = w.cellAt(x, y, true);
+      const type = landType(c.biome);
+      const rf = this.reliefAt(x, y);
+      const dx = Math.sqrt((x - rr.x[p]) ** 2 + (y - rr.y[p]) ** 2);
+      const ch = P.chSlope * this.chanOf(type) * rf * invPowTheta(Math.max(1, rr.flow[k]), P.theta);
+      // the same (blurred) hillslope the envelope uses, so a river never caps itself
+      const hs = env && env.slope[k] >= 0 ? env.slope[k] : this.hillOf(type) * P.hill * rf;
+      bio[k] = c.biome;
+      len[k] = dx;
+      rise[k] = dx * Math.min(ch, hs);
+      const cf = Math.min(1, Math.max(0, this.chanOf(type)));
+      keep[k] = 1 - Math.min(1, Math.max(0, P.level)) * (1 - cf);
+    }
+    const isEntry = (k: number) => bio[k] >= 0 && bio[par[k]] !== bio[k];
+    const zz = new Float64Array(n);
+    const cap = new Float64Array(n).fill(Infinity);
+    const envs = env ? [env] : [];
+    /** rise from the parent within the caps (parents have smaller indices); returns the largest change */
+    const forward = (): number => {
+      let changed = 0;
+      for (let k = 0; k < n; k++) {
+        const p = par[k];
+        if (p < 0 || rr.wet[k]) continue;
+        const v = Math.max(zz[p], Math.min(zz[p] + rise[k], cap[k]));
+        if (Math.abs(v - zz[k]) > changed) changed = Math.abs(v - zz[k]);
+        zz[k] = v;
+      }
+      return changed;
+    };
+    /**
+     * A river cannot run uphill: a node's cap also caps everything downstream (children
+     * have larger indices). Below a cap the river only has to keep descending, at its
+     * natural rise or GORGE_SLOPE if that is gentler, so a cut does not drag the whole
+     * river below it down to the sea.
+     */
+    const pushDown = (): void => {
+      for (let k = n - 1; k >= 0; k--) {
+        const p = par[k];
+        if (p < 0 || cap[k] === Infinity) continue;
+        const c = Math.max(0, cap[k] - Math.min(rise[k], GORGE_SLOPE * len[k]));
+        if (c < cap[p]) cap[p] = c;
+      }
+    };
+    const lowest = new Map<number, number>();
+    /** levelling: cap every entry of a low-gradient biome towards its lowest entry */
+    const level = (): boolean => {
+      lowest.clear();
+      for (let k = 0; k < n; k++) {
+        if (!isEntry(k)) continue;
+        const zp = zz[par[k]];
+        const l = lowest.get(bio[k]);
+        if (l === undefined || zp < l) lowest.set(bio[k], zp);
+      }
+      let capped = false;
+      for (let k = 0; k < n; k++) {
+        if (!isEntry(k) || keep[k] >= 1) continue;
+        const zp = zz[par[k]];
+        const l = lowest.get(bio[k])!;
+        const t = l + keep[k] * (zp - l) + rise[k];
+        if (t < cap[k] - BED_TOL) {
+          cap[k] = t;
+          capped = true;
+        }
+      }
+      return capped;
+    };
+    forward();
+    for (let outer = 0; outer < 6; outer++) {
+      if (P.level > 0) {
+        for (let it = 0; it < 32 && level(); it++) {
+          pushDown();
+          if (forward() < 1e-6) break;
+        }
+      }
+      let capped = false;
+      for (const e of envs) if (e.apply(zz, cap)) capped = true;
+      if (!capped) break;
+      pushDown();
+      forward();
+    }
+    return { z: zz, cap };
+  }
+
+  /**
+   * River nodes of the regions around a region's rivers (within the reach of its bed
+   * envelope), at their pass-1 beds, with their floodplain half-widths.
+   */
+  private neighbourSources(rkey: number, rr: RegionRivers): { x: number[]; y: number[]; z: number[]; px: number[]; py: number[]; pz: number[]; wv: number[] } {
+    const out = { x: [] as number[], y: [] as number[], z: [] as number[], px: [] as number[], py: [] as number[], pz: [] as number[], wv: [] as number[] };
+    if (rr.n === 0) return out;
+    const P = this.p;
+    const M = 5 * BED_GRID;
+    let bx0 = Infinity;
+    let by0 = Infinity;
+    let bx1 = -Infinity;
+    let by1 = -Infinity;
+    for (let k = 0; k < rr.n; k++) {
+      if (rr.x[k] < bx0) bx0 = rr.x[k];
+      if (rr.x[k] > bx1) bx1 = rr.x[k];
+      if (rr.y[k] < by0) by0 = rr.y[k];
+      if (rr.y[k] > by1) by1 = rr.y[k];
+    }
+    bx0 -= M;
+    by0 -= M;
+    bx1 += M;
+    by1 += M;
+    for (const ok of World.cellsIn(this.world.regionLevel, bx0, by0, bx1, by1, 1)) {
+      if (ok === rkey) continue;
+      const ro = this.rivers.get(ok);
+      if (ro.n === 0 || ro.x1 < bx0 || ro.x0 > bx1 || ro.y1 < by0 || ro.y0 > by1) continue;
+      const zo = this.baseBed(ok).z;
+      for (let k = 0; k < ro.n; k++) {
+        const p = ro.parent[k];
+        if (p < 0 || ro.wet[k]) continue;
+        const x = ro.x[k];
+        const y = ro.y[k];
+        if (x < bx0 || x > bx1 || y < by0 || y > by1) continue;
+        let wv = this.flood((zo[p] + zo[k]) * 0.5);
+        if (P.floodFlow) wv *= Math.sqrt(Math.max(1, ro.flow[k]) / FLOOD_REF_FLOW);
+        out.x.push(x);
+        out.y.push(y);
+        out.z.push(zo[k]);
+        out.px.push(ro.x[p]);
+        out.py.push(ro.y[p]);
+        out.pz.push(zo[p]);
+        out.wv.push(Math.max(0.75 * P.res, wv));
+      }
+    }
+    return out;
   }
 
   /**
@@ -428,6 +628,249 @@ export class Terrain {
     return [x0 - m, y0 - m, x1 + m, y1 + m];
   }
 
+  /**
+   * The coarse (BED_GRID) classification around a region's rivers, shared by both bed
+   * envelopes: sea flag, region, raw hillslope and relief factor per cell. Cached.
+   */
+  private bedGrid(rkey: number, rr: RegionRivers): { i0: number; j0: number; nx: number; ny: number; ocean: Uint8Array; reg: Float64Array; hill: Float64Array; relief: Float64Array } {
+    let g = this.grids.get(rkey);
+    if (g) return g;
+    const w = this.world;
+    const G = BED_GRID;
+    let bx0 = Infinity;
+    let by0 = Infinity;
+    let bx1 = -Infinity;
+    let by1 = -Infinity;
+    for (let k = 0; k < rr.n; k++) {
+      if (rr.x[k] < bx0) bx0 = rr.x[k];
+      if (rr.x[k] > bx1) bx1 = rr.x[k];
+      if (rr.y[k] < by0) by0 = rr.y[k];
+      if (rr.y[k] > by1) by1 = rr.y[k];
+    }
+    const i0 = Math.floor(bx0 / G) - 4;
+    const j0 = Math.floor(by0 / G) - 4;
+    const nx = Math.floor(bx1 / G) + 4 - i0 + 1;
+    const ny = Math.floor(by1 / G) + 4 - j0 + 1;
+    const N = nx * ny;
+    const ocean = new Uint8Array(N);
+    const reg = new Float64Array(N);
+    const hill = new Float64Array(N);
+    const relief = new Float64Array(N);
+    const cell = {} as ReturnType<World['cellAt']>;
+    for (let j = 0; j < ny; j++) {
+      for (let i = 0; i < nx; i++) {
+        const x = (i0 + i + 0.5) * G;
+        const y = (j0 + j + 0.5) * G;
+        const c = w.cellAt(x, y, true, cell);
+        const q = j * nx + i;
+        reg[q] = c.region;
+        if (c.ocean) {
+          ocean[q] = 1;
+          continue;
+        }
+        hill[q] = this.hillOf(landType(c.biome));
+        relief[q] = this.reliefAt(x, y);
+      }
+    }
+    g = { i0, j0, nx, ny, ocean, reg, hill, relief };
+    if (this.grids.size > 4000) this.grids.clear();
+    this.grids.set(rkey, g);
+    return g;
+  }
+
+  /**
+   * No river above its land. The land rises from every river and the coast at the
+   * hillslope (step 1 takes the lowest such surface), so a bed that stands higher than
+   * another source of the region allows (a headwater that wandered back near a much
+   * lower river, or near the coast) leaves the river perched above its land.
+   *
+   * This builds that surface on a coarse grid (BED_GRID) over the region's own land: the
+   * sea and every river segment seed it exactly (the bed at the projection of the cell
+   * centre onto the segment, + slope × distance beyond the floodplain, in the 3 × 3 cells
+   * around the segment's node; as the raster stamps it), then it spreads at the
+   * hillslope. `apply` caps every bed above min over its 3 × 3 cells of (surface + slope ×
+   * distance) and reports whether a cap was lowered; the caller pushes caps downstream,
+   * so the river cuts a gorge instead. By the triangle inequality a river never caps
+   * itself or its own course (its rise is limited by the same slope, `slope[k]`).
+   *
+   * Region-local (own land and the sea; landlocked regions walk all land), so a pure
+   * function of the region.
+   */
+  private bedEnvelope(
+    rkey: number,
+    rr: RegionRivers,
+    others: { x: number[]; y: number[]; z: number[]; px: number[]; py: number[]; pz: number[]; wv: number[] } | null,
+    ownSlope: Float64Array | null,
+  ): { slope: Float64Array; apply: (z: Float64Array, cap: Float64Array) => boolean } {
+    const P = this.p;
+    const G = BED_GRID;
+    const n = rr.n;
+    /** blurred hillslope (× multiplier × relief) at each node's cell, −1 = not on walkable land */
+    const nodeSlope = new Float64Array(n).fill(-1);
+    if (n === 0) return { slope: nodeSlope, apply: () => false };
+    const grid = this.bedGrid(rkey, rr);
+    const { i0, j0, nx, ny } = grid;
+    const N = nx * ny;
+    const cxOf = (i: number) => (i0 + i + 0.5) * G;
+    const cyOf = (j: number) => (j0 + j + 0.5) * G;
+    /** 0 = not walkable (another region's land), 1 = walkable land, 2 = sea */
+    const kind = new Uint8Array(N);
+    const raw = grid.hill;
+    for (let q = 0; q < N; q++) {
+      if (grid.ocean[q]) kind[q] = 2;
+      else if (others !== null || rr.landlocked || grid.reg[q] === rkey) kind[q] = 1;
+    }
+    // blurred over walkable land within ±BLEND (like the raster's slope), × multiplier × relief
+    const slope = new Float64Array(N);
+    const r = Math.max(1, Math.round(BLEND / G));
+    for (let j = 0; j < ny; j++) {
+      for (let i = 0; i < nx; i++) {
+        const q = j * nx + i;
+        if (kind[q] !== 1) continue;
+        let sum = 0;
+        let cnt = 0;
+        for (let jj = Math.max(0, j - r); jj <= Math.min(ny - 1, j + r); jj++) {
+          for (let ii = Math.max(0, i - r); ii <= Math.min(nx - 1, i + r); ii++) {
+            const t = jj * nx + ii;
+            if (kind[t] !== 1) continue;
+            sum += raw[t];
+            cnt++;
+          }
+        }
+        slope[q] = (sum / cnt) * P.hill * grid.relief[q];
+      }
+    }
+    const nodeCell = new Int32Array(n).fill(-1);
+    for (let k = 0; k < n; k++) {
+      if (rr.parent[k] < 0 || rr.wet[k]) continue;
+      const q = (Math.floor(rr.y[k] / G) - j0) * nx + (Math.floor(rr.x[k] / G) - i0);
+      if (kind[q] !== 1) continue;
+      nodeCell[k] = q;
+      nodeSlope[k] = ownSlope && ownSlope[k] >= 0 ? ownSlope[k] : slope[q];
+    }
+    // the neighbours' river nodes (cross mode): fixed sources
+    const oCell: number[] = [];
+    if (others) {
+      for (let t = 0; t < others.x.length; t++) {
+        const oi = Math.floor(others.x[t] / G) - i0;
+        const oj = Math.floor(others.y[t] / G) - j0;
+        const q = oi >= 0 && oj >= 0 && oi < nx && oj < ny ? oj * nx + oi : -1;
+        oCell.push(q >= 0 && kind[q] === 1 ? q : -1);
+      }
+    }
+    const E = new Float64Array(N);
+    const heap = new MinHeap(1024);
+    const DI = [1, -1, 0, 0, 1, 1, -1, -1];
+    const DJ = [0, 0, 1, -1, 1, -1, 1, -1];
+    /** visit the walkable 3 × 3 cells around cell q0 with the distance from (px, py) to each cell centre */
+    const aroundAt = (q0: number, px: number, py: number, f: (q: number, d: number) => void) => {
+      const ci = q0 % nx;
+      const cj = (q0 - ci) / nx;
+      for (let jj = cj - 1; jj <= cj + 1; jj++) {
+        for (let ii = ci - 1; ii <= ci + 1; ii++) {
+          if (ii < 0 || jj < 0 || ii >= nx || jj >= ny) continue;
+          const q = jj * nx + ii;
+          if (kind[q] !== 1) continue;
+          f(q, Math.sqrt((px - cxOf(ii)) ** 2 + (py - cyOf(jj)) ** 2));
+        }
+      }
+    };
+    const around = (k: number, f: (q: number, d: number) => void) => aroundAt(nodeCell[k], rr.x[k], rr.y[k], f);
+    /**
+     * Seed the 3 × 3 cells around cell q0 from segment a → b (beds za, zb, floodplain
+     * half-width wv): the bed at the cell centre's projection onto the segment, plus the
+     * hillslope beyond the floodplain. Sloping along the river like the raster's stamp,
+     * so a river never caps its own rise (triangle inequality).
+     */
+    const seedSeg = (q0: number, ax: number, ay: number, za: number, bx: number, by: number, zb: number, wv: number, s0: number) => {
+      const ex = bx - ax;
+      const ey = by - ay;
+      const l2 = ex * ex + ey * ey;
+      const ci = q0 % nx;
+      const cj = (q0 - ci) / nx;
+      for (let jj = cj - 1; jj <= cj + 1; jj++) {
+        for (let ii = ci - 1; ii <= ci + 1; ii++) {
+          if (ii < 0 || jj < 0 || ii >= nx || jj >= ny) continue;
+          const q = jj * nx + ii;
+          if (kind[q] !== 1) continue;
+          const px = cxOf(ii) - ax;
+          const py = cyOf(jj) - ay;
+          let t = l2 > 0 ? (px * ex + py * ey) / l2 : 0;
+          t = t < 0 ? 0 : t > 1 ? 1 : t;
+          const d = Math.sqrt((px - t * ex) ** 2 + (py - t * ey) ** 2);
+          const v = za + (zb - za) * t + Math.max(s0, slope[q]) * Math.max(0, d - wv);
+          if (v < E[q]) E[q] = v;
+        }
+      }
+    };
+    const apply = (z: Float64Array, cap: Float64Array): boolean => {
+      E.fill(Infinity);
+      for (let j = 0; j < ny; j++) {
+        for (let i = 0; i < nx; i++) {
+          const q = j * nx + i;
+          if (kind[q] === 2 && hasNbr(kind, nx, ny, i, j, 1)) E[q] = 0;
+        }
+      }
+      for (let k = 0; k < n; k++) {
+        if (nodeCell[k] < 0) continue;
+        const p = rr.parent[k];
+        const zk = z[k];
+        // the segment's floodplain is flat across, at the bed interpolated along it (as the raster stamps it, see addSegments)
+        let wv = this.flood((z[p] + zk) * 0.5);
+        if (P.floodFlow) wv *= Math.sqrt(Math.max(1, rr.flow[k]) / FLOOD_REF_FLOW);
+        wv = Math.max(0.75 * P.res, wv);
+        seedSeg(nodeCell[k], rr.x[p], rr.y[p], z[p], rr.x[k], rr.y[k], zk, wv, nodeSlope[k]);
+      }
+      if (others) {
+        for (let t = 0; t < oCell.length; t++) {
+          const q0 = oCell[t];
+          if (q0 < 0) continue;
+          seedSeg(q0, others.px[t], others.py[t], others.pz[t], others.x[t], others.y[t], others.z[t], others.wv[t], slope[q0]);
+        }
+      }
+      for (let q = 0; q < N; q++) if (E[q] < Infinity) heap.push(E[q], q);
+      while (heap.size > 0) {
+        const d = heap.peekKey();
+        const q = heap.pop();
+        if (d > E[q]) continue;
+        const i = q % nx;
+        const j = (q - i) / nx;
+        for (let t = 0; t < 8; t++) {
+          const ii = i + DI[t];
+          const jj = j + DJ[t];
+          if (ii < 0 || jj < 0 || ii >= nx || jj >= ny) continue;
+          const rq = jj * nx + ii;
+          if (kind[rq] !== 1) continue;
+          const sl = kind[q] === 1 ? (slope[q] + slope[rq]) * 0.5 : slope[rq];
+          const nd = d + G * sl * (t < 4 ? 1 : Math.SQRT2);
+          if (nd < E[rq]) {
+            E[rq] = nd;
+            heap.push(nd, rq);
+          }
+        }
+      }
+      let capped = false;
+      for (let k = 0; k < n; k++) {
+        if (nodeCell[k] < 0) continue;
+        let lim = Infinity;
+        const sk = nodeSlope[k];
+        around(k, (q, d) => {
+          const v = E[q] + Math.max(sk, slope[q]) * d;
+          if (v < lim) lim = v;
+        });
+        // a few metres of slack for the discretised spread
+        lim += BED_SLACK;
+        // only lowerings that matter count (each one lowers the surface a little in turn)
+        if (z[k] > lim && lim < cap[k] - BED_TOL) {
+          cap[k] = lim;
+          capped = true;
+        }
+      }
+      return capped;
+    };
+    return { slope: nodeSlope, apply };
+  }
+
   /** Compute a tile (not cached: see `getTile`). */
   compute(tkey: number): TerrainTile {
     const t0 = performance.now();
@@ -470,7 +913,7 @@ export class Terrain {
     }
     // blended over land cells (box blur, separable): slope, noise amplitude, ridged share
     const rb = Math.max(1, Math.round(BLEND / res));
-    const slope = blurLand(nx, ny, cls, rb, (q) => TYPES[lt[q]].hill);
+    const slope = blurLand(nx, ny, cls, rb, (q) => this.hillOf(lt[q]));
     const amp = blurLand(nx, ny, cls, rb, (q) => TYPES[lt[q]].amp);
     const rmix = blurLand(nx, ny, cls, rb, (q) => TYPES[lt[q]].ridged);
     for (let j = 0; j < ny; j++) {
@@ -491,7 +934,11 @@ export class Terrain {
       if (rr.n === 0 || rr.x1 < bx0 || rr.x0 > bx1 || rr.y1 < by0 || rr.y0 > by1) continue;
       const z = this.bed(rk);
       const lab0 = ((keyI(rk) & 0xffff) * 65536 + (keyJ(rk) & 0xffff)) * 131072;
-      addSegments(segs, rr, z, lab0, this.flood, P.floodFlow, res);
+      // a river's corridor only shapes its own region's land (rivers never enter another
+      // region's land; a neighbour's corridor spilling over the border would pull this
+      // region's land down below its own rivers). Landlocked regions cross their neighbours.
+      const ri = rr.landlocked ? -1 : (regIndex.get(rk) ?? -2);
+      addSegments(segs, rr, z, lab0, ri, this.flood, P.floodFlow, res);
     }
 
     // ---- 1. envelope: Dijkstra from the river beds and the coast
@@ -499,9 +946,25 @@ export class Terrain {
     const src = new Float64Array(N); // bed / coast height the cell's path starts from
     const lab = new Float64Array(N).fill(-1); // river system (−1 = coast)
     const heap = new MinHeap(4096);
+    // distance from every cell to its nearest river (within the burn reach): a river's
+    // corridor and burn ramp only shape the cells it is nearest to, so a big river's wide
+    // floodplain cannot pull down a higher tributary running beside it (that left the
+    // tributary standing above its land)
+    const near = new Float64Array(N).fill(Infinity);
     for (const s of segs) {
-      stampSeg(s, nx, ny, X0, Y0, res, (q, zb) => {
-        if (cls[q] !== LAND || zb >= E[q]) return;
+      stampSeg(s, nx, ny, X0, Y0, res, (q, _zb, d) => {
+        if (s.reg !== -1 && reg[q] !== s.reg && cls[q] === LAND) return;
+        if (d < near[q]) near[q] = d;
+      }, Math.max(2 * res, s.wv));
+    }
+    // only exact ties (a cell equally near two joined segments of one river) share it
+    const tol = 1;
+    // the channel itself (the narrowest corridor, see addSegments) is always stamped and
+    // burnt, so a river's trench stays continuous where another river passes close by
+    const chan = 0.75 * res;
+    for (const s of segs) {
+      stampSeg(s, nx, ny, X0, Y0, res, (q, zb, d) => {
+        if (cls[q] !== LAND || zb >= E[q] || (d > near[q] + tol && d > chan) || (s.reg !== -1 && reg[q] !== s.reg)) return;
         E[q] = zb;
         src[q] = zb;
         lab[q] = s.lab;
@@ -590,7 +1053,7 @@ export class Terrain {
     for (const s of segs) {
       const buf = Math.max(2 * res, s.wv);
       stampSeg(s, nx, ny, X0, Y0, res, (q, zb, d) => {
-        if (cls[q] !== LAND) return;
+        if (cls[q] !== LAND || (d > near[q] + tol && d > chan) || (s.reg !== -1 && reg[q] !== s.reg)) return;
         let target: number;
         if (d <= s.wv) target = zb - P.burn;
         else {
@@ -739,13 +1202,15 @@ interface Seg {
   /** floodplain half-width */
   wv: number;
   lab: number;
+  /** index (into the raster's region table) of the region whose land the river may shape; −1 = any (landlocked) */
+  reg: number;
 }
 
 /**
  * Dry river segments (child on land) of one region, with floodplain half-widths from
  * the height curve at the segment's mean bed height (optionally × √(flow / reference)).
  */
-function addSegments(out: Seg[], rr: RegionRivers, z: Float64Array, lab0: number, flood: (z: number) => number, byFlow: boolean, res: number): void {
+function addSegments(out: Seg[], rr: RegionRivers, z: Float64Array, lab0: number, reg: number, flood: (z: number) => number, byFlow: boolean, res: number): void {
   for (let k = 0; k < rr.n; k++) {
     const p = rr.parent[k];
     if (p < 0 || rr.wet[k]) continue;
@@ -760,6 +1225,7 @@ function addSegments(out: Seg[], rr: RegionRivers, z: Float64Array, lab0: number
       zb: z[k],
       wv: Math.max(0.75 * res, wv),
       lab: lab0 + rr.tree[k],
+      reg,
     });
   }
 }

@@ -1,6 +1,6 @@
 import { bool, defaultsOf, num, opt, str, type ParamDef, type Params, type Section } from '@shared/params/schema';
 import type { ConeAngle, PullPower, RiverParams } from './world/rivers';
-import { DEFAULT_CHAN, DEFAULT_FLOOD_H, DEFAULT_FLOOD_W, FLOOD_REF_FLOW, type TerrainParams, type Theta } from './world/terrain';
+import { DEFAULT_CHAN, DEFAULT_FLOOD_H, DEFAULT_HILL, DEFAULT_FLOOD_W, FLOOD_REF_FLOW, type TerrainParams, type Theta } from './world/terrain';
 import { LAND_TYPES } from './render/source';
 import type { GrowFrom, WorldParams } from './world/world';
 
@@ -233,7 +233,17 @@ export const TERRAIN_SECTION: Section = {
       options: opt(['0.375', '⅜ (straighter profiles)'], ['0.4375', '7⁄16 (≈ 0.45, typical)'], ['0.5', '½ (more concave)']),
       help: 'How fast rivers flatten downstream as flow grows.',
     },
-    { key: 'hgt.hill', label: 'Hillslope steepness', type: 'number', min: 0.25, max: 4, step: 0.05, default: 1, log: true, help: 'Multiplier on the hillslope of every land type (hills 0.15, marsh 0.01, …).' },
+    { key: 'hgt.hill', label: 'Hillslope steepness', type: 'number', min: 0.05, max: 4, step: 0.05, default: 1, log: true, help: 'Multiplier on the hillslope of every land type (set per type under "hillslope by land type").' },
+    {
+      key: 'hgt.level',
+      label: 'Level flat biomes',
+      type: 'number',
+      min: 0,
+      max: 1,
+      step: 0.05,
+      default: 1,
+      help: 'A biome whose river gradient is below 1 sits at one level: the rivers entering it are lowered towards its lowest entry (to the level at gradient 0), cutting gorges through the steeper land downstream. 0 = off: every river keeps the height it climbed to elsewhere.',
+    },
     { key: 'hgt.relief', label: 'Mountain belts', type: 'number', min: 0, max: 1, step: 0.01, default: 0.5, help: 'Strength of a slow, region-scale relief field that makes several neighbouring biomes rugged or flat together.' },
     { key: 'hgt.ridge', label: 'Region ridge', type: 'number', min: 0, max: 400, step: 5, default: 80, unit: ' m', help: 'Ridge along region borders (rivers never cross them). Fades out near rivers.' },
     { key: 'hgt.divide', label: 'Basin divides', type: 'number', min: 0, max: 300, step: 5, default: 30, unit: ' m', help: 'Extra height where the basins of two different river systems meet.' },
@@ -251,7 +261,7 @@ export const GRADIENT_SECTION: Section = {
   id: 'gradient',
   title: 'Terrain · river gradient by land type',
   open: false,
-  help: 'Factor on the channel slope S₀ where a river runs through each land type: how fast the river bed (and the land around it) rises upstream. 0 = flat, 1 = S₀.',
+  help: 'Factor on the channel slope S₀ where a river runs through each land type: how fast the river bed rises upstream (never steeper than the land type’s hillslope). 0 = flat: with "Level flat biomes" the whole biome sits at the level of its lowest river entry; below 1 it is levelled partly.',
   params: LAND_TYPES.map((t, i) => ({
     key: chanKey(t.name),
     label: t.name,
@@ -260,6 +270,26 @@ export const GRADIENT_SECTION: Section = {
     max: 5,
     step: 0.05,
     default: DEFAULT_CHAN[i],
+  })),
+};
+
+/** URL/param key of a land type’s hillslope steepness, e.g. 'hgt.hs.oldforest'. */
+export const hillKey = (name: string) => `hgt.hs.${name.toLowerCase().replace(/[^a-z]/g, '')}`;
+
+/** How steeply the land rises away from rivers and the coast in each land type. */
+export const HILLSLOPE_SECTION: Section = {
+  id: 'hillslope',
+  title: 'Terrain · hillslope by land type',
+  open: false,
+  help: 'How steeply the land rises away from its rivers and the coast (metres per metre, × "Hillslope steepness" and the mountain belts). Low values make flat plains, high values rugged hills.',
+  params: LAND_TYPES.map((t, i) => ({
+    key: hillKey(t.name),
+    label: t.name,
+    type: 'number' as const,
+    min: 0,
+    max: 0.6,
+    step: 0.001,
+    default: DEFAULT_HILL[i],
   })),
 };
 
@@ -284,7 +314,7 @@ export const FLOODPLAIN_SECTION: Section = {
   ],
 };
 
-export const TERRAIN_KEYS = new Set([TERRAIN_SECTION, GRADIENT_SECTION, FLOODPLAIN_SECTION].flatMap((sec) => sec.params.map((p) => p.key)));
+export const TERRAIN_KEYS = new Set([TERRAIN_SECTION, HILLSLOPE_SECTION, GRADIENT_SECTION, FLOODPLAIN_SECTION].flatMap((sec) => sec.params.map((p) => p.key)));
 
 export function toTerrainParams(p: Params): TerrainParams {
   return {
@@ -292,6 +322,8 @@ export function toTerrainParams(p: Params): TerrainParams {
     chSlope: num(p, 'hgt.chSlope'),
     theta: Number(str(p, 'hgt.theta')) as Theta,
     hill: num(p, 'hgt.hill'),
+    hillType: LAND_TYPES.map((t) => num(p, hillKey(t.name))),
+    level: num(p, 'hgt.level'),
     chanFactor: LAND_TYPES.map((t) => num(p, chanKey(t.name))),
     floodH: [1, 2, 3, 4].map((i) => num(p, `hgt.fp.h${i}`)),
     floodW: [1, 2, 3, 4].map((i) => num(p, `hgt.fp.w${i}`)),
@@ -369,7 +401,7 @@ export const VIEW_SECTION: Section = {
   ],
 };
 
-export const ALL_DEFS: ParamDef[] = [...SECTIONS.flatMap((s) => s.params), ...RIVER_SECTION.params, ...TERRAIN_SECTION.params, ...GRADIENT_SECTION.params, ...FLOODPLAIN_SECTION.params, ...VIEW_SECTION.params];
+export const ALL_DEFS: ParamDef[] = [...SECTIONS.flatMap((s) => s.params), ...RIVER_SECTION.params, ...TERRAIN_SECTION.params, ...HILLSLOPE_SECTION.params, ...GRADIENT_SECTION.params, ...FLOODPLAIN_SECTION.params, ...VIEW_SECTION.params];
 export const GEN_KEYS = new Set(SECTIONS.flatMap((s) => s.params.map((p) => p.key)));
 
 export function defaults(): Params {

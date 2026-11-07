@@ -33,17 +33,26 @@ describe('terrain', { timeout: 60_000 }, () => {
     for (const th of [0.375, 0.4375, 0.5] as const) for (const a of [1, 2, 7.5, 100, 4096]) expect(invPowTheta(a, th)).toBeCloseTo(Math.pow(a, -th), 12);
   });
 
-  it('river beds rise strictly upstream from sea level', () => {
+  it('river beds never fall upstream, start at sea level, and mostly rise', () => {
     const { rv, t } = setup();
+    let rising = 0;
+    let dry = 0;
     for (const r of landRegions(t.world, 3)) {
       const rr = rv.get(r);
       const z = t.bed(r);
       for (let k = 0; k < rr.n; k++) {
         const p = rr.parent[k];
-        if (p < 0 || rr.wet[k]) expect(z[k]).toBe(0);
-        else expect(z[k]).toBeGreaterThan(z[p]);
+        if (p < 0 || rr.wet[k]) {
+          expect(z[k]).toBe(0);
+          continue;
+        }
+        expect(z[k]).toBeGreaterThanOrEqual(z[p]);
+        dry++;
+        if (z[k] > z[p]) rising++;
       }
     }
+    // level stretches: flat biomes and gorges
+    expect(rising / dry).toBeGreaterThan(0.5);
   });
 
   it('every land cell of the region drains: it has a strictly lower neighbour or is a fill seed (sea or border)', () => {
@@ -225,9 +234,12 @@ describe('terrain', { timeout: 60_000 }, () => {
 
   it('river gradient per land type: factors scale the bed rise, 0 makes that land type flat', () => {
     const r = landRegions(setup().w, 1)[0];
-    const base = setup().t.bed(r);
-    const twice = setup({ chanFactor: setup().t.p.chanFactor.map((v) => v * 2) }).t.bed(r);
-    for (let k = 0; k < base.length; k++) expect(twice[k]).toBe(base[k] * 2);
+    // the factor scales the rise exactly while nothing else limits it (no hillslope limit,
+    // no levelling, no envelope caps: a huge hillslope)
+    const free = { hill: 1e4, level: 0 };
+    const base = setup(free).t.bed(r);
+    const twice = setup({ ...free, chanFactor: setup().t.p.chanFactor.map((v) => v * 2) }).t.bed(r);
+    for (let k = 0; k < base.length; k++) expect(twice[k]).toBeCloseTo(base[k] * 2, 6);
     // flatten one land type: its dry nodes no longer rise above their parent
     const { w, rv, t } = setup();
     const rr = rv.get(r);
@@ -265,5 +277,93 @@ describe('terrain', { timeout: 60_000 }, () => {
     let n = 0;
     for (const b of World.cellsIn(w.biomeLevel, -400000, -400000, 400000, 400000, 0)) if (landType(b) === i) n++;
     expect(n).toBeGreaterThan(5);
+  });
+  it('levelling: with gradient 0 a biome’s rivers sit at one level (its lowest entry); without levelling they do not', () => {
+    const r = landRegions(setup().w, 1)[0];
+    const { w, rv } = setup();
+    const rr = rv.get(r);
+    // the land type most river nodes run through
+    const counts = new Map<number, number>();
+    for (let k = 0; k < rr.n; k++) if (!rr.wet[k] && rr.parent[k] >= 0) counts.set(landType(w.cellAt(rr.x[k], rr.y[k], true).biome), (counts.get(landType(w.cellAt(rr.x[k], rr.y[k], true).biome)) ?? 0) + 1);
+    const type = [...counts.entries()].sort((a, b) => b[1] - a[1])[0][0];
+    const chan = setup().t.p.chanFactor.map((v, i) => (i === type ? 0 : v));
+    const spreads = (level: number) => {
+      const z = setup({ chanFactor: chan, level }).t.bed(r);
+      const byBiome = new Map<number, number[]>();
+      for (let k = 0; k < rr.n; k++) {
+        if (rr.wet[k] || rr.parent[k] < 0) continue;
+        const b = w.cellAt(rr.x[k], rr.y[k], true).biome;
+        if (landType(b) !== type) continue;
+        if (!byBiome.has(b)) byBiome.set(b, []);
+        byBiome.get(b)!.push(z[k]);
+      }
+      return [...byBiome.values()].filter((v) => v.length >= 5).map((v) => Math.max(...v) - Math.min(...v));
+    };
+    const off = spreads(0);
+    const on = spreads(1);
+    expect(on.length).toBeGreaterThan(0);
+    expect(Math.max(...off)).toBeGreaterThan(20);
+    // one level, up to the cap tolerances (gorges cut below it only where the land forces them)
+    const flat = on.filter((v) => v <= 10).length;
+    expect(flat / on.length).toBeGreaterThan(0.8);
+    expect(on.reduce((a, b) => a + b, 0)).toBeLessThan(off.reduce((a, b) => a + b, 0) / 4);
+  });
+
+  it('rivers do not stand above their land (at most a few, shallow exceptions)', () => {
+    const { w, rv, t } = setup({ res: 1000 });
+    const T = t.get(landRegions(w, 1)[0]);
+    let all = 0;
+    let perched = 0;
+    let deep = 0;
+    for (const rk of t.tileRegions(T.tile)) {
+      const rr = rv.get(rk);
+      const z = t.bed(rk);
+      for (let k = 0; k < rr.n; k++) {
+        if (rr.parent[k] < 0 || rr.wet[k] || z[k] < 20) continue;
+        const i = Math.round((rr.x[k] - T.x0) / T.res);
+        const j = Math.round((rr.y[k] - T.y0) / T.res);
+        if (i < 0 || j < 0 || i >= T.nx || j >= T.ny || !ownsRegion(T, regionAt(T, j * T.nx + i))) continue;
+        all++;
+        const d = z[k] - T.h[j * T.nx + i];
+        if (d > t.p.burn + 10) perched++;
+        if (d > 100) deep++;
+      }
+    }
+    // before: about half of all river nodes, by up to 1.3 km
+    expect(all).toBeGreaterThan(5000);
+    expect(perched / all).toBeLessThan(0.05);
+    expect(deep / all).toBeLessThan(0.002);
+  });
+
+  it('hillslope by land type: plains are flatter than hills and mountains, and the per-type value controls it', () => {
+    const name = (n: string) => LAND_TYPES.findIndex((lt) => lt.name === n);
+    const spreadOf = (over: Partial<TerrainParams>, types: number[]) => {
+      const { w, t } = setup(over);
+      const T = t.get(landRegions(w, 1)[0]);
+      const byBiome = new Map<number, number[]>();
+      for (let q = 0; q < T.h.length; q++) {
+        if (T.cls[q] !== LAND || !ownsRegion(T, regionAt(T, q))) continue;
+        const i = q % T.nx;
+        const j = (q - i) / T.nx;
+        const b = w.cellAt(T.x0 + i * T.res, T.y0 + j * T.res, true).biome;
+        if (!types.includes(landType(b))) continue;
+        if (!byBiome.has(b)) byBiome.set(b, []);
+        byBiome.get(b)!.push(T.h[q]);
+      }
+      const sp = [...byBiome.values()].filter((v) => v.length >= 20).map((v) => {
+        v.sort((a, b) => a - b);
+        return v[Math.floor(0.95 * v.length)] - v[Math.floor(0.05 * v.length)];
+      });
+      sp.sort((a, b) => a - b);
+      return sp[Math.floor(sp.length / 2)];
+    };
+    const plains = [name('Marsh'), name('Savanna'), name('Steppe')];
+    const rugged = [name('Hills'), name('Mountains')];
+    const p = spreadOf({}, plains);
+    const r = spreadOf({}, rugged);
+    expect(p * 4).toBeLessThan(r);
+    // steeper plains: more relief inside them
+    const steep = setup().t.p.hillType.map((v, i) => (plains.includes(i) ? 0.05 : v));
+    expect(spreadOf({ hillType: steep }, plains)).toBeGreaterThan(p * 1.5);
   });
 });
