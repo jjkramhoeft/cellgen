@@ -14,10 +14,38 @@ Be deployable from GitHub Pages
 
 ```bash
 npm install
-npm run dev      # http://localhost:5173
-npm test         # vitest: determinism, geometry and pipeline checks
-npm run build    # typecheck + production build into dist/
+npm run dev      # http://localhost:5173 — landing page linking every sandbox
+npm test         # vitest: shared core, every sandbox, and the sandbox registry
+npm run build    # typecheck + multi-page production build into dist/
 ```
+
+### Repository layout: multiple sandboxes
+
+The repo is one Vite multi-page site: a landing page plus one page per sandbox, all built on a shared core.
+
+```
+index.html, landing/        landing page (lists sandboxes from sandboxes/registry.ts)
+shared/core/                deterministic core: hashing + PRNGs, deterministic sin/cos/exp/log/pow,
+                            simplex/fBm/warp noise, point sampling, spatial index + metrics, SDFs, heap
+shared/render/              camera (zoom/pan maths), colour maps, progressive raster layer
+shared/params/              parameter schema types + helpers, URL hash state
+shared/ui/                  schema-driven parameter panel, base theme (base.css)
+shared/tests/               tests for the shared core
+sandboxes/registry.ts       title, summary and status of every sandbox
+sandboxes/<id>/             one sandbox: index.html, src/, tests/  → served at /sandboxes/<id>/
+sandboxes/_template/        skeleton copied by the scaffold script (not built or listed)
+scripts/new-sandbox.mjs     scaffolder
+```
+
+Import shared code with the `@shared/…` alias (for example `import { fbm } from '@shared/core/noise'`). Keep sandbox-specific code inside its own folder; move something into `shared/` once a second sandbox needs it.
+
+**Adding a sandbox**
+
+```bash
+npm run new-sandbox -- sandbox2 "Sandbox 2 · <topic>"
+```
+
+This copies `sandboxes/_template` (parameter panel, seed and URL state, zoomable canvas) into `sandboxes/sandbox2/` and marks its registry entry as ready. Vite discovers any `sandboxes/<id>/index.html` automatically, and `sandboxes/registry.test.ts` fails if a page and the registry disagree. Old links of the form `/#seed=…` are forwarded to Sandbox 1.
 
 ### Sandbox 1
 
@@ -52,18 +80,16 @@ Include zoom and pan on the resulting cells
 
 Keyboard: `+`/`−` zoom · `0`/`F` fit · arrows pan · `R` random seed · `E` edges · `[`/`]` cycle field · `C` compare · `Esc` unpin · `?` help.
 
-**Code map:**
+**Code map** (`sandboxes/sandbox1/`):
 
 ```
-src/core/      hash (pcg3d, sfc32), deterministic sin/cos/exp/log/pow, simplex/fBm/warp,
-               point sampling, spatial index + metrics, SDFs, heap
 src/graph/     CellGraph abstraction; grids, Voronoi (Delaunator), implicit distance cells
 src/gen/       pipeline stages: elevation, plates, hydrology, climate, biomes,
                space colonization, noise networks, cellular automata
-src/render/    camera, colour maps, vector + progressive raster renderer
-src/ui/        schema-driven parameter panels, legend, inspector, statistics
-src/params/    parameter schema, presets, URL state
-tests/         vitest suites (determinism, geometry invariants, golden fingerprint)
+src/render/    colourisation, raster sources, vector + raster renderer
+src/ui/        legend, inspector, statistics
+src/params/    parameter schema and presets
+tests/         geometry invariants, pipeline determinism, golden fingerprint
 ```
 
 Every stage is written against the `CellGraph` interface (research §9.1), so every stage runs on every cell structure.

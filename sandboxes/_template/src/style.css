@@ -1,0 +1,39 @@
+@import '@shared/ui/base.css';
+
+#app {
+  display: grid;
+  grid-template-columns: 300px 1fr;
+  grid-template-rows: 46px 1fr;
+  grid-template-areas:
+    'top top'
+    'left stage';
+  height: 100vh;
+}
+#left {
+  grid-area: left;
+  border-right: 1px solid var(--line);
+}
+#stage {
+  grid-area: stage;
+  position: relative;
+  overflow: hidden;
+  min-width: 0;
+}
+#view {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+  cursor: grab;
+}
+@media (max-width: 720px) {
+  #app {
+    grid-template-columns: 1fr;
+    grid-template-rows: 46px 55vh 1fr;
+    grid-template-areas:
+      'top'
+      'stage'
+      'left';
+  }
+}

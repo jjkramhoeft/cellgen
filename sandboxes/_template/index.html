@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>cellgen · {{TITLE}}</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath fill='%2321918c' d='M16 2l12 7v14l-12 7-12-7V9z'/%3E%3Cpath fill='%23fde725' d='M16 9l6 3.5v7L16 23l-6-3.5v-7z'/%3E%3C/svg%3E" />
+  </head>
+  <body>
+    <div id="app">
+      <header id="topbar">
+        <a class="brand" href="../../" title="All sandboxes">
+          <svg viewBox="0 0 32 32" width="22" height="22" aria-hidden="true"><path fill="#21918c" d="M16 2l12 7v14l-12 7-12-7V9z"/><path fill="#fde725" d="M16 9l6 3.5v7L16 23l-6-3.5v-7z"/></svg>
+          <span class="name">cellgen</span><span class="tag">{{TITLE}}</span>
+        </a>
+        <div class="group">
+          <label class="seed"><span>seed</span><input id="seed" type="text" spellcheck="false" autocomplete="off" /></label>
+        </div>
+      </header>
+      <aside id="left" class="panel" aria-label="Parameters"></aside>
+      <main id="stage"><canvas id="view"></canvas></main>
+    </div>
+    <script type="module" src="./src/main.ts"></script>
+  </body>
+</html>
