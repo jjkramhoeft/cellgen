@@ -293,9 +293,16 @@ export interface RiverDraw {
   sea: boolean;
 }
 
-/** On-screen width (CSS px) of a river segment carrying `flow` attractors. */
-export function riverPx(flow: number, stepPx: number, scale: number): number {
-  const zf = Math.min(2.2, Math.max(0.45, stepPx / 7));
+/**
+ * Fixed world length (m) the river line width scales with when zooming. Deliberately
+ * not the growth step D: changing D must not change how wide rivers are drawn.
+ * (2 km = the default D, so the default look is unchanged.)
+ */
+export const RIVER_REF_M = 2000;
+
+/** On-screen width (CSS px) of a river segment carrying `flow` attractors; `refPx` = RIVER_REF_M on screen. */
+export function riverPx(flow: number, refPx: number, scale: number): number {
+  const zf = Math.min(2.2, Math.max(0.45, refPx / 7));
   return scale * zf * (0.45 + 0.3 * Math.sqrt(flow));
 }
 
@@ -308,7 +315,7 @@ export function drawRivers(f: Frame, rivers: Rivers, o: RiverDraw, deadline: num
   const R = world.regionLevel;
   if (World.countIn(R, f.x0, f.y0, f.x1, f.y1, 1) > 900) return 0;
   const { ctx, dpr } = f;
-  const stepPx = rivers.p.step * f.cam.zoom;
+  const refPx = RIVER_REF_M * f.cam.zoom;
   let pending = 0;
   const shown: ReturnType<Rivers['get']>[] = [];
   for (const rk of World.cellsIn(R, f.x0, f.y0, f.x1, f.y1, 1)) {
@@ -330,7 +337,7 @@ export function drawRivers(f: Frame, rivers: Rivers, o: RiverDraw, deadline: num
       const p = rr.parent[k];
       if (p < 0 || rr.flow[k] < o.minFlow) continue;
       if (!o.sea && rr.wet[k] && rr.wet[p]) continue;
-      const w = Math.max(0.5, Math.round(riverPx(rr.flow[k], stepPx, o.width) * dpr * 4) / 4);
+      const w = Math.max(0.5, Math.round(riverPx(rr.flow[k], refPx, o.width) * dpr * 4) / 4);
       let b = buckets.get(w);
       if (!b) buckets.set(w, (b = []));
       b.push([sx(f, rr.x[p]), sy(f, rr.y[p]), sx(f, rr.x[k]), sy(f, rr.y[k])]);
@@ -349,7 +356,7 @@ export function drawRivers(f: Frame, rivers: Rivers, o: RiverDraw, deadline: num
     ctx.stroke();
   }
   if (o.attractors) {
-    const r = Math.max(0.8, Math.min(2.2, stepPx * 0.15)) * dpr;
+    const r = Math.max(0.8, Math.min(2.2, refPx * 0.15)) * dpr;
     for (const pass of [0, 1]) {
       ctx.beginPath();
       for (const rr of shown) {
@@ -365,7 +372,7 @@ export function drawRivers(f: Frame, rivers: Rivers, o: RiverDraw, deadline: num
       ctx.fill();
     }
     ctx.beginPath();
-    const rr0 = Math.max(3, Math.min(7, stepPx * 0.6)) * dpr;
+    const rr0 = Math.max(3, Math.min(7, refPx * 0.6)) * dpr;
     for (const rr of shown) {
       for (const k of rr.roots) {
         const x = sx(f, rr.x[k]);

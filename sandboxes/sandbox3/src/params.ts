@@ -108,7 +108,7 @@ export const RIVER_SECTION: Section = {
       label: 'Influence dᵢ',
       type: 'number',
       min: 2,
-      max: 64,
+      max: 256,
       step: 0.5,
       default: 16,
       log: true,
