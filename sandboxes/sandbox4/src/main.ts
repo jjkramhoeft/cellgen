@@ -16,13 +16,13 @@ import { decodeState, encodeState } from '@shared/params/url';
 import { screenToWorld, zoomAt, type Camera, type Viewport } from '@shared/render/camera';
 import { RasterLayer } from '@shared/render/raster';
 import { buildPanel } from '@shared/ui/panel';
-import { ALL_DEFS, defaults, GEN_KEYS, PRESETS, RIVER_KEYS, RIVER_SECTION, SECTIONS, TERRAIN_KEYS, TERRAIN_SECTION, toRiverParams, toTerrainParams, toWorldParams, VIEW_MODES, VIEW_SECTION } from './params';
+import { ALL_DEFS, defaults, GEN_KEYS, PRESETS, RIVER_KEYS, RIVER_SECTION, FLOODPLAIN_SECTION, GRADIENT_SECTION, SECTIONS, TERRAIN_KEYS, TERRAIN_SECTION, toRiverParams, toTerrainParams, toWorldParams, VIEW_MODES, VIEW_SECTION } from './params';
 import { drawGrid, drawGrowth, drawLinks, drawMerges, drawRivers, drawRuler, drawSites, fmtDist, niceStep, type Frame } from './render/overlays';
 import { DETAIL_PX, mapSource, type ViewMode, type ViewOpts } from './render/source';
 import { computeViewStats, renderInspector, renderLegend, renderLevels, renderRuler, renderStats, type ViewStats } from './ui/widgets';
 import { buildMesh, View3D, type HeightGrid } from './render/view3d';
 import { Rivers } from './world/rivers';
-import { Terrain } from './world/terrain';
+import { FLOOD_REF_FLOW, monotoneSpline, Terrain } from './world/terrain';
 import { World } from './world/world';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -99,7 +99,49 @@ if (urlCam) {
 
 // ------------------------------------------------------------------ panels
 
-const leftPanel = buildPanel($('left'), [...SECTIONS, RIVER_SECTION, TERRAIN_SECTION], params, onParam, resetSection);
+const leftPanel = buildPanel($('left'), [...SECTIONS, RIVER_SECTION, TERRAIN_SECTION, FLOODPLAIN_SECTION, GRADIENT_SECTION], params, onParam, resetSection);
+
+/** Live plot of the floodplain curve (half-width over bed height) in its panel section. */
+function renderFloodPlot(): void {
+  const body = document.querySelector<HTMLElement>('#left section[data-id="floodplain"] .sec-body');
+  if (!body) return;
+  let host = body.querySelector<HTMLElement>('.flood-plot');
+  if (!host) {
+    host = document.createElement('div');
+    host.className = 'flood-plot';
+    body.querySelector('.sec-help')?.after(host);
+  }
+  const hs = [1, 2, 3, 4].map((i) => Number(params[`hgt.fp.h${i}`]));
+  const ws = [1, 2, 3, 4].map((i) => Number(params[`hgt.fp.w${i}`]));
+  const f = monotoneSpline(hs, ws);
+  const W = 240;
+  const H = 110;
+  const pl = 34;
+  const pb = 18;
+  const xMax = Math.max(500, ...hs) * 1.15;
+  const yMax = Math.max(50, ...ws) * 1.15;
+  const X = (h: number) => pl + (h / xMax) * (W - pl - 6);
+  const Y = (w: number) => H - pb - (w / yMax) * (H - pb - 6);
+  let d = '';
+  for (let k = 0; k <= 80; k++) {
+    const h = (xMax * k) / 80;
+    d += `${k ? 'L' : 'M'}${X(h).toFixed(1)},${Y(f(h)).toFixed(1)}`;
+  }
+  const dots = hs.map((h, i) => `<circle cx="${X(h).toFixed(1)}" cy="${Y(ws[i]).toFixed(1)}" r="3" fill="#fde725"><title>Point ${i + 1}: ${h} m → ${ws[i]} m</title></circle>`).join('');
+  const flow = params['hgt.fp.flow'] === true ? ` · flow ${FLOOD_REF_FLOW}` : '';
+  host.innerHTML =
+    `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Floodplain half-width over river bed height">` +
+    `<line x1="${pl}" y1="${H - pb}" x2="${W - 4}" y2="${H - pb}" stroke="currentColor" stroke-opacity=".35"/>` +
+    `<line x1="${pl}" y1="4" x2="${pl}" y2="${H - pb}" stroke="currentColor" stroke-opacity=".35"/>` +
+    `<path d="${d}" fill="none" stroke="#5aa0ff" stroke-width="2"/>${dots}` +
+    `<text x="${pl}" y="${H - 4}" font-size="9" fill="currentColor" opacity=".7">0</text>` +
+    `<text x="${W - 4}" y="${H - 4}" font-size="9" fill="currentColor" opacity=".7" text-anchor="end">${Math.round(xMax)} m bed height</text>` +
+    `<text x="${pl - 4}" y="10" font-size="9" fill="currentColor" opacity=".7" text-anchor="end">${Math.round(yMax)}</text>` +
+    `<text x="${pl - 4}" y="${H - pb}" font-size="9" fill="currentColor" opacity=".7" text-anchor="end">0 m</text>` +
+    `<text x="${W - 4}" y="12" font-size="9" fill="currentColor" opacity=".7" text-anchor="end">half-width${flow}</text>` +
+    `</svg>`;
+}
+renderFloodPlot();
 const viewPanel = buildPanel($('viewPanel'), [VIEW_SECTION], params, onParam, resetSection);
 $('statsSec').querySelector('.sec-head')!.addEventListener('click', () => {
   $('statsSec').classList.toggle('collapsed');
@@ -122,6 +164,7 @@ function setParams(patch: Params): void {
   params = { ...params, ...patch };
   leftPanel.sync(params);
   viewPanel.sync(params);
+  renderFloodPlot();
   const gen = Object.keys(patch).some((k) => GEN_KEYS.has(k) && before[k] !== params[k]);
   if (gen) regenerate();
   else {
@@ -611,6 +654,7 @@ presetSel.addEventListener('change', () => {
   for (const k of Object.keys(params)) if (!GEN_KEYS.has(k)) keep[k] = params[k];
   params = { ...d, ...keep, ...p.params };
   leftPanel.sync(params);
+  renderFloodPlot();
   viewPanel.sync(params);
   regenerate();
   toast(p.label);
@@ -649,6 +693,7 @@ $('resetAll').addEventListener('click', () => {
   pinned = null;
   params = defaults();
   leftPanel.sync(params);
+  renderFloodPlot();
   viewPanel.sync(params);
   regenerate();
   toast('Parameters reset');
@@ -780,6 +825,7 @@ window.addEventListener('hashchange', () => {
   seedInput.value = seedText;
   params = s.params;
   leftPanel.sync(params);
+  renderFloodPlot();
   viewPanel.sync(params);
   const c = camFromUrl();
   if (c) {

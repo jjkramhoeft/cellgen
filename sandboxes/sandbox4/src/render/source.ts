@@ -62,6 +62,7 @@ export const LAND_TYPES: { name: string; rgb: RGB }[] = [
   { name: 'Taiga', rgb: [88, 118, 98] },
   { name: 'Scrub', rgb: [163, 156, 107] },
   { name: 'Heath', rgb: [140, 118, 118] },
+  { name: 'Mountains', rgb: [124, 116, 112] },
 ];
 export const OCEAN_RGB: RGB = [38, 84, 132];
 

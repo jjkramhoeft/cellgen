@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { defaults, toRiverParams, toTerrainParams, toWorldParams } from '../src/params';
 import { Rivers } from '../src/world/rivers';
-import { invPowTheta, LAND, OCEAN, Terrain, type RegionTerrain, type TerrainParams } from '../src/world/terrain';
+import { invPowTheta, LAND, monotoneSpline, OCEAN, Terrain, type RegionTerrain, type TerrainParams } from '../src/world/terrain';
+import { LAND_TYPES, landType } from '../src/render/source';
 import { World } from '../src/world/world';
 
 const setup = (over: Partial<TerrainParams> = {}) => {
@@ -152,5 +153,69 @@ describe('terrain', () => {
     expect(mean(setup({ hill: 2 }).t.get(r))).toBeGreaterThan(base);
     expect(mean(setup({ chSlope: 0.05 }).t.get(r))).toBeGreaterThan(base);
     expect(mean(setup({ ridge: 0, divide: 0, noise: 0 }).t.get(r))).toBeLessThan(base);
+  });
+
+  it('floodplain spline: through the points, no overshoot, flat beyond the ends, any point order', () => {
+    const f = monotoneSpline([400, 0, 1000, 100], [150, 500, 40, 400]);
+    expect(f(0)).toBe(500);
+    expect(f(100)).toBeCloseTo(400, 9);
+    expect(f(400)).toBeCloseTo(150, 9);
+    expect(f(1000)).toBe(40);
+    expect(f(-50)).toBe(500);
+    expect(f(5000)).toBe(40);
+    let prev = Infinity;
+    for (let h = 0; h <= 1000; h += 5) {
+      const v = f(h);
+      expect(v).toBeLessThanOrEqual(prev + 1e-9); // decreasing data → decreasing curve
+      expect(v).toBeGreaterThanOrEqual(40 - 1e-9);
+      prev = v;
+    }
+    // a bump stays between its neighbours' values (no ringing)
+    const g = monotoneSpline([0, 1, 2, 3], [0, 10, 10, 0]);
+    for (let x = 0; x <= 3; x += 0.05) expect(g(x)).toBeLessThanOrEqual(10 + 1e-9);
+  });
+
+  it('river gradient per land type: factors scale the bed rise, 0 makes that land type flat', () => {
+    const r = landRegions(setup().w, 1)[0];
+    const base = setup().t.bed(r);
+    const twice = setup({ chanFactor: setup().t.p.chanFactor.map((v) => v * 2) }).t.bed(r);
+    for (let k = 0; k < base.length; k++) expect(twice[k]).toBe(base[k] * 2);
+    // flatten one land type: its dry nodes no longer rise above their parent
+    const { w, rv, t } = setup();
+    const rr = rv.get(r);
+    const counts = new Map<number, number>();
+    for (let k = 0; k < rr.n; k++) if (!rr.wet[k] && rr.parent[k] >= 0) counts.set(landType(w.cellAt(rr.x[k], rr.y[k], true).biome), (counts.get(landType(w.cellAt(rr.x[k], rr.y[k], true).biome)) ?? 0) + 1);
+    const type = [...counts.entries()].sort((a, b) => b[1] - a[1])[0][0];
+    const flat = setup({ chanFactor: t.p.chanFactor.map((v, i) => (i === type ? 0 : v)) }).t.bed(r);
+    let checked = 0;
+    for (let k = 0; k < rr.n; k++) {
+      const p = rr.parent[k];
+      if (p < 0 || rr.wet[k] || landType(w.cellAt(rr.x[k], rr.y[k], true).biome) !== type) continue;
+      expect(flat[k]).toBe(flat[p]);
+      checked++;
+    }
+    expect(checked).toBeGreaterThan(20);
+  });
+
+  it('a wider floodplain flattens the valleys (lower mean land height)', () => {
+    const r = landRegions(setup().w, 1)[0];
+    const mean = (T: RegionTerrain) => {
+      let s = 0;
+      let n = 0;
+      for (let q = 0; q < T.h.length; q++) if (own(T, q)) (s += T.h[q]), n++;
+      return s / n;
+    };
+    const narrow = mean(setup({ floodW: [100, 80, 40, 20] }).t.get(r));
+    const wide = mean(setup({ floodW: [3000, 2500, 1500, 800] }).t.get(r));
+    expect(wide).toBeLessThan(narrow);
+  });
+
+  it('has a Mountains land type, and it occurs', () => {
+    const i = LAND_TYPES.findIndex((t) => t.name === 'Mountains');
+    expect(i).toBeGreaterThanOrEqual(0);
+    const { w } = setup();
+    let n = 0;
+    for (const b of World.cellsIn(w.biomeLevel, -400000, -400000, 400000, 400000, 0)) if (landType(b) === i) n++;
+    expect(n).toBeGreaterThan(5);
   });
 });

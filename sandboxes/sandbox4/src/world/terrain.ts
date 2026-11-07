@@ -5,13 +5,14 @@
  *   0. Channel profile   every river node gets a bed elevation from the steady-state
  *                        stream-power law integrated upstream from the sea (the χ
  *                        integral, Mudd et al. 2014 Eq. 4): z_k = z_parent + Δx·S₀·A^−θ,
- *                        with A = flow (attractors upstream) as the drainage-area proxy.
+ *                        with A = flow (attractors upstream) as the drainage-area proxy
+ *                        and a configurable gradient factor per land type.
  *                        Strictly rising upstream by construction.
  *   1. Envelope          a geodesic distance (Dijkstra on an 8-connected grid, i.e. a
  *                        chamfer fast-marching) from every river bed and from the coast,
  *                        with the hillslope steepness as the local cost: every land cell
- *                        drains to a river or the sea. Rivers get a flat floodplain of
- *                        half-width ∝ √flow.
+ *                        drains to a river or the sea. Rivers get a flat floodplain whose
+ *                        half-width is a spline over the bed height (optionally ∝ √flow).
  *   2. Divides           a ridge along region borders (which rivers never cross) and a
  *                        smaller one where the basins of two different river systems meet.
  *   3. Detail noise      fbm / ridged per land type, masked to zero near the channels.
@@ -44,8 +45,16 @@ export interface TerrainParams {
   theta: Theta;
   /** multiplier on the hillslope steepness of every land type */
   hill: number;
-  /** floodplain half-width per √flow, metres */
-  valley: number;
+  /**
+   * River gradient factor per land type (index = LAND_TYPES order): how fast the bed
+   * rises upstream there, relative to S₀.
+   */
+  chanFactor: number[];
+  /** floodplain half-width (metres) as a function of bed height: 4 control points of a monotone cubic spline */
+  floodH: number[];
+  floodW: number[];
+  /** scale the floodplain with river size: × √(flow / FLOOD_REF_FLOW) */
+  floodFlow: boolean;
   /** strength of the region-scale relief field (mountain belts across biomes) */
   relief: number;
   /** height of the ridge along region borders, metres */
@@ -64,20 +73,84 @@ export interface TerrainParams {
  * Relief per cosmetic land type (index = LAND_TYPES order in render/source.ts).
  * Starting points from the report's §7.2 table, not sourced values.
  */
-const TYPES: { hill: number; chan: number; valley: number; amp: number; ridged: number }[] = [
-  { hill: 0.03, chan: 0.7, valley: 1.5, amp: 10, ridged: 0 }, // Grassland
-  { hill: 0.05, chan: 1.0, valley: 1.0, amp: 20, ridged: 0 }, // Forest
-  { hill: 0.05, chan: 1.0, valley: 1.0, amp: 20, ridged: 0 }, // Old forest
-  { hill: 0.03, chan: 0.7, valley: 1.5, amp: 10, ridged: 0 }, // Steppe
-  { hill: 0.04, chan: 0.8, valley: 1.0, amp: 25, ridged: 1 }, // Desert (dune-like ridges)
-  { hill: 0.07, chan: 1.0, valley: 1.0, amp: 30, ridged: 0.3 }, // Tundra
-  { hill: 0.01, chan: 0.3, valley: 3.0, amp: 2, ridged: 0 }, // Marsh
-  { hill: 0.15, chan: 1.8, valley: 0.5, amp: 80, ridged: 1 }, // Hills
-  { hill: 0.03, chan: 0.7, valley: 1.5, amp: 10, ridged: 0 }, // Savanna
-  { hill: 0.05, chan: 1.0, valley: 1.0, amp: 20, ridged: 0 }, // Taiga
-  { hill: 0.07, chan: 1.0, valley: 1.0, amp: 30, ridged: 0.3 }, // Scrub
-  { hill: 0.07, chan: 1.0, valley: 1.0, amp: 30, ridged: 0.3 }, // Heath
+const TYPES: { hill: number; amp: number; ridged: number }[] = [
+  { hill: 0.03, amp: 10, ridged: 0 }, // Grassland
+  { hill: 0.05, amp: 20, ridged: 0 }, // Forest
+  { hill: 0.05, amp: 20, ridged: 0 }, // Old forest
+  { hill: 0.03, amp: 10, ridged: 0 }, // Steppe
+  { hill: 0.04, amp: 25, ridged: 1 }, // Desert (dune-like ridges)
+  { hill: 0.07, amp: 30, ridged: 0.3 }, // Tundra
+  { hill: 0.01, amp: 2, ridged: 0 }, // Marsh
+  { hill: 0.15, amp: 80, ridged: 1 }, // Hills
+  { hill: 0.03, amp: 10, ridged: 0 }, // Savanna
+  { hill: 0.05, amp: 20, ridged: 0 }, // Taiga
+  { hill: 0.07, amp: 30, ridged: 0.3 }, // Scrub
+  { hill: 0.07, amp: 30, ridged: 0.3 }, // Heath
+  { hill: 0.3, amp: 180, ridged: 1 }, // Mountains
 ];
+
+/**
+ * Default river gradient factor per land type (the report's §7.2 "Channel ×S₀"
+ * column, plus Mountains): marshes rise slowly, hills and mountains steeply.
+ */
+export const DEFAULT_CHAN = [0.7, 1.0, 1.0, 0.7, 0.8, 1.0, 0.3, 1.8, 0.7, 1.0, 1.0, 1.0, 3.0];
+
+/** Default floodplain curve: wide on the lowland plains, narrow in the mountains (half-widths for a flow of 100). */
+export const DEFAULT_FLOOD_H = [0, 100, 400, 1000];
+export const DEFAULT_FLOOD_W = [500, 400, 150, 40];
+/** flow whose floodplain is exactly the curve when "scale with river size" is on */
+export const FLOOD_REF_FLOW = 100;
+
+/**
+ * Monotone cubic interpolation (Fritsch & Carlson 1980) through control points:
+ * C¹, passes through every point, never overshoots between two points (so a
+ * positive curve stays positive), constant beyond the end points. The points are
+ * sorted by x; equal x's keep the first. + − × ÷ only (bit-exact).
+ */
+export function monotoneSpline(xs: number[], ys: number[]): (x: number) => number {
+  const pts = xs.map((x, i) => [x, ys[i]] as [number, number]).sort((a, b) => a[0] - b[0]);
+  const px: number[] = [];
+  const py: number[] = [];
+  for (const [x, y] of pts) {
+    if (px.length && x <= px[px.length - 1]) continue;
+    px.push(x);
+    py.push(y);
+  }
+  const n = px.length;
+  if (n === 0) return () => 0;
+  if (n === 1) return () => py[0];
+  const d: number[] = [];
+  for (let i = 0; i < n - 1; i++) d.push((py[i + 1] - py[i]) / (px[i + 1] - px[i]));
+  const m: number[] = [d[0]];
+  for (let i = 1; i < n - 1; i++) m.push(d[i - 1] * d[i] <= 0 ? 0 : (d[i - 1] + d[i]) / 2);
+  m.push(d[n - 2]);
+  for (let i = 0; i < n - 1; i++) {
+    if (d[i] === 0) {
+      m[i] = 0;
+      m[i + 1] = 0;
+      continue;
+    }
+    const a = m[i] / d[i];
+    const b = m[i + 1] / d[i];
+    const s = a * a + b * b;
+    if (s > 9) {
+      const t = 3 / Math.sqrt(s);
+      m[i] = t * a * d[i];
+      m[i + 1] = t * b * d[i];
+    }
+  }
+  return (x: number) => {
+    if (x <= px[0]) return py[0];
+    if (x >= px[n - 1]) return py[n - 1];
+    let i = 0;
+    while (x > px[i + 1]) i++;
+    const h = px[i + 1] - px[i];
+    const t = (x - px[i]) / h;
+    const t2 = t * t;
+    const t3 = t2 * t;
+    return (2 * t3 - 3 * t2 + 1) * py[i] + (t3 - 2 * t2 + t) * h * m[i] + (-2 * t3 + 3 * t2) * py[i + 1] + (t3 - t2) * h * m[i + 1];
+  };
+}
 
 /** Raster margin beyond the region, metres: sources this far out still shape the region. */
 export const HALO = 48_000;
@@ -146,6 +219,8 @@ export class Terrain {
   private beds = new Map<number, Float64Array>();
   private readonly seedR: number;
   private readonly seedN: number;
+  /** floodplain half-width (m) at a bed height (m) */
+  readonly flood: (z: number) => number;
 
   constructor(world: World, rivers: Rivers, p: TerrainParams) {
     this.world = world;
@@ -153,6 +228,13 @@ export class Terrain {
     this.p = p;
     this.seedR = hash4(world.p.seed, ST_RELIEF, 0, 0) | 0;
     this.seedN = hash4(world.p.seed, ST_NOISE, 0, 0) | 0;
+    this.flood = monotoneSpline(p.floodH, p.floodW);
+  }
+
+  /** River gradient factor of a land type (falls back to 1 for an unknown index). */
+  chanOf(type: number): number {
+    const f = this.p.chanFactor[type];
+    return f === undefined ? 1 : f;
   }
 
   get size(): number {
@@ -194,7 +276,7 @@ export class Terrain {
       if (p < 0 || rr.wet[k]) continue; // roots and the stretch over the sea sit at sea level
       const dx = Math.sqrt((rr.x[k] - rr.x[p]) ** 2 + (rr.y[k] - rr.y[p]) ** 2);
       const c = w.cellAt(rr.x[k], rr.y[k], true);
-      const mult = c.ocean ? 1 : TYPES[landType(c.biome)].chan * this.reliefAt(rr.x[k], rr.y[k]);
+      const mult = c.ocean ? 1 : this.chanOf(landType(c.biome)) * this.reliefAt(rr.x[k], rr.y[k]);
       z[k] = z[p] + dx * P.chSlope * mult * invPowTheta(Math.max(1, rr.flow[k]), P.theta);
     }
     if (this.beds.size > 4000) this.beds.clear();
@@ -290,7 +372,7 @@ export class Terrain {
       if (rr.n === 0 || rr.x1 < bx0 || rr.x0 > bx1 || rr.y1 < by0 || rr.y0 > by1) continue;
       const z = this.bed(rk);
       const lab0 = ((keyI(rk) & 0xffff) * 65536 + (keyJ(rk) & 0xffff)) * 131072;
-      addSegments(segs, rr, z, lab0, w, P.valley, res);
+      addSegments(segs, rr, z, lab0, this.flood, P.floodFlow, res);
     }
 
     // ---- 1. envelope: Dijkstra from the river beds and the coast
@@ -474,13 +556,16 @@ interface Seg {
   lab: number;
 }
 
-/** Dry river segments (child on land) of one region, with floodplain half-widths. */
-function addSegments(out: Seg[], rr: RegionRivers, z: Float64Array, lab0: number, w: World, valley: number, res: number): void {
+/**
+ * Dry river segments (child on land) of one region, with floodplain half-widths from
+ * the height curve at the segment's mean bed height (optionally × √(flow / reference)).
+ */
+function addSegments(out: Seg[], rr: RegionRivers, z: Float64Array, lab0: number, flood: (z: number) => number, byFlow: boolean, res: number): void {
   for (let k = 0; k < rr.n; k++) {
     const p = rr.parent[k];
     if (p < 0 || rr.wet[k]) continue;
-    const c = w.cellAt(rr.x[k], rr.y[k], true);
-    const vm = c.ocean ? 1 : TYPES[landType(c.biome)].valley;
+    let wv = flood((z[p] + z[k]) * 0.5);
+    if (byFlow) wv *= Math.sqrt(Math.max(1, rr.flow[k]) / FLOOD_REF_FLOW);
     out.push({
       ax: rr.x[p],
       ay: rr.y[p],
@@ -488,7 +573,7 @@ function addSegments(out: Seg[], rr: RegionRivers, z: Float64Array, lab0: number
       by: rr.y[k],
       za: z[p],
       zb: z[k],
-      wv: Math.max(0.75 * res, valley * vm * Math.sqrt(Math.max(1, rr.flow[k]))),
+      wv: Math.max(0.75 * res, wv),
       lab: lab0 + rr.tree[k],
     });
   }

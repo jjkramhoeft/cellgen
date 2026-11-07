@@ -1,6 +1,7 @@
 import { bool, defaultsOf, num, opt, str, type ParamDef, type Params, type Section } from '@shared/params/schema';
 import type { ConeAngle, PullPower, RiverParams } from './world/rivers';
-import type { TerrainParams, Theta } from './world/terrain';
+import { DEFAULT_CHAN, DEFAULT_FLOOD_H, DEFAULT_FLOOD_W, FLOOD_REF_FLOW, type TerrainParams, type Theta } from './world/terrain';
+import { LAND_TYPES } from './render/source';
 import type { GrowFrom, WorldParams } from './world/world';
 
 const KM = 1000;
@@ -233,7 +234,6 @@ export const TERRAIN_SECTION: Section = {
       help: 'How fast rivers flatten downstream as flow grows.',
     },
     { key: 'hgt.hill', label: 'Hillslope steepness', type: 'number', min: 0.25, max: 4, step: 0.05, default: 1, log: true, help: 'Multiplier on the hillslope of every land type (hills 0.15, marsh 0.01, …).' },
-    { key: 'hgt.valley', label: 'Floodplain width', type: 'number', min: 0, max: 200, step: 1, default: 40, unit: ' m', help: 'Flat valley floor half-width per √flow (a flow of 400 → 20× this).' },
     { key: 'hgt.relief', label: 'Mountain belts', type: 'number', min: 0, max: 1, step: 0.01, default: 0.5, help: 'Strength of a slow, region-scale relief field that makes several neighbouring biomes rugged or flat together.' },
     { key: 'hgt.ridge', label: 'Region ridge', type: 'number', min: 0, max: 400, step: 5, default: 80, unit: ' m', help: 'Ridge along region borders (rivers never cross them). Fades out near rivers.' },
     { key: 'hgt.divide', label: 'Basin divides', type: 'number', min: 0, max: 300, step: 5, default: 30, unit: ' m', help: 'Extra height where the basins of two different river systems meet.' },
@@ -242,7 +242,49 @@ export const TERRAIN_SECTION: Section = {
     { key: 'hgt.sea', label: 'Sea depth', type: 'number', min: 0, max: 2000, step: 10, default: 300, unit: ' m', help: 'Ocean depth 40 km and more from the coast.' },
   ],
 };
-export const TERRAIN_KEYS = new Set(TERRAIN_SECTION.params.map((p) => p.key));
+
+/** URL/param key of a land type's river gradient factor, e.g. 'hgt.ch.oldforest'. */
+export const chanKey = (name: string) => `hgt.ch.${name.toLowerCase().replace(/[^a-z]/g, '')}`;
+
+/** How fast the river bed rises upstream in each land type (factor on S₀). */
+export const GRADIENT_SECTION: Section = {
+  id: 'gradient',
+  title: 'Terrain · river gradient by land type',
+  open: false,
+  help: 'Factor on the channel slope S₀ where a river runs through each land type: how fast the river bed (and the land around it) rises upstream. 0 = flat, 1 = S₀.',
+  params: LAND_TYPES.map((t, i) => ({
+    key: chanKey(t.name),
+    label: t.name,
+    type: 'number' as const,
+    min: 0,
+    max: 5,
+    step: 0.05,
+    default: DEFAULT_CHAN[i],
+  })),
+};
+
+/** Floodplain half-width as a function of bed height: four control points of a monotone spline. */
+export const FLOODPLAIN_SECTION: Section = {
+  id: 'floodplain',
+  title: 'Terrain · floodplain',
+  open: false,
+  help: 'Half-width of the flat valley floor along a river, as a smooth curve over the river bed height through these four points (sorted by height; flat beyond the ends).',
+  params: [
+    ...[0, 1, 2, 3].flatMap((i) => [
+      { key: `hgt.fp.h${i + 1}`, label: `Point ${i + 1} · height`, type: 'number' as const, min: 0, max: 3000, step: 10, default: DEFAULT_FLOOD_H[i], unit: ' m' },
+      { key: `hgt.fp.w${i + 1}`, label: `Point ${i + 1} · half-width`, type: 'number' as const, min: 0, max: 3000, step: 10, default: DEFAULT_FLOOD_W[i], unit: ' m' },
+    ]),
+    {
+      key: 'hgt.fp.flow',
+      label: 'Scale with river size',
+      type: 'bool',
+      default: true,
+      help: `On: the curve is the half-width for a flow of ${FLOOD_REF_FLOW} attractors; bigger rivers get × √(flow / ${FLOOD_REF_FLOW}). Off: the curve alone, for every river.`,
+    },
+  ],
+};
+
+export const TERRAIN_KEYS = new Set([TERRAIN_SECTION, GRADIENT_SECTION, FLOODPLAIN_SECTION].flatMap((sec) => sec.params.map((p) => p.key)));
 
 export function toTerrainParams(p: Params): TerrainParams {
   return {
@@ -250,7 +292,10 @@ export function toTerrainParams(p: Params): TerrainParams {
     chSlope: num(p, 'hgt.chSlope'),
     theta: Number(str(p, 'hgt.theta')) as Theta,
     hill: num(p, 'hgt.hill'),
-    valley: num(p, 'hgt.valley'),
+    chanFactor: LAND_TYPES.map((t) => num(p, chanKey(t.name))),
+    floodH: [1, 2, 3, 4].map((i) => num(p, `hgt.fp.h${i}`)),
+    floodW: [1, 2, 3, 4].map((i) => num(p, `hgt.fp.w${i}`)),
+    floodFlow: bool(p, 'hgt.fp.flow'),
     relief: num(p, 'hgt.relief'),
     ridge: num(p, 'hgt.ridge'),
     divide: num(p, 'hgt.divide'),
@@ -324,7 +369,7 @@ export const VIEW_SECTION: Section = {
   ],
 };
 
-export const ALL_DEFS: ParamDef[] = [...SECTIONS.flatMap((s) => s.params), ...RIVER_SECTION.params, ...TERRAIN_SECTION.params, ...VIEW_SECTION.params];
+export const ALL_DEFS: ParamDef[] = [...SECTIONS.flatMap((s) => s.params), ...RIVER_SECTION.params, ...TERRAIN_SECTION.params, ...GRADIENT_SECTION.params, ...FLOODPLAIN_SECTION.params, ...VIEW_SECTION.params];
 export const GEN_KEYS = new Set(SECTIONS.flatMap((s) => s.params.map((p) => p.key)));
 
 export function defaults(): Params {

@@ -187,8 +187,8 @@ Sandbox 3's map plus a **height map fitted to its rivers and biomes** and a **3D
 
 | Step | Method |
 |---|---|
-| **River beds** | Steady-state stream-power law integrated upstream from the sea (the χ integral): each step adds `Δx · S₀ · flow^−θ`. Beds rise strictly upstream; big rivers are flatter. θ is ⅜, 7⁄16 or ½, computed with √ only (bit-exact) |
-| **Hillslopes** | A geodesic distance (8-connected Dijkstra) from every river bed and the coast, with the hillslope steepness of each land type as the cost, so every cell drains to a river or the sea. Big rivers get a flat floodplain ∝ √flow. A slow, region-scale relief field makes mountain belts span several biomes. Land-type parameters are blended across biome borders |
+| **River beds** | Steady-state stream-power law integrated upstream from the sea (the χ integral): each step adds `Δx · S₀ · factor(land type) · flow^−θ`. Beds rise strictly upstream; big rivers are flatter. The gradient factor of each of the 13 land types (now including **Mountains**) is a setting. θ is ⅜, 7⁄16 or ½, computed with √ only (bit-exact) |
+| **Hillslopes** | A geodesic distance (8-connected Dijkstra) from every river bed and the coast, with the hillslope steepness of each land type as the cost, so every cell drains to a river or the sea. Rivers get a flat **floodplain** whose half-width is a monotone cubic spline over the bed height, through 4 configurable points (wide in the lowlands, narrow in the mountains), optionally × √(flow/100). A slow, region-scale relief field makes mountain belts span several biomes. Land-type parameters are blended across biome borders |
 | **Divides** | A ridge along region borders (rivers never cross them), and a smaller one where two river systems' basins meet. Both fade out near rivers |
 | **Detail** | fbm or ridged noise per land type, masked to zero on the river beds |
 | **Repair** | Rivers burnt in (AGREE: a trench plus a linear buffer), then an ε-Priority-Flood over the region's own land, seeded from the sea and the region border, so there are no pits |
