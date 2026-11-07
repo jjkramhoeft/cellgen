@@ -11,7 +11,8 @@
  *               further out (up to `maxHops` biome steps) for the nearest ocean.
  *   Growth      each iteration, every attractor pulls on its nearest node within the
  *               influence radius dᵢ; each pulled node grows one step D towards the mean
- *               direction of its attractors, plus `jitter` × a random unit vector (the
+ *               direction of its attractors (each weighted by a power of its distance,
+ *               see `pull`), plus `jitter` × a random unit vector (the
  *               "random motion"). Attractors within the kill distance dₖ of a node are
  *               reached and removed. When no attractor is within dᵢ of any node, the
  *               closest node–attractor pair is bridged with a straight run of nodes, so
@@ -27,6 +28,20 @@ import { hash4, sfc32, type Rng } from '@shared/core/hash';
 import { keyI, keyJ, packKey } from './level';
 import type { World } from './world';
 
+export type PullPower = 'normal' | 'squared' | 'sqrt';
+
+/** Weight of one attractor's pull at squared distance d2, for an influence radius² di2 (√ only, no pow: bit-exact). */
+export function pullWeight(power: PullPower, d2: number, di2: number): number {
+  switch (power) {
+    case 'squared':
+      return d2 / di2;
+    case 'sqrt':
+      return Math.sqrt(Math.sqrt(d2 / di2));
+    default:
+      return 1;
+  }
+}
+
 export interface RiverParams {
   /** attractors per eligible subbiome */
   perSub: number;
@@ -38,6 +53,12 @@ export interface RiverParams {
   kill: number;
   /** random motion: weight of a random unit vector added to each growth direction */
   jitter: number;
+  /**
+   * Pull weighting: each attractor adds its unit vector × (d / dᵢ)^k to the growth
+   * direction of its nearest node. 'normal' k = 0 (every pull equal, the paper),
+   * 'squared' k = 2 (far attractors dominate), 'sqrt' k = ½ (mildly favours far ones).
+   */
+  pull: PullPower;
   /** leave out subbiomes that touch the ocean */
   skipCoast: boolean;
   /** how many biome steps a landlocked region searches for an ocean */
@@ -354,8 +375,9 @@ export class Rivers {
           closeA[k] = a;
           closeD[k] = nearD2[a];
         }
-        sx[k] += (ax[a] - nx[k]) / d;
-        sy[k] += (ay[a] - ny[k]) / d;
+        const wgt = pullWeight(P.pull, nearD2[a], di2) / d;
+        sx[k] += (ax[a] - nx[k]) * wgt;
+        sy[k] += (ay[a] - ny[k]) * wgt;
       }
       if (touched.length === 0) {
         // nothing within dᵢ: bridge the closest node–attractor pair with a straight run

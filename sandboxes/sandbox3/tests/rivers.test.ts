@@ -96,6 +96,21 @@ describe('space-colonization rivers', () => {
     expect(still.reached).toBe(still.ax.length);
   });
 
+  it('pull power: every variant reaches all attractors deterministically, and changes the rivers', () => {
+    const r = landRegions(world(), 1)[0];
+    const xs: number[][] = [];
+    for (const pull of ['normal', 'squared', 'sqrt'] as const) {
+      const a = new Rivers(world(), rp({ pull, jitter: 0 })).compute(r);
+      const b = new Rivers(world(), rp({ pull, jitter: 0 })).compute(r);
+      expect(a.reached).toBe(a.ax.length);
+      expect(Array.from(b.x)).toEqual(Array.from(a.x));
+      xs.push(Array.from(a.x));
+    }
+    expect(xs[1]).not.toEqual(xs[0]);
+    expect(xs[2]).not.toEqual(xs[0]);
+    expect(xs[2]).not.toEqual(xs[1]);
+  });
+
   it('runs in reasonable time per region', () => {
     const w = world();
     const rv = new Rivers(w, rp());

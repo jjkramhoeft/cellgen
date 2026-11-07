@@ -81,7 +81,11 @@ const GENESIS_PX = new Map(GENESIS.map((g) => [g.origin, packRGB(g.rgb)]));
 const FLAT_LAND = pack(150, 178, 112);
 const FLAT_OCEAN = pack(38, 78, 128);
 const COAST = pack(14, 20, 30);
-const REGION_EDGE = [250, 236, 200] as const;
+/** Region borders: a 3 px red dashed line, drawn over land, ocean and the coastline. */
+const REGION_EDGE = pack(235, 28, 36);
+const REGION_THICK = 3;
+const REGION_DASH_ON = 4;
+const REGION_DASH_PERIOD = 7;
 
 /** ±amt lightness factor from a hash. */
 function jitterF(h: number, amt: number): number {
@@ -176,8 +180,10 @@ export function mapSource(world: World, genKey: string, v: ViewOpts): RasterSour
       let oc = new Uint8Array(0);
       let pSub = new Float64Array(0);
       let pBio = new Float64Array(0);
-      let pReg = new Float64Array(0);
+      /** region keys of the REGION_THICK rows above (regUp[0] = the row just above) */
+      let regUp: Float64Array<ArrayBuffer>[] = [];
       let pOc = new Uint8Array(0);
+      let row = 0;
       let first = true;
       const tmp = {} as Cell;
       return (_py, wy, wx0, dwx, n, out, off) => {
@@ -189,9 +195,10 @@ export function mapSource(world: World, genKey: string, v: ViewOpts): RasterSour
           oc = new Uint8Array(n);
           pSub = new Float64Array(n);
           pBio = new Float64Array(n);
-          pReg = new Float64Array(n);
+          regUp = Array.from({ length: REGION_THICK }, () => new Float64Array(n));
           pOc = new Uint8Array(n);
           first = true;
+          row = 0;
         }
         const detail = v.lod === 'full' || S / dwx >= DETAIL_PX;
         // borders fade out before they would turn the map into a mesh
@@ -208,13 +215,25 @@ export function mapSource(world: World, genKey: string, v: ViewOpts): RasterSour
           if (cell.biome === v.pinBiome) px = mix(px, 253, 231, 37, 0.22);
           out[off + c] = px;
         }
+        // dash phase anchored to the world, so dashes don't crawl while panning
+        const iy = Math.round(wy / dwx);
+        const ix0 = Math.round(wx0 / dwx);
         for (let c = 0; c < n; c++) {
           let px = out[off + c];
           const l = c > 0;
           const u = !first;
-          if (v.coast && ((l && oc[c - 1] !== oc[c]) || (u && pOc[c] !== oc[c]))) px = COAST;
-          else if (regEdges && ((l && reg[c - 1] !== reg[c]) || (u && pReg[c] !== reg[c])))
-            px = mix(px, REGION_EDGE[0], REGION_EDGE[1], REGION_EDGE[2], 0.75);
+          // REGION_THICK px thick: a pixel is on the border when another region lies within
+          // 1 px to its right, REGION_THICK − 1 px to its left, or REGION_THICK rows above
+          let regEdge = false;
+          if (regEdges) {
+            const r = reg[c];
+            if (c + 1 < n && reg[c + 1] !== r) regEdge = true;
+            for (let k = 1; k < REGION_THICK && !regEdge; k++) if (c - k >= 0 && reg[c - k] !== r) regEdge = true;
+            for (let k = 0; k < REGION_THICK && k < row && !regEdge; k++) if (regUp[k][c] !== r) regEdge = true;
+          }
+          const dash = (((ix0 + c + iy) % REGION_DASH_PERIOD) + REGION_DASH_PERIOD) % REGION_DASH_PERIOD < REGION_DASH_ON;
+          if (regEdge && dash) px = REGION_EDGE;
+          else if (v.coast && ((l && oc[c - 1] !== oc[c]) || (u && pOc[c] !== oc[c]))) px = COAST;
           else if (bioEdges && ((l && bio[c - 1] !== bio[c]) || (u && pBio[c] !== bio[c]))) px = scale(px, 0.5);
           else if (subEdges && ((l && sub[c - 1] !== sub[c]) || (u && pSub[c] !== sub[c]))) px = scale(px, 0.8);
           // pinned outlines on top
@@ -229,14 +248,17 @@ export function mapSource(world: World, genKey: string, v: ViewOpts): RasterSour
           out[off + c] = px;
         }
         first = false;
+        row++;
         let t = pSub;
         pSub = sub;
         sub = t;
         t = pBio;
         pBio = bio;
         bio = t;
-        t = pReg;
-        pReg = reg;
+        // shift region rows down: regUp[0] ← reg, the oldest row is reused
+        t = regUp[REGION_THICK - 1];
+        for (let k = REGION_THICK - 1; k > 0; k--) regUp[k] = regUp[k - 1];
+        regUp[0] = reg;
         reg = t;
         const to = pOc;
         pOc = oc;

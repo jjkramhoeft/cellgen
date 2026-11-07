@@ -1,5 +1,5 @@
 import { bool, defaultsOf, num, opt, str, type ParamDef, type Params, type Section } from '@shared/params/schema';
-import type { RiverParams } from './world/rivers';
+import type { PullPower, RiverParams } from './world/rivers';
 import type { GrowFrom, WorldParams } from './world/world';
 
 const KM = 1000;
@@ -126,6 +126,14 @@ export const RIVER_SECTION: Section = {
       default: 0.4,
       help: 'Weight of a random unit vector added to every growth direction. 0 = straight, smooth branches; 1 = strongly meandering.',
     },
+    {
+      key: 'riv.pull',
+      label: 'Pull power',
+      type: 'select',
+      default: 'normal',
+      options: opt(['normal', 'Normal (equal pulls)'], ['squared', 'Distance² to target'], ['sqrt', '√ distance to target']),
+      help: 'How each attractor’s pull is weighted when a node picks its step direction. Normal = every attractor in range pulls equally (the paper); distance² = far attractors dominate (longer, straighter reaches); √distance = a mild bias towards far ones.',
+    },
     { key: 'riv.coast', label: 'Skip coast subbiomes', type: 'bool', default: true, help: 'No attractors in subbiomes that touch the ocean (the spec).' },
   ],
 };
@@ -138,6 +146,7 @@ export function toRiverParams(p: Params): RiverParams {
     influence: num(p, 'riv.influence') * KM,
     kill: num(p, 'riv.kill') * KM,
     jitter: num(p, 'riv.jitter'),
+    pull: str(p, 'riv.pull') as PullPower,
     skipCoast: bool(p, 'riv.coast'),
     maxHops: 4,
   };
