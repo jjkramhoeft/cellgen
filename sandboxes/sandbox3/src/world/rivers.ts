@@ -1,9 +1,10 @@
 /**
  * Space-colonization rivers (Runions et al. 2005, open venation), computed per region.
  *
- * For one region:
- *   Attractors  every land, non-coastal subbiome owned by one of the region's land
- *               biomes gets `perSub` points, scattered inside the subbiome's cell.
+ * For one region (as drawn: a biome merged into a neighbouring region's biome belongs
+ * to that region, see `regionBiomes`):
+ *   Attractors  every land, non-coastal subbiome drawn in the region gets `perSub`
+ *               points, scattered inside the subbiome's cell.
  *   Roots       one per ocean biome that touches the region's land (a Gabriel
  *               neighbour of a land biome it owns, or an ocean biome it owns with a land
  *               neighbour). The root sits at the ocean biome's point (its site), so each
@@ -16,7 +17,13 @@
  *               "random motion"). Attractors within the kill distance dₖ of a node are
  *               reached and removed. When no attractor is within dᵢ of any node, the
  *               closest node–attractor pair is bridged with a straight run of nodes, so
- *               growth always continues until every attractor is used.
+ *               growth continues until every reachable attractor is used.
+ *   Border      rivers never enter another region's land (ocean is open to all): a step
+ *               that would is redirected, an attractor that a node cannot reach in a
+ *               straight line inside the region stops pulling on that node, and bridges
+ *               only follow straight runs inside the region. Attractors in pockets of
+ *               the region walled off from the sea by other regions stay unreached.
+ *               Landlocked regions are exempt (they must cross a neighbour to drain).
  *   Width       each node counts the attractors it reached; summed upstream this is the
  *               flow of the river at that node (a river's mouth carries all attractors
  *               its tree reached). Line width is drawn from the flow.
@@ -103,6 +110,12 @@ const ST_ATTR = 0x7e01;
 const ST_GROW = 0x7e02;
 const MAX_ITER = 6000;
 const MAX_NODES = 120000;
+/** an attractor that cannot see this many of its closest nodes is given up on by the bridge */
+const MAX_BANS = 12;
+/** bridge passes in a row that find no pair inside the region before growth stops */
+const MAX_BLOCKED_PASSES = 6;
+/** a node that has grown this many children and still wants more is stopped */
+const MAX_CHILDREN = 8;
 
 /** Random vector in the unit disc (rejection sampling: no trig, so bit-exact everywhere). */
 function discVec(rng: Rng, out: [number, number]): void {
@@ -159,7 +172,30 @@ export class Rivers {
     return false;
   }
 
-  /** Attractor points of a region (land, non-coastal subbiomes of its land biomes). */
+  /**
+   * Raw biomes drawn as part of a region. This is not `region.biomes` (the biomes whose
+   * site lies in the region): a merged biome is drawn in the region of the biome it
+   * joined, which may be a neighbouring region. Rivers follow what is drawn.
+   */
+  regionBiomes(rkey: number): number[] {
+    const w = this.world;
+    const reg = w.region(rkey);
+    const out: number[] = [];
+    for (let dj = -1; dj <= 1; dj++) {
+      for (let di = -1; di <= 1; di++) {
+        for (const b of w.region(packKey(reg.i + di, reg.j + dj)).biomes) if (w.biomeCell(b).region === rkey) out.push(b);
+      }
+    }
+    return out.sort((a, b) => a - b);
+  }
+
+  /** Is a point land drawn in this region? */
+  private isOwnLand(rkey: number, x: number, y: number): boolean {
+    const c = this.world.cellAt(x, y, true);
+    return !c.ocean && c.region === rkey;
+  }
+
+  /** Attractor points of a region (land, non-coastal subbiomes drawn in the region). */
   attractors(rkey: number): { ax: number[]; ay: number[] } {
     const w = this.world;
     const reg = w.region(rkey);
@@ -167,24 +203,33 @@ export class Rivers {
     const rng = sfc32(hash4(w.p.seed, ST_ATTR, reg.i, reg.j));
     const ax: number[] = [];
     const ay: number[] = [];
-    for (const b of reg.biomes) {
+    for (const b of this.regionBiomes(rkey)) {
       if (w.biomeCell(b).ocean) continue;
       for (const s of w.biomeSubs(w.biome(b))) {
-        if (w.subCell(s).ocean) continue;
+        const sc = w.subCell(s);
+        if (sc.ocean || sc.region !== rkey) continue;
         if (this.p.skipCoast && this.isCoastSub(s)) continue;
         const sd = w.sub(s);
         for (let k = 0; k < this.p.perSub; k++) {
-          // a random point inside the (warped) subbiome cell; fall back to the site
-          let px = sd.x;
-          let py = sd.y;
+          // a random point inside the (warped) subbiome cell, on the region's land;
+          // fall back to the site, or drop the point when even that is outside
+          let px = NaN;
+          let py = NaN;
           for (let t = 0; t < 24; t++) {
             const qx = sd.x + (rng() - 0.5) * 1.6 * L.size;
             const qy = sd.y + (rng() - 0.5) * 1.6 * L.size;
-            if (L.query(qx, qy) === s) {
+            // nested, every point of subbiome s is classified as s (checked above);
+            // otherwise the point itself must be the region's land
+            if (L.query(qx, qy) === s && (w.p.nest || this.isOwnLand(rkey, qx, qy))) {
               px = qx;
               py = qy;
               break;
             }
+          }
+          if (Number.isNaN(px)) {
+            if (!this.isOwnLand(rkey, sd.x, sd.y)) continue;
+            px = sd.x;
+            py = sd.y;
           }
           ax.push(px);
           ay.push(py);
@@ -197,10 +242,10 @@ export class Rivers {
   /** Ocean biomes that receive a root, and the land biome each root faces. */
   rootPairs(rkey: number): { pairs: { ocean: number; land: number }[]; landlocked: boolean } {
     const w = this.world;
-    const reg = w.region(rkey);
-    const own = new Set(reg.biomes);
+    const mine = this.regionBiomes(rkey);
+    const own = new Set(mine);
     const isOcean = (b: number) => w.biomeCell(b).ocean;
-    const land = reg.biomes.filter((b) => !isOcean(b));
+    const land = mine.filter((b) => !isOcean(b));
     // nearest land neighbour of an ocean biome, preferring the region's own biomes
     const facing = (o: number): number => {
       let best = -1;
@@ -217,7 +262,7 @@ export class Rivers {
     };
     const oceans = new Set<number>();
     for (const b of land) for (const n of w.biomeNbrs(w.biome(b))) if (isOcean(n)) oceans.add(n);
-    for (const b of reg.biomes) if (isOcean(b) && facing(b) >= 0) oceans.add(b);
+    for (const b of mine) if (isOcean(b) && facing(b) >= 0) oceans.add(b);
     let landlocked = false;
     if (oceans.size === 0 && land.length > 0) {
       // breadth-first search outwards for the nearest ocean biomes
@@ -276,14 +321,31 @@ export class Rivers {
     let ny = new Float64Array(cap);
     let par = new Int32Array(cap);
     let own = new Int32Array(cap);
+    /** 1 = the node may not grow any more (its pulls lead out of the region) */
+    let dead = new Uint8Array(cap);
     let n = 0;
     const di2 = P.influence * P.influence;
     const dk2 = P.kill * P.kill;
+    // node grid with cell size dᵢ (to re-find an attractor's nearest node when one dies)
+    const nodeGrid = new Map<number, number[]>();
+
+    /**
+     * Rivers stay in their region: a node may lie over any ocean (the stretch from a
+     * root to the coast) or on the region's own land, never on another region's land.
+     * A landlocked region has to cross its neighbours to reach the sea, so it is exempt.
+     */
+    const inside = (x: number, y: number): boolean => {
+      if (landlocked) return true;
+      const c = w.cellAt(x, y, true);
+      return c.ocean || c.region === rkey;
+    };
+    /** a segment from node k to (x, y): its end and midpoint must be inside */
+    const segInside = (k: number, x: number, y: number): boolean => inside(x, y) && inside((nx[k] + x) * 0.5, (ny[k] + y) * 0.5);
 
     const addNode = (x: number, y: number, parent: number): number => {
       if (n === cap) {
         cap *= 2;
-        const grow = <T extends Float64Array | Int32Array>(arr: T, C: { new (n: number): T }) => {
+        const grow = <T extends Float64Array | Int32Array | Uint8Array>(arr: T, C: { new (n: number): T }) => {
           const b = new C(cap);
           b.set(arr);
           return b;
@@ -292,12 +354,18 @@ export class Rivers {
         ny = grow(ny, Float64Array);
         par = grow(par, Int32Array);
         own = grow(own, Int32Array);
+        dead = grow(dead, Uint8Array);
       }
       const id = n++;
       nx[id] = x;
       ny[id] = y;
       par[id] = parent;
       own[id] = 0;
+      dead[id] = 0;
+      const nk = gk(Math.floor(x / G), Math.floor(y / G));
+      const nl = nodeGrid.get(nk);
+      if (nl) nl.push(id);
+      else nodeGrid.set(nk, [id]);
       // reach attractors within dₖ, and update the nearest node of those within dᵢ
       const ci = Math.floor(x / G);
       const cj = Math.floor(y / G);
@@ -325,12 +393,91 @@ export class Rivers {
       return id;
     };
 
+    /** attractor → nodes it may not pull, because the straight line between them leaves the region */
+    const banned = new Map<number, Set<number>>();
+    const isBanned = (a: number, k: number): boolean => banned.get(a)?.has(k) ?? false;
+    /** Does the straight line from node k to (x, y) stay inside (sampled every D/2)? */
+    const visible = (k: number, x: number, y: number): boolean => {
+      const d = Math.sqrt((x - nx[k]) ** 2 + (y - ny[k]) ** 2);
+      if (d < 1e-9) return true;
+      const ux = (x - nx[k]) / d;
+      const uy = (y - ny[k]) / d;
+      const h = P.step * 0.5;
+      const m = Math.ceil(d / h);
+      for (let s = 1; s < m; s++) if (!inside(nx[k] + ux * h * s, ny[k] + uy * h * s)) return false;
+      return inside(x, y);
+    };
+    const addBan = (a: number, k: number): void => {
+      let s = banned.get(a);
+      if (!s) banned.set(a, (s = new Set()));
+      s.add(k);
+    };
+    /**
+     * Re-find an attractor's nearest live node within dᵢ that it can reach in a straight
+     * line inside the region (none → −1). Nodes it cannot reach are banned on the way,
+     * so a node that merely sits in open water (whose steps are never blocked) cannot
+     * keep collecting pulls it can never follow.
+     */
+    const refind = (a: number): void => {
+      const cands: { m: number; d2: number }[] = [];
+      const ci = Math.floor(ax[a] / G);
+      const cj = Math.floor(ay[a] / G);
+      for (let dj = -1; dj <= 1; dj++) {
+        for (let di = -1; di <= 1; di++) {
+          const list = nodeGrid.get(gk(ci + di, cj + dj));
+          if (!list) continue;
+          for (const m of list) {
+            if (dead[m] || isBanned(a, m)) continue;
+            cands.push({ m, d2: (ax[a] - nx[m]) ** 2 + (ay[a] - ny[m]) ** 2 });
+          }
+        }
+      }
+      cands.sort((p, q) => p.d2 - q.d2 || p.m - q.m);
+      near[a] = -1;
+      nearD2[a] = Infinity;
+      for (const c of cands) {
+        if (c.d2 >= di2) break;
+        if (visible(c.m, ax[a], ay[a])) {
+          near[a] = c.m;
+          nearD2[a] = c.d2;
+          return;
+        }
+        addBan(a, c.m);
+      }
+    };
+    const ban = (a: number, k: number): void => {
+      addBan(a, k);
+      if (near[a] === k) refind(a);
+    };
+    /** Stop node k growing, and hand its attractors to other nodes. */
+    const kill = (k: number): void => {
+      dead[k] = 1;
+      for (let a = 0; a < A; a++) if (alive[a] && near[a] === k) refind(a);
+    };
+
     const roots: number[] = [];
     const rootOcean: number[] = [];
     if (A > 0) {
       for (const pr of pairs) {
         const o = w.biome(pr.ocean);
-        roots.push(addNode(o.x, o.y, -1));
+        let px = o.x;
+        let py = o.y;
+        if (!w.cellAt(px, py, true).ocean) {
+          // coasts follow subbiome cells, so the biome's site can fall on a sliver of
+          // land: use the closest ocean subbiome site of the biome instead
+          let bd = Infinity;
+          for (const s of w.biomeSubs(o)) {
+            const sd = w.sub(s);
+            const d2 = (sd.x - o.x) ** 2 + (sd.y - o.y) ** 2;
+            if (d2 < bd && w.cellAt(sd.x, sd.y, true).ocean) {
+              bd = d2;
+              px = sd.x;
+              py = sd.y;
+            }
+          }
+          if (bd === Infinity) continue;
+        }
+        roots.push(addNode(px, py, -1));
         rootOcean.push(pr.ocean);
       }
     }
@@ -345,8 +492,11 @@ export class Rivers {
     let closeA = new Int32Array(cap);
     let closeD = new Float64Array(cap);
     let lastChild = new Int32Array(cap).fill(-1);
+    /** children grown per node */
+    let kids = new Int32Array(cap);
     let iterations = 0;
     let bridges = 0;
+    let blockedPasses = 0;
     const touched: number[] = [];
 
     while (aliveCount > 0 && roots.length > 0 && iterations < MAX_ITER && n < MAX_NODES) {
@@ -360,6 +510,9 @@ export class Rivers {
         const lc = new Int32Array(cap).fill(-1);
         lc.set(lastChild);
         lastChild = lc;
+        const kc = new Int32Array(cap);
+        kc.set(kids);
+        kids = kc;
       }
       touched.length = 0;
       for (let a = 0; a < A; a++) {
@@ -384,20 +537,43 @@ export class Rivers {
         let ba = -1;
         let bn = -1;
         let bd = Infinity;
+        // every attractor's closest live node, tried closest pair first; a pair whose
+        // straight run would leave the region is skipped
+        const cand: { a: number; k: number; d2: number }[] = [];
         for (let a = 0; a < A; a++) {
           if (!alive[a]) continue;
+          let ck = -1;
+          let cd = Infinity;
+          if ((banned.get(a)?.size ?? 0) >= MAX_BANS) continue;
           for (let k = 0; k < n; k++) {
+            if (dead[k] || isBanned(a, k)) continue;
             const dx = ax[a] - nx[k];
             const dy = ay[a] - ny[k];
             const d2 = dx * dx + dy * dy;
-            if (d2 < bd) {
-              bd = d2;
-              ba = a;
-              bn = k;
+            if (d2 < cd) {
+              cd = d2;
+              ck = k;
             }
           }
+          if (ck >= 0) cand.push({ a, k: ck, d2: cd });
         }
-        if (ba < 0) break;
+        cand.sort((p, q) => p.d2 - q.d2 || p.a - q.a);
+        let newBans = 0;
+        for (const c of cand) {
+          if (visible(c.k, ax[c.a], ay[c.a])) {
+            ba = c.a;
+            bn = c.k;
+            bd = c.d2;
+            break;
+          }
+          ban(c.a, c.k);
+          newBans++;
+        }
+        if (ba < 0) {
+          // every closest pair leaves the region; the bans may expose other pairs
+          if (newBans > 0 && ++blockedPasses < MAX_BLOCKED_PASSES) continue;
+          break;
+        }
         bridges++;
         const d = Math.sqrt(bd);
         const ux = (ax[ba] - nx[bn]) / d;
@@ -442,6 +618,33 @@ export class Rivers {
           const d = Math.sqrt(closeD[k]);
           tx = nx[k] + ((ax[a] - nx[k]) / d) * P.step;
           ty = ny[k] + ((ay[a] - ny[k]) / d) * P.step;
+        }
+        if (!segInside(k, tx, ty)) {
+          // the step would leave the region. Attractors that k cannot reach in a
+          // straight line stop pulling on it (they turn to other nodes); k regrows
+          // from the remaining pulls next iteration.
+          let dropped = false;
+          for (let a = 0; a < A; a++) {
+            if (alive[a] && near[a] === k && !visible(k, ax[a], ay[a])) {
+              ban(a, k);
+              dropped = true;
+            }
+          }
+          if (dropped) continue;
+          // every pull is reachable but their mean is not: head straight for the closest
+          const a = closeA[k];
+          const d = Math.sqrt(closeD[k]);
+          tx = nx[k] + ((ax[a] - nx[k]) / d) * P.step;
+          ty = ny[k] + ((ay[a] - ny[k]) / d) * P.step;
+          if (!segInside(k, tx, ty)) {
+            kill(k);
+            continue;
+          }
+        }
+        if (++kids[k] > MAX_CHILDREN) {
+          // safety net: a node that keeps sprouting is stuck against the border
+          kill(k);
+          continue;
         }
         lastChild[k] = addNode(tx, ty, k);
       }
