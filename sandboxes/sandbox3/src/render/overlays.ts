@@ -289,6 +289,8 @@ export interface RiverDraw {
   /** hide segments carrying fewer attractors */
   minFlow: number;
   attractors: boolean;
+  /** also draw the stretch from each root (an ocean biome point) across the water to the coast */
+  sea: boolean;
 }
 
 /** On-screen width (CSS px) of a river segment carrying `flow` attractors. */
@@ -327,6 +329,7 @@ export function drawRivers(f: Frame, rivers: Rivers, o: RiverDraw, deadline: num
     for (let k = 0; k < rr.n; k++) {
       const p = rr.parent[k];
       if (p < 0 || rr.flow[k] < o.minFlow) continue;
+      if (!o.sea && rr.wet[k] && rr.wet[p]) continue;
       const w = Math.max(0.5, Math.round(riverPx(rr.flow[k], stepPx, o.width) * dpr * 4) / 4);
       let b = buckets.get(w);
       if (!b) buckets.set(w, (b = []));

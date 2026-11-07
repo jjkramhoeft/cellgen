@@ -98,7 +98,7 @@ export const RIVER_SECTION: Section = {
   title: 'Rivers · space colonization',
   enableKey: 'riv.on',
   open: true,
-  help: 'Per region: a root on the coast of every ocean biome touching the region, attractors in every inland (non-coastal) land subbiome, then space colonization until every attractor is reached. Width = attractors reached upstream.',
+  help: 'Per region: a root at the point of every ocean biome touching the region, attractors in every inland (non-coastal) land subbiome, then space colonization until every attractor is reached. Width = attractors reached upstream.',
   params: [
     { key: 'riv.on', label: 'Rivers', type: 'bool', default: true },
     { key: 'riv.points', label: 'Attractors / subbiome', type: 'int', min: 1, max: 30, default: 10, help: 'Attraction points scattered inside every inland land subbiome.' },
@@ -179,6 +179,7 @@ export const VIEW_SECTION: Section = {
     { key: 'view.grid', label: 'Kilometre grid', type: 'bool', default: false, view: true },
     { key: 'view.riverWidth', label: 'River width', type: 'number', min: 0.25, max: 4, step: 0.05, default: 1, log: true, view: true, help: 'Scales the flow-based line width.' },
     { key: 'view.riverMin', label: 'Min river flow', type: 'int', min: 1, max: 200, default: 1, log: true, view: true, help: 'Hide river segments that carry fewer attractors than this (prunes twigs).' },
+    { key: 'view.riverSea', label: 'River paths over sea', type: 'bool', default: false, view: true, help: 'Roots sit at ocean biome points, so each river first crosses the water to the coast. Off hides that stretch.' },
     { key: 'view.attractors', label: 'Attractor points', type: 'bool', default: false, view: true, help: 'Reached attractors in grey, unreached in red, river roots as rings.' },
     { key: 'view.lod', label: 'Detail', type: 'select', default: 'auto', options: opt(['auto', 'Auto (skip sub-pixel cells)'], ['full', 'Always full detail']), view: true },
   ],

@@ -61,16 +61,27 @@ describe('space-colonization rivers', () => {
     }
   });
 
-  it('puts roots on the coast: land at the root, ocean just seaward', () => {
+  it('puts one root at the point of each ocean biome touching the region, and flags nodes over water', () => {
     const w = world();
     const rv = new Rivers(w, rp());
     for (const r of landRegions(w, 3)) {
       const rr = rv.get(r);
+      expect(new Set(rr.rootOcean).size).toBe(rr.rootOcean.length);
       rr.roots.forEach((k, t) => {
         const o = w.biome(rr.rootOcean[t]);
         expect(w.biomeCell(o.key).ocean).toBe(true);
-        expect(w.cellAt(rr.x[k], rr.y[k], true).ocean).toBe(false);
+        expect([rr.x[k], rr.y[k]]).toEqual([o.x, o.y]);
+        // the ocean biome touches land
+        expect(w.biomeNbrs(o).some((n) => !w.biomeCell(n).ocean)).toBe(true);
       });
+      for (let k = 0; k < rr.n; k++) expect(rr.wet[k]).toBe(w.cellAt(rr.x[k], rr.y[k], true).ocean ? 1 : 0);
+      // rivers that reached anything cross the coast: some of their nodes are on land
+      for (const k of rr.roots) {
+        if (rr.flow[k] === 0) continue;
+        let dry = false;
+        for (let m = 0; m < rr.n && !dry; m++) if (rr.tree[m] === k && !rr.wet[m]) dry = true;
+        expect(dry).toBe(true);
+      }
     }
   });
 

@@ -6,8 +6,8 @@
  *               biomes gets `perSub` points, scattered inside the subbiome's cell.
  *   Roots       one per ocean biome that touches the region's land (a Gabriel
  *               neighbour of a land biome it owns, or an ocean biome it owns with a land
- *               neighbour). The root sits on the coastline between that ocean biome and
- *               its nearest land neighbour, found by bisection. A landlocked region looks
+ *               neighbour). The root sits at the ocean biome's point (its site), so each
+ *               river first grows across the water to the coast. A landlocked region looks
  *               further out (up to `maxHops` biome steps) for the nearest ocean.
  *   Growth      each iteration, every attractor pulls on its nearest node within the
  *               influence radius dᵢ; each pulled node grows one step D towards the mean
@@ -55,6 +55,8 @@ export interface RegionRivers {
   flow: Int32Array;
   /** root node of each node's tree */
   tree: Int32Array;
+  /** 1 when the node lies over ocean (the part of a river between its root and the coast) */
+  wet: Uint8Array;
   /** root node indices and the ocean biome each root drains into */
   roots: number[];
   rootOcean: number[];
@@ -222,30 +224,6 @@ export class Rivers {
     return { pairs, landlocked };
   }
 
-  /** Point on the coastline between an ocean biome site and a land biome site (land side). */
-  coastPoint(ocean: number, land: number): [number, number] {
-    const w = this.world;
-    const a = w.biome(ocean);
-    const b = w.biome(land);
-    let ox = a.x;
-    let oy = a.y;
-    let lx = b.x;
-    let ly = b.y;
-    if (!w.cellAt(ox, oy, true).ocean || w.cellAt(lx, ly, true).ocean) return [(ox + lx) / 2, (oy + ly) / 2];
-    for (let k = 0; k < 16; k++) {
-      const mx = (ox + lx) / 2;
-      const my = (oy + ly) / 2;
-      if (w.cellAt(mx, my, true).ocean) {
-        ox = mx;
-        oy = my;
-      } else {
-        lx = mx;
-        ly = my;
-      }
-    }
-    return [lx, ly];
-  }
-
   compute(rkey: number): RegionRivers {
     const t0 = performance.now();
     const w = this.world;
@@ -330,8 +308,8 @@ export class Rivers {
     const rootOcean: number[] = [];
     if (A > 0) {
       for (const pr of pairs) {
-        const [x, y] = this.coastPoint(pr.ocean, pr.land);
-        roots.push(addNode(x, y, -1));
+        const o = w.biome(pr.ocean);
+        roots.push(addNode(o.x, o.y, -1));
         rootOcean.push(pr.ocean);
       }
     }
@@ -450,6 +428,8 @@ export class Rivers {
     // flow: attractors reached at the node and everything upstream of it
     const flow = own.slice(0, n);
     for (let k = n - 1; k >= 0; k--) if (par[k] >= 0) flow[par[k]] += flow[k];
+    const wet = new Uint8Array(n);
+    for (let k = 0; k < n; k++) wet[k] = w.cellAt(nx[k], ny[k], true).ocean ? 1 : 0;
     const tree = new Int32Array(n);
     for (let k = 0; k < n; k++) tree[k] = par[k] < 0 ? k : tree[par[k]];
     let x0 = Infinity;
@@ -477,6 +457,7 @@ export class Rivers {
       own: own.slice(0, n),
       flow,
       tree,
+      wet,
       roots,
       rootOcean,
       ax,

@@ -138,7 +138,7 @@ export function renderInspector(host: HTMLElement, world: World | null, rivers: 
     html += `<div class="lvl"><h4><i style="background:#3f93dc"></i>River</h4>`;
     html += `<div class="kv" title="Attractors reached at this node and everything upstream: sets the line width"><span>Flow here</span><b>${r.flow[k]} attractors</b></div>`;
     html += `<div class="kv" title="All attractors this river reached"><span>Whole river</span><b>${r.flow[root]} attractors</b></div>`;
-    html += `<div class="kv"><span>Mouth</span><b>${(r.x[root] / 1000).toFixed(1)}, ${(r.y[root] / 1000).toFixed(1)} km</b></div>`;
+    html += `<div class="kv" title="The river's root: the point of the ocean biome it drains into"><span>Root</span><b>${(r.x[root] / 1000).toFixed(1)}, ${(r.y[root] / 1000).toFixed(1)} km</b></div>`;
     if (ocean !== undefined) html += `<div class="kv"><span>Drains into</span><b>ocean biome ${ij(ocean)}</b></div>`;
     html += '</div>';
   }
