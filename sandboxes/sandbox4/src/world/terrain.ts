@@ -1,6 +1,14 @@
 /**
  * Height map fitted to the map and its rivers ("Option B" of
- * docs/research/heightmap-from-biomes-and-rivers.md), computed per region on a raster.
+ * docs/research/heightmap-from-biomes-and-rivers.md), computed per tile on a raster.
+ *
+ * Tiles: tile (I, J) owns the k × k block of region lattice cells (i, j) with ⌊i/k⌋ = I,
+ * ⌊j/k⌋ = J (k = 4, fewer for very large regions, see `tileSide`). Ownership is by the
+ * region's lattice index, never by position: a region's land spills out of its lattice
+ * cell, so a height is looked up as point → region → tile. One raster covers the whole
+ * tile (steps 1–4 run once), and step 5 runs once per owned region on it. The result is
+ * bit-identical to one raster per region (see tests/terrain.test.ts) at a fraction of
+ * the cost, since the halo is shared (docs/research/sandbox4-tiling.md).
  *
  *   0. Channel profile   every river node gets a bed elevation from the steady-state
  *                        stream-power law integrated upstream from the sea (the χ
@@ -20,17 +28,18 @@
  *   5. Fill              ε-Priority-Flood over the region's own land, seeded from the
  *                        sea and the region border: no pits, everything drains.
  *
- * Seamless: steps 1–4 are a pure function of position (all sources within the raster's
- * halo are used, and the grid is aligned to the world), so two regions' rasters agree
- * where they overlap; step 5 only changes cells strictly inside the region and keeps
- * the border cells. Deterministic: + − × ÷ √ and the simplex noise only, heap ties
- * broken by cell index.
+ * Seamless: steps 1–4 are a pure function of position more than ~20 km inside the
+ * raster (all sources within the raster's halo are used, and the grid is aligned to the
+ * world), so two rasters agree where they overlap; step 5 only changes cells strictly
+ * inside a region and keeps its border cells. Deterministic: + − × ÷ √ and the simplex
+ * noise only, heap ties broken by cell index (row-major, i.e. world order on any
+ * world-aligned raster, so the fill does not depend on the raster's extent).
  */
 import { MinHeap } from '@shared/core/heap';
 import { fbm, ridged } from '@shared/core/noise';
 import { hash4 } from '@shared/core/hash';
 import { landType } from '../render/source';
-import { keyI, keyJ } from './level';
+import { keyI, keyJ, packKey } from './level';
 import type { RegionRivers, Rivers } from './rivers';
 import { World } from './world';
 
@@ -67,7 +76,20 @@ export interface TerrainParams {
   burn: number;
   /** ocean depth far from the coast, metres */
   sea: number;
+  /** regions per tile side (default: `tileSide` of the region size) */
+  tile?: number;
 }
+
+/** World span a tile aims for at most, metres: 4 regions of the default 128 km. */
+const TILE_SPAN = 512_000;
+
+/** Regions per tile side: 4, or fewer when regions are so large that 4 would make huge rasters. */
+export function tileSide(regionSize: number): number {
+  return Math.max(1, Math.min(4, Math.floor(TILE_SPAN / regionSize)));
+}
+
+/** Raster cells kept in the tile cache (h + cls + reg ≈ 9 bytes per cell). */
+const CACHE_CELLS = 12_000_000;
 
 /**
  * Relief per cosmetic land type (index = LAND_TYPES order in render/source.ts).
@@ -172,8 +194,14 @@ const ST_NOISE = 0x7e12;
 export const OCEAN = 0;
 export const LAND = 1;
 
-export interface RegionTerrain {
-  region: number;
+/**
+ * One tile's height raster, cropped to the cells of its owned regions (plus a 2-cell
+ * margin). Only typed arrays and numbers, so it can be posted from a worker.
+ */
+export interface TerrainTile {
+  /** tile key (packKey(I, J)) and regions per side */
+  tile: number;
+  k: number;
   /** world position of cell (0, 0)'s centre, cell size, size */
   x0: number;
   y0: number;
@@ -182,18 +210,25 @@ export interface RegionTerrain {
   ny: number;
   /** final heights (metres; ocean negative) */
   h: Float32Array;
-  /** heights before the fill (steps 1–4): a pure function of position */
-  pre: Float32Array;
   /** OCEAN / LAND */
   cls: Uint8Array;
-  /** region key of each cell */
-  reg: Float64Array;
-  /** bed elevation of this region's river nodes */
-  bed: Float64Array;
+  /** region of each cell, as an index into `regKeys` (see `regionAt`) */
+  reg: Int32Array;
+  regKeys: Float64Array;
   /** cells raised by the fill, and the largest raise (lakes / flats), metres */
   filled: number;
   maxFill: number;
   ms: number;
+}
+
+/** Region key of a tile cell. */
+export function regionAt(t: TerrainTile, q: number): number {
+  return t.regKeys[t.reg[q]];
+}
+
+/** Does the tile own (compute the final heights of) this region? */
+export function ownsRegion(t: TerrainTile, rkey: number): boolean {
+  return packKey(Math.floor(keyI(rkey) / t.k), Math.floor(keyJ(rkey) / t.k)) === t.tile;
 }
 
 /** A^−θ for dyadic θ, with √ only (bit-exact everywhere). */
@@ -215,7 +250,13 @@ export class Terrain {
   readonly world: World;
   readonly rivers: Rivers;
   readonly p: TerrainParams;
-  private tiles = new Map<number, RegionTerrain>();
+  /** regions per tile side */
+  readonly k: number;
+  /** tile cache, oldest first */
+  private tiles = new Map<number, TerrainTile>();
+  private cells = 0;
+  /** tiles the view still needs: never evicted */
+  private needed = new Set<number>();
   private beds = new Map<number, Float64Array>();
   private readonly seedR: number;
   private readonly seedN: number;
@@ -226,9 +267,65 @@ export class Terrain {
     this.world = world;
     this.rivers = rivers;
     this.p = p;
+    this.k = Math.max(1, Math.floor(p.tile ?? tileSide(world.p.regionSize)));
     this.seedR = hash4(world.p.seed, ST_RELIEF, 0, 0) | 0;
     this.seedN = hash4(world.p.seed, ST_NOISE, 0, 0) | 0;
     this.flood = monotoneSpline(p.floodH, p.floodW);
+  }
+
+  /** Key of the tile that owns a region. */
+  tileOf(rkey: number): number {
+    return packKey(Math.floor(keyI(rkey) / this.k), Math.floor(keyJ(rkey) / this.k));
+  }
+
+  /** The regions a tile owns, lattice order. */
+  tileRegions(tkey: number): number[] {
+    const I = keyI(tkey) * this.k;
+    const J = keyJ(tkey) * this.k;
+    const out: number[] = [];
+    for (let dj = 0; dj < this.k; dj++) for (let di = 0; di < this.k; di++) out.push(packKey(I + di, J + dj));
+    return out;
+  }
+
+  /** Tiles whose regions may cover a world rectangle (regions spill one lattice cell out). */
+  tilesIn(x0: number, y0: number, x1: number, y1: number): number[] {
+    const set = new Set<number>();
+    for (const rk of World.cellsIn(this.world.regionLevel, x0, y0, x1, y1, 1)) set.add(this.tileOf(rk));
+    return [...set];
+  }
+
+  /** Tiles the view needs: kept in the cache whatever its size. */
+  setNeeded(keys: Iterable<number>): void {
+    this.needed = new Set(keys);
+  }
+
+  /** Add a tile (computed here or by a worker), evicting the oldest unneeded ones when over budget. */
+  put(t: TerrainTile): void {
+    const old = this.tiles.get(t.tile);
+    if (old) this.cells -= old.nx * old.ny;
+    this.tiles.delete(t.tile);
+    this.tiles.set(t.tile, t);
+    this.cells += t.nx * t.ny;
+    for (const [key, v] of this.tiles) {
+      if (this.cells <= CACHE_CELLS) break;
+      if (key === t.tile || this.needed.has(key)) continue;
+      this.tiles.delete(key);
+      this.cells -= v.nx * v.ny;
+    }
+  }
+
+  hasTile(tkey: number): boolean {
+    return this.tiles.has(tkey);
+  }
+
+  /** The tile with this key, computed on demand. */
+  getTile(tkey: number): TerrainTile {
+    let t = this.tiles.get(tkey);
+    if (!t) {
+      t = this.compute(tkey);
+      this.put(t);
+    }
+    return t;
   }
 
   /** River gradient factor of a land type (falls back to 1 for an unknown index). */
@@ -241,18 +338,14 @@ export class Terrain {
     return this.tiles.size;
   }
 
-  peek(rkey: number): RegionTerrain | undefined {
-    return this.tiles.get(rkey);
+  /** The tile holding a region's heights, if computed. */
+  peek(rkey: number): TerrainTile | undefined {
+    return this.tiles.get(this.tileOf(rkey));
   }
 
-  get(rkey: number): RegionTerrain {
-    let t = this.tiles.get(rkey);
-    if (!t) {
-      if (this.tiles.size > 240) this.tiles.clear();
-      t = this.compute(rkey);
-      this.tiles.set(rkey, t);
-    }
-    return t;
+  /** The tile holding a region's heights, computed on demand. */
+  get(rkey: number): TerrainTile {
+    return this.getTile(this.tileOf(rkey));
   }
 
   /** Region-scale relief factor (mountain belts spanning several biomes). */
@@ -285,17 +378,33 @@ export class Terrain {
   }
 
   /**
-   * Height at a point, bilinear in the raster of the point's region. NaN when that
-   * raster is not computed yet and `compute` is false.
+   * Height at a point, bilinear in the tile of the point's region. NaN when that
+   * tile is not computed yet and `compute` is false.
    */
   heightAt(x: number, y: number, compute = false): number {
     const r = this.world.cellAt(x, y, true).region;
-    const t = compute ? this.get(r) : this.tiles.get(r);
+    const t = compute ? this.get(r) : this.peek(r);
     return t ? sample(t, x, y) : NaN;
   }
 
+  /** Raster bounding box of a tile: the union of its regions' boxes. */
+  private bbox(tkey: number): [number, number, number, number] {
+    let x0 = Infinity;
+    let y0 = Infinity;
+    let x1 = -Infinity;
+    let y1 = -Infinity;
+    for (const rk of this.tileRegions(tkey)) {
+      const b = this.regionBox(rk);
+      x0 = Math.min(x0, b[0]);
+      y0 = Math.min(y0, b[1]);
+      x1 = Math.max(x1, b[2]);
+      y1 = Math.max(y1, b[3]);
+    }
+    return [x0, y0, x1, y1];
+  }
+
   /** Raster bounding box of a region: its drawn biomes' sites plus a cell of slack, plus the halo. */
-  private bbox(rkey: number): [number, number, number, number] {
+  private regionBox(rkey: number): [number, number, number, number] {
     const w = this.world;
     const B = w.biomeLevel.size;
     let x0 = Infinity;
@@ -319,12 +428,13 @@ export class Terrain {
     return [x0 - m, y0 - m, x1 + m, y1 + m];
   }
 
-  compute(rkey: number): RegionTerrain {
+  /** Compute a tile (not cached: see `getTile`). */
+  compute(tkey: number): TerrainTile {
     const t0 = performance.now();
     const w = this.world;
     const P = this.p;
     const res = P.res;
-    const [bx0, by0, bx1, by1] = this.bbox(rkey);
+    const [bx0, by0, bx1, by1] = this.bbox(tkey);
     const i0 = Math.floor(bx0 / res);
     const j0 = Math.floor(by0 / res);
     const nx = Math.floor(bx1 / res) - i0 + 1;
@@ -337,7 +447,10 @@ export class Terrain {
 
     // ---- classify + per-land-type parameters
     const cls = new Uint8Array(N);
-    const reg = new Float64Array(N);
+    /** region of each cell, as an index into regKeys */
+    const reg = new Int32Array(N);
+    const regKeys: number[] = [];
+    const regIndex = new Map<number, number>();
     const lt = new Int8Array(N).fill(-1);
     const cell = {} as ReturnType<World['cellAt']>;
     for (let j = 0; j < ny; j++) {
@@ -345,7 +458,13 @@ export class Terrain {
         const c = w.cellAt(cx(i), cy(j), true, cell);
         const q = j * nx + i;
         cls[q] = c.ocean ? OCEAN : LAND;
-        reg[q] = c.region;
+        let ri = regIndex.get(c.region);
+        if (ri === undefined) {
+          ri = regKeys.length;
+          regKeys.push(c.region);
+          regIndex.set(c.region, ri);
+        }
+        reg[q] = ri;
         if (!c.ocean) lt[q] = landType(c.biome);
       }
     }
@@ -482,59 +601,125 @@ export class Terrain {
       }, buf);
     }
 
-    // ---- 5. ε-Priority-Flood over the region's own land
-    const h = Float32Array.from(pre);
-    const own = (q: number) => cls[q] === LAND && reg[q] === rkey;
-    const done = new Uint8Array(N);
-    let filled = 0;
-    let maxFill = 0;
+    // ---- 5. ε-Priority-Flood over each owned region's land, on the shared raster.
+    // A region's fill only writes its own land cells and is seeded from its sea and
+    // border cells, which keep their `pre` heights, so the regions do not interact.
+    const h = pre;
+    const owned = new Int8Array(regKeys.length);
+    for (const rk of this.tileRegions(tkey)) {
+      const ri = regIndex.get(rk);
+      if (ri !== undefined) owned[ri] = 1;
+    }
+    // seeds per owned region index: sea cells next to its land, its land on the raster
+    // edge or next to another region's land (raster scan order; the heap orders them)
+    const seeds = new Map<number, number[]>();
+    const addSeed = (ri: number, q: number) => {
+      const list = seeds.get(ri);
+      if (list) list.push(q);
+      else seeds.set(ri, [q]);
+    };
+    const nbrRegs: number[] = [];
     for (let j = 0; j < ny; j++) {
       for (let i = 0; i < nx; i++) {
         const q = j * nx + i;
-        let seed = false;
-        if (cls[q] === OCEAN) seed = ownNbr(own, nx, ny, i, j);
-        else if (own(q)) seed = i === 0 || j === 0 || i === nx - 1 || j === ny - 1 || landNbrDiffers(cls, reg, nx, ny, i, j);
-        if (seed) {
-          done[q] = 1;
-          heap.push(h[q], q);
+        if (cls[q] === OCEAN) {
+          nbrRegs.length = 0;
+          for (let jj = j - 1; jj <= j + 1; jj++) {
+            for (let ii = i - 1; ii <= i + 1; ii++) {
+              if (ii < 0 || jj < 0 || ii >= nx || jj >= ny || (ii === i && jj === j)) continue;
+              const r = jj * nx + ii;
+              if (cls[r] === LAND && owned[reg[r]] && !nbrRegs.includes(reg[r])) nbrRegs.push(reg[r]);
+            }
+          }
+          for (const ri of nbrRegs) addSeed(ri, q);
+        } else if (owned[reg[q]] && (i === 0 || j === 0 || i === nx - 1 || j === ny - 1 || landNbrDiffers(cls, reg, nx, ny, i, j))) {
+          addSeed(reg[q], q);
         }
       }
     }
-    while (heap.size > 0) {
-      const q = heap.pop();
-      const i = q % nx;
-      const j = (q - i) / nx;
-      const hq = h[q];
-      for (let n = 0; n < 8; n++) {
-        const ii = i + DI[n];
-        const jj = j + DJ[n];
-        if (ii < 0 || jj < 0 || ii >= nx || jj >= ny) continue;
-        const r = jj * nx + ii;
-        if (done[r] || !own(r)) continue;
-        done[r] = 1;
-        // Math.fround: the raise is decided in the stored (float32) precision
-        const lift = Math.fround(hq + EPS);
-        if (h[r] < lift) {
-          if (lift - h[r] > maxFill) maxFill = lift - h[r];
-          h[r] = lift;
-          filled++;
+    /** cells already processed in the current region's fill (stamped with pass + 1) */
+    const done = new Int32Array(N);
+    let filled = 0;
+    let maxFill = 0;
+    let pass = 0;
+    for (const [ri, list] of [...seeds.entries()].sort((a, b) => a[0] - b[0])) {
+      pass++;
+      for (const q of list) {
+        done[q] = pass;
+        heap.push(h[q], q);
+      }
+      while (heap.size > 0) {
+        const q = heap.pop();
+        const i = q % nx;
+        const j = (q - i) / nx;
+        const hq = h[q];
+        for (let n = 0; n < 8; n++) {
+          const ii = i + DI[n];
+          const jj = j + DJ[n];
+          if (ii < 0 || jj < 0 || ii >= nx || jj >= ny) continue;
+          const r = jj * nx + ii;
+          if (done[r] === pass || cls[r] !== LAND || reg[r] !== ri) continue;
+          done[r] = pass;
+          // Math.fround: the raise is decided in the stored (float32) precision
+          const lift = Math.fround(hq + EPS);
+          if (h[r] < lift) {
+            if (lift - h[r] > maxFill) maxFill = lift - h[r];
+            h[r] = lift;
+            filled++;
+          }
+          heap.push(h[r], r);
         }
-        heap.push(h[r], r);
       }
     }
 
+    // ---- crop to the owned regions' cells (+ a margin for bilinear sampling)
+    let ci0 = nx;
+    let cj0 = ny;
+    let ci1 = -1;
+    let cj1 = -1;
+    for (let j = 0; j < ny; j++) {
+      for (let i = 0; i < nx; i++) {
+        if (!owned[reg[j * nx + i]]) continue;
+        if (i < ci0) ci0 = i;
+        if (i > ci1) ci1 = i;
+        if (j < cj0) cj0 = j;
+        if (j > cj1) cj1 = j;
+      }
+    }
+    if (ci1 < 0) {
+      // no owned region reaches the raster (cannot happen with lattice-aligned tiles): keep the centre cell
+      ci0 = ci1 = nx >> 1;
+      cj0 = cj1 = ny >> 1;
+    }
+    const M = 2;
+    ci0 = Math.max(0, ci0 - M);
+    cj0 = Math.max(0, cj0 - M);
+    ci1 = Math.min(nx - 1, ci1 + M);
+    cj1 = Math.min(ny - 1, cj1 + M);
+    const cnx = ci1 - ci0 + 1;
+    const cny = cj1 - cj0 + 1;
+    const ch = new Float32Array(cnx * cny);
+    const ccls = new Uint8Array(cnx * cny);
+    const creg = new Int32Array(cnx * cny);
+    for (let j = 0; j < cny; j++) {
+      const src0 = (j + cj0) * nx + ci0;
+      ch.set(h.subarray(src0, src0 + cnx), j * cnx);
+      ccls.set(cls.subarray(src0, src0 + cnx), j * cnx);
+      creg.set(reg.subarray(src0, src0 + cnx), j * cnx);
+    }
+
     return {
-      region: rkey,
-      x0: X0,
-      y0: Y0,
+      tile: tkey,
+      k: this.k,
+      x0: cx(ci0),
+      y0: cy(cj0),
       res,
-      nx,
-      ny,
-      h,
-      pre,
-      cls,
-      reg,
-      bed: this.bed(rkey),
+      nx: cnx,
+      ny: cny,
+      h: ch,
+      cls: ccls,
+      reg: creg,
+      regKeys: Float64Array.from(regKeys),
       filled,
       maxFill,
       ms: performance.now() - t0,
@@ -713,7 +898,7 @@ function hasNbr(cls: Uint8Array, nx: number, ny: number, i: number, j: number, w
 }
 
 /** Does a land cell touch (4-neighbourhood) a land cell of another region? */
-function landNbrDiffers(cls: Uint8Array, reg: Float64Array, nx: number, ny: number, i: number, j: number): boolean {
+function landNbrDiffers(cls: Uint8Array, reg: Int32Array, nx: number, ny: number, i: number, j: number): boolean {
   const q = j * nx + i;
   const r = reg[q];
   if (i > 0 && cls[q - 1] === LAND && reg[q - 1] !== r) return true;
@@ -731,18 +916,8 @@ function labNbrDiffers(cls: Uint8Array, lab: Float64Array, nx: number, ny: numbe
   return (i > 0 && ok(q - 1)) || (i < nx - 1 && ok(q + 1)) || (j > 0 && ok(q - nx)) || (j < ny - 1 && ok(q + nx));
 }
 
-function ownNbr(own: (q: number) => boolean, nx: number, ny: number, i: number, j: number): boolean {
-  for (let jj = j - 1; jj <= j + 1; jj++) {
-    for (let ii = i - 1; ii <= i + 1; ii++) {
-      if (ii < 0 || jj < 0 || ii >= nx || jj >= ny || (ii === i && jj === j)) continue;
-      if (own(jj * nx + ii)) return true;
-    }
-  }
-  return false;
-}
-
-/** Bilinear sample of a region raster (clamped at the raster edge). */
-export function sample(t: RegionTerrain, x: number, y: number): number {
+/** Bilinear sample of a tile raster (clamped at the raster edge). */
+export function sample(t: TerrainTile, x: number, y: number): number {
   const fx = (x - t.x0) / t.res;
   const fy = (y - t.y0) / t.res;
   let i = Math.floor(fx);

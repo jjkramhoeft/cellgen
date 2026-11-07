@@ -23,6 +23,8 @@ import { computeViewStats, renderInspector, renderLegend, renderLevels, renderRu
 import { buildMesh, View3D, type HeightGrid } from './render/view3d';
 import { Rivers } from './world/rivers';
 import { FLOOD_REF_FLOW, monotoneSpline, Terrain } from './world/terrain';
+import type { FromTerrainWorker, ToTerrainWorker } from './world/terrain.worker';
+import { keyI, keyJ } from './world/level';
 import { World } from './world/world';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -49,9 +51,15 @@ let rivers!: Rivers;
 let terrain!: Terrain;
 /** bumped when new terrain rasters are ready (part of the raster key, so the map re-renders) */
 let terrainVer = 0;
-/** regions around the view whose terrain is still being computed (-1 = view too large) */
+/** terrain tiles around the view still being computed (-1 = view too large) */
 let terrainPending = 0;
 let terrainBump = 0;
+/** parameter generation of the terrain (tiles from an older one are dropped) */
+let terrainGen = 0;
+/** tiles received from the worker since the last frame */
+let tilesArrived = 0;
+/** the missing tiles last asked of the worker (comma-joined) */
+let tilesWanted = '';
 /** the 3D mesh/texture are stale */
 let dirty3d = true;
 /** regions around the view whose rivers are still being computed */
@@ -201,8 +209,34 @@ function regenerate(): void {
   viewChanged();
 }
 
+/** Terrain tiles are computed in a worker; without one (very old browsers) on the main thread. */
+const terrainWorker: Worker | null = (() => {
+  try {
+    const wk = new Worker(new URL('./world/terrain.worker.ts', import.meta.url), { type: 'module' });
+    wk.onmessage = (e: MessageEvent<FromTerrainWorker>) => {
+      const m = e.data;
+      if (m.kind !== 'tile' || m.gen !== terrainGen) return;
+      terrain.put(m.tile);
+      tilesArrived++;
+      invalidate();
+    };
+    wk.onerror = (e) => console.error('terrain worker', e.message);
+    return wk;
+  } catch {
+    return null;
+  }
+})();
+
+function toWorker(m: ToTerrainWorker): void {
+  terrainWorker?.postMessage(m);
+}
+
 function newTerrain(): void {
   terrain = new Terrain(world, rivers, toTerrainParams(params));
+  terrainGen++;
+  tilesWanted = '';
+  tilesArrived = 0;
+  toWorker({ kind: 'gen', gen: terrainGen, world: world.p, rivers: rivers.p, terrain: terrain.p });
   terrainVer++;
   dirty3d = true;
 }
@@ -212,33 +246,55 @@ function needTerrain(): boolean {
   return params['view.3d'] === true || params['view.hillshade'] === true || str(params, 'view.color') === 'height';
 }
 
+/** Ask the worker for exactly these tiles (nearest first), unless that is what it already has. */
+function wantTiles(keys: number[]): void {
+  const sig = keys.join(',');
+  if (sig === tilesWanted) return;
+  tilesWanted = sig;
+  toWorker({ kind: 'want', gen: terrainGen, tiles: keys });
+}
+
 /**
- * Compute the terrain rasters of the regions around the view until `deadline`.
- * Returns how many are still missing (-1 when the view spans too many regions).
+ * Get the terrain tiles around the view: requested from the worker (or, without one,
+ * computed here until `deadline`). Returns how many are still missing (-1 when the
+ * view spans too many regions).
  */
 function prepareTerrain(deadline: number): number {
   const [x0, y0] = screenToWorld(cam, vp, 0, 0);
   const [x1, y1] = screenToWorld(cam, vp, vp.w, vp.h);
   const R = world.regionLevel;
   const budget = TERRAIN_MAX_REGIONS * (terrain.p.res / 1000) ** 2;
-  if (World.countIn(R, x0, y0, x1, y1, 1) > budget) return -1;
-  let pending = 0;
-  let made = 0;
-  for (const rk of World.cellsIn(R, x0, y0, x1, y1, 1)) {
-    if (terrain.peek(rk)) continue;
-    if (performance.now() > deadline) {
-      pending++;
-      continue;
-    }
-    terrain.get(rk);
-    made++;
+  if (World.countIn(R, x0, y0, x1, y1, 1) > budget) {
+    terrain.setNeeded([]);
+    wantTiles([]);
+    return -1;
   }
-  // re-render the map when everything is in, or every ~1.5 s while regions arrive
+  // tiles of the regions around the view, nearest tile centre first
+  const span = R.size * terrain.k;
+  const dist = (t: number) => {
+    return ((keyI(t) + 0.5) * span - cam.cx) ** 2 + ((keyJ(t) + 0.5) * span - cam.cy) ** 2;
+  };
+  const tiles = terrain.tilesIn(x0, y0, x1, y1).sort((a, b) => dist(a) - dist(b));
+  terrain.setNeeded(tiles);
+  if (terrainWorker) wantTiles(tiles.filter((k) => !terrain.hasTile(k)));
+  else {
+    for (const k of tiles) {
+      if (terrain.hasTile(k)) continue;
+      if (performance.now() > deadline) break;
+      terrain.getTile(k);
+      tilesArrived++;
+    }
+  }
+  const pending = tiles.filter((k) => !terrain.hasTile(k)).length;
+  // re-render the map when everything is in, or every ~1.5 s while tiles arrive
   const now = performance.now();
-  if (made > 0 && (pending === 0 || now - terrainBump > 1500)) {
-    terrainVer++;
-    terrainBump = now;
-    dirty3d = true;
+  if (tilesArrived > 0) {
+    if (pending === 0 || now - terrainBump > 1500) {
+      tilesArrived = 0;
+      terrainVer++;
+      terrainBump = now;
+      dirty3d = true;
+    } else window.setTimeout(invalidate, 1500 - (now - terrainBump) + 10);
   }
   return pending;
 }
@@ -384,7 +440,8 @@ function frame(): void {
   const terrainBusy = terrainPending > 0;
   $('busy').hidden = !layer.busy && riverPending === 0 && !terrainBusy;
   if (params['view.3d'] === true) update3d(!layer.busy && riverPending === 0 && !terrainBusy && !interacting);
-  if (layer.busy || riverPending > 0 || terrainBusy) invalidate();
+  // with a worker, arriving tiles wake the loop (no need to spin while it works)
+  if (layer.busy || riverPending > 0 || (terrainBusy && !terrainWorker)) invalidate();
   else if (interacting || fresh) {
     clearTimeout(idleTimer);
     idleTimer = window.setTimeout(invalidate, 170);
@@ -404,8 +461,8 @@ function updateStatus(progress: number): void {
     `<span title="Width of the view">view <b>${fmtDist(vp.w / cam.zoom)}</b></span>` +
     (progress < 1 ? `<span class="rendering">rendering ${(progress * 100).toFixed(0)}%</span>` : '') +
     (riverPending > 0 ? `<span class="rendering" title="Regions whose rivers are still growing">rivers: ${riverPending} regions to go</span>` : '') +
-    (terrainPending > 0 ? `<span class="rendering" title="Regions whose height raster is still being computed">terrain: ${terrainPending} regions to go</span>` : '') +
-    (terrainPending < 0 ? `<span title="The height map is computed per region; zoom in to see it">terrain: zoom in</span>` : '') +
+    (terrainPending > 0 ? `<span class="rendering" title="Terrain tiles (${terrain.k} × ${terrain.k} regions) still being computed">terrain: ${terrainPending} tile${terrainPending === 1 ? '' : 's'} to go</span>` : '') +
+    (terrainPending < 0 ? `<span title="The height map is computed per tile of regions; zoom in to see it">terrain: zoom in</span>` : '') +
     `<span class="scalebar"><i style="width:${px.toFixed(0)}px"></i>${fmtDist(len)}</span>`;
 }
 

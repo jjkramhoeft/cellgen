@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { defaults, toRiverParams, toTerrainParams, toWorldParams } from '../src/params';
 import { Rivers } from '../src/world/rivers';
-import { invPowTheta, LAND, monotoneSpline, OCEAN, Terrain, type RegionTerrain, type TerrainParams } from '../src/world/terrain';
+import { invPowTheta, LAND, monotoneSpline, OCEAN, ownsRegion, regionAt, Terrain, tileSide, type TerrainParams, type TerrainTile } from '../src/world/terrain';
+import { keyI, keyJ, packKey } from '../src/world/level';
 import { LAND_TYPES, landType } from '../src/render/source';
 import { World } from '../src/world/world';
 
@@ -23,7 +24,8 @@ function landRegions(w: World, n: number): number[] {
   return out;
 }
 
-const own = (t: RegionTerrain, q: number) => t.cls[q] === LAND && t.reg[q] === t.region;
+/** Is cell q land of region r (whose final heights this tile computed)? */
+const own = (t: TerrainTile, q: number, r: number) => t.cls[q] === LAND && regionAt(t, q) === r;
 
 describe('terrain', () => {
   it('A^−θ from √ only matches Math.pow', () => {
@@ -51,7 +53,7 @@ describe('terrain', () => {
       for (let j = 1; j < T.ny - 1; j++) {
         for (let i = 1; i < T.nx - 1; i++) {
           const q = j * T.nx + i;
-          if (!own(T, q)) continue;
+          if (!own(T, q, r)) continue;
           let lower = false;
           let seed = false;
           for (let dj = -1; dj <= 1; dj++) {
@@ -60,7 +62,7 @@ describe('terrain', () => {
               const n = q + dj * T.nx + di;
               if (T.h[n] < T.h[q]) lower = true;
               if (T.cls[n] === OCEAN && (di === 0 || dj === 0 || true)) seed = true;
-              if (T.cls[n] === LAND && T.reg[n] !== r && (di === 0 || dj === 0)) seed = true;
+              if (T.cls[n] === LAND && regionAt(T, n) !== r && (di === 0 || dj === 0)) seed = true;
             }
           }
           expect(lower || seed).toBe(true);
@@ -74,10 +76,11 @@ describe('terrain', () => {
 
   it('the sea is below sea level and the land above it', () => {
     const { t } = setup();
-    const T = t.get(landRegions(t.world, 1)[0]);
+    const r = landRegions(t.world, 1)[0];
+    const T = t.get(r);
     for (let q = 0; q < T.h.length; q++) {
       if (T.cls[q] === OCEAN) expect(T.h[q]).toBeLessThan(0);
-      else if (own(T, q)) expect(T.h[q]).toBeGreaterThan(-25); // only burnt channels dip below 0
+      else if (ownsRegion(T, regionAt(T, q))) expect(T.h[q]).toBeGreaterThan(-25); // only burnt channels dip below 0
     }
   });
 
@@ -86,6 +89,7 @@ describe('terrain', () => {
     const r = landRegions(t.world, 1)[0];
     const T = t.get(r);
     const rr = rv.get(r);
+    const bed = t.bed(r);
     let ok = 0;
     let all = 0;
     for (let k = 0; k < rr.n; k++) {
@@ -93,29 +97,31 @@ describe('terrain', () => {
       const i = Math.round((rr.x[k] - T.x0) / T.res);
       const j = Math.round((rr.y[k] - T.y0) / T.res);
       const q = j * T.nx + i;
-      if (!own(T, q)) continue;
+      if (!own(T, q, r)) continue;
       all++;
-      if (T.h[q] <= T.bed[k] + 1) ok++;
+      if (T.h[q] <= bed[k] + 1) ok++;
     }
     expect(all).toBeGreaterThan(200);
     expect(ok / all).toBeGreaterThan(0.95);
   });
 
-  it('is seamless: two neighbouring regions compute the same heights along their shared border', () => {
+  it('is seamless: two neighbouring tiles compute the same heights along their shared border', () => {
     const { w, t } = setup();
     let compared = 0;
     let maxDiff = 0;
     for (const a of landRegions(w, 4)) {
       const A = t.get(a);
-      // every border cell of A that touches another region's land
+      // every land cell of A's own regions that touches land of a region owned by another tile
       for (let j = 1; j < A.ny - 1; j++) {
         for (let i = 1; i < A.nx - 1; i++) {
           const q = j * A.nx + i;
           if (A.cls[q] !== LAND) continue;
           const nb = [q - 1, q + 1, q - A.nx, q + A.nx].find((n) => A.cls[n] === LAND && A.reg[n] !== A.reg[q]);
-          if (nb === undefined || (A.reg[q] !== a && A.reg[nb] !== a)) continue;
-          const other = A.reg[q] === a ? A.reg[nb] : A.reg[q];
-          const B = t.get(other);
+          if (nb === undefined) continue;
+          const rq = regionAt(A, q);
+          const rn = regionAt(A, nb);
+          if (ownsRegion(A, rq) === ownsRegion(A, rn)) continue;
+          const B = t.get(ownsRegion(A, rq) ? rn : rq);
           const x = A.x0 + i * A.res;
           const y = A.y0 + j * A.res;
           const bi = Math.round((x - B.x0) / B.res);
@@ -128,6 +134,47 @@ describe('terrain', () => {
     }
     expect(compared).toBeGreaterThan(200);
     expect(maxDiff).toBeLessThan(1e-3);
+  }, 60_000);
+
+  it('a tile computes exactly the heights of one raster per region (bit for bit)', () => {
+    const per = setup({ tile: 1 });
+    const tiled = setup({ tile: 4 });
+    const r0 = per.w.regionAt(0, 0);
+    const I = Math.floor(keyI(r0) / 4) * 4;
+    const J = Math.floor(keyJ(r0) / 4) * 4;
+    let compared = 0;
+    let maxDiff = 0;
+    for (let dj = 0; dj < 4; dj++) {
+      for (let di = 0; di < 4; di++) {
+        const r = packKey(I + di, J + dj);
+        const P = per.t.get(r);
+        const T = tiled.t.get(r);
+        for (let q = 0; q < P.h.length; q++) {
+          if (!own(P, q, r)) continue;
+          const i = q % P.nx;
+          const j = (q - i) / P.nx;
+          const ti = Math.round((P.x0 + i * P.res - T.x0) / T.res);
+          const tj = Math.round((P.y0 + j * P.res - T.y0) / T.res);
+          maxDiff = Math.max(maxDiff, Math.abs(P.h[q] - T.h[tj * T.nx + ti]));
+          compared++;
+        }
+      }
+    }
+    expect(compared).toBeGreaterThan(20000);
+    expect(maxDiff).toBe(0);
+  });
+
+  it('tiles: 4 regions per side by default, fewer for huge regions; ownership by lattice index', () => {
+    expect(tileSide(128000)).toBe(4);
+    expect(tileSide(32000)).toBe(4);
+    expect(tileSide(256000)).toBe(2);
+    expect(tileSide(512000)).toBe(1);
+    const { t } = setup();
+    expect(t.k).toBe(4);
+    expect(t.tileOf(packKey(-1, 0))).toBe(packKey(-1, 0));
+    expect(t.tileOf(packKey(3, 7))).toBe(packKey(0, 1));
+    expect(t.tileOf(packKey(4, -5))).toBe(packKey(1, -2));
+    expect(t.tileRegions(packKey(0, 1))).toContain(packKey(3, 7));
   });
 
   it('is deterministic', () => {
@@ -139,11 +186,11 @@ describe('terrain', () => {
 
   it('settings change the relief as intended', () => {
     const r = landRegions(setup().w, 1)[0];
-    const mean = (T: RegionTerrain) => {
+    const mean = (T: TerrainTile) => {
       let s = 0;
       let n = 0;
       for (let q = 0; q < T.h.length; q++) {
-        if (!own(T, q)) continue;
+        if (!own(T, q, r)) continue;
         s += T.h[q];
         n++;
       }
@@ -153,7 +200,7 @@ describe('terrain', () => {
     expect(mean(setup({ hill: 2 }).t.get(r))).toBeGreaterThan(base);
     expect(mean(setup({ chSlope: 0.05 }).t.get(r))).toBeGreaterThan(base);
     expect(mean(setup({ ridge: 0, divide: 0, noise: 0 }).t.get(r))).toBeLessThan(base);
-  });
+  }, 60_000);
 
   it('floodplain spline: through the points, no overshoot, flat beyond the ends, any point order', () => {
     const f = monotoneSpline([400, 0, 1000, 100], [150, 500, 40, 400]);
@@ -199,10 +246,10 @@ describe('terrain', () => {
 
   it('a wider floodplain flattens the valleys (lower mean land height)', () => {
     const r = landRegions(setup().w, 1)[0];
-    const mean = (T: RegionTerrain) => {
+    const mean = (T: TerrainTile) => {
       let s = 0;
       let n = 0;
-      for (let q = 0; q < T.h.length; q++) if (own(T, q)) (s += T.h[q]), n++;
+      for (let q = 0; q < T.h.length; q++) if (own(T, q, r)) (s += T.h[q]), n++;
       return s / n;
     };
     const narrow = mean(setup({ floodW: [100, 80, 40, 20] }).t.get(r));
