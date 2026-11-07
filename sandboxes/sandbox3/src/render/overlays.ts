@@ -291,6 +291,8 @@ export interface RiverDraw {
   attractors: boolean;
   /** also draw the stretch from each root (an ocean biome point) across the water to the coast */
   sea: boolean;
+  /** width exponent b in width ∝ flow^b (½ = Leonardo / hydraulic geometry, ⅓ = Murray) */
+  exp: number;
 }
 
 /**
@@ -300,10 +302,20 @@ export interface RiverDraw {
  */
 export const RIVER_REF_M = 2000;
 
-/** On-screen width (CSS px) of a river segment carrying `flow` attractors; `refPx` = RIVER_REF_M on screen. */
-export function riverPx(flow: number, refPx: number, scale: number): number {
+/** Flow whose width does not depend on the width exponent (the exponents pivot around it). */
+export const RIVER_REF_FLOW = 100;
+
+/**
+ * On-screen width (CSS px) of a river segment carrying `flow` attractors; `refPx` =
+ * RIVER_REF_M on screen. Width ∝ flow^exp (downstream hydraulic geometry, Leopold &
+ * Maddock 1953), normalised so a flow of RIVER_REF_FLOW is equally wide for every
+ * exponent; exp = ½ gives the original 0.45 + 0.3·√flow exactly. Render only, so
+ * Math.pow is fine here.
+ */
+export function riverPx(flow: number, refPx: number, scale: number, exp = 0.5): number {
   const zf = Math.min(2.2, Math.max(0.45, refPx / 7));
-  return scale * zf * (0.45 + 0.3 * Math.sqrt(flow));
+  const f = exp === 0.5 ? Math.sqrt(flow / RIVER_REF_FLOW) : Math.pow(flow / RIVER_REF_FLOW, exp);
+  return scale * zf * (0.45 + 3 * f);
 }
 
 /**
@@ -337,7 +349,7 @@ export function drawRivers(f: Frame, rivers: Rivers, o: RiverDraw, deadline: num
       const p = rr.parent[k];
       if (p < 0 || rr.flow[k] < o.minFlow) continue;
       if (!o.sea && rr.wet[k] && rr.wet[p]) continue;
-      const w = Math.max(0.5, Math.round(riverPx(rr.flow[k], refPx, o.width) * dpr * 4) / 4);
+      const w = Math.max(0.5, Math.round(riverPx(rr.flow[k], refPx, o.width, o.exp) * dpr * 4) / 4);
       let b = buckets.get(w);
       if (!b) buckets.set(w, (b = []));
       b.push([sx(f, rr.x[p]), sy(f, rr.y[p]), sx(f, rr.x[k]), sy(f, rr.y[k])]);

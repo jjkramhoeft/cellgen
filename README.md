@@ -181,6 +181,26 @@ tests/         nearest-site and neighbour checks, determinism and order independ
                rivers (attractor placement, every attractor reached, roots at ocean biome points, flow conservation)
 ```
 
+### Sandbox 4
+
+Sandbox 3's map plus a **height map fitted to its rivers and biomes** and a **3D landscape view**. It implements "Option B" of [docs/research/heightmap-from-biomes-and-rivers.md](docs/research/heightmap-from-biomes-and-rivers.md). The height map is computed per region, on a raster with a 48 km margin, while you look.
+
+| Step | Method |
+|---|---|
+| **River beds** | Steady-state stream-power law integrated upstream from the sea (the χ integral): each step adds `Δx · S₀ · flow^−θ`. Beds rise strictly upstream; big rivers are flatter. θ is ⅜, 7⁄16 or ½, computed with √ only (bit-exact) |
+| **Hillslopes** | A geodesic distance (8-connected Dijkstra) from every river bed and the coast, with the hillslope steepness of each land type as the cost, so every cell drains to a river or the sea. Big rivers get a flat floodplain ∝ √flow. A slow, region-scale relief field makes mountain belts span several biomes. Land-type parameters are blended across biome borders |
+| **Divides** | A ridge along region borders (rivers never cross them), and a smaller one where two river systems' basins meet. Both fade out near rivers |
+| **Detail** | fbm or ridged noise per land type, masked to zero on the river beds |
+| **Repair** | Rivers burnt in (AGREE: a trench plus a linear buffer), then an ε-Priority-Flood over the region's own land, seeded from the sea and the region border, so there are no pits |
+
+- **Seamless:** steps 1–4 are a pure function of position, and the fill keeps the border cells. A test checks that neighbouring regions' rasters agree exactly along their shared border.
+- **Views:**
+  - Colour by **Height** (hypsometric tint and hillshade), or a **Hillshade** overlay on any colour mode.
+  - **3D landscape** (`T`): a WebGL2 height mesh over the current view, draped with the 2D map (rivers and borders included). Drag to orbit, scroll to zoom, Shift- or right-drag to pan. Vertical exaggeration is a setting.
+- **Cost:** about 0.1 s per region at 2 km cells and 0.25 s at 1 km. The view computes at most 64 regions at 1 km, scaled by cell area; zoom in beyond that.
+
+**Code map** (additions to Sandbox 3's, in `sandboxes/sandbox4/`): `src/world/terrain.ts` (river profiles and the per-region height pipeline), `src/render/view3d.ts` (WebGL2 mesh, draped texture, orbit camera), and `tests/terrain.test.ts` (monotone beds, drainage of every cell, burnt-in rivers, seamless borders, determinism).
+
 ## Research
 
 * Deterministic Noise

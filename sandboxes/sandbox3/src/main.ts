@@ -255,7 +255,7 @@ function frame(): void {
     riverPending = drawRivers(
       f,
       rivers,
-      { width: Number(params['view.riverWidth']), minFlow: Number(params['view.riverMin']), attractors: params['view.attractors'] === true, sea: params['view.riverSea'] === true },
+      { width: Number(params['view.riverWidth']), minFlow: Number(params['view.riverMin']), attractors: params['view.attractors'] === true, sea: params['view.riverSea'] === true, exp: Number(params['view.riverExp']) },
       interacting ? 0 : performance.now() + Math.max(12, budget * 0.6),
     );
   }

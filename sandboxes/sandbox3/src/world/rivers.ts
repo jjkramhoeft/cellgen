@@ -24,6 +24,12 @@
  *               only follow straight runs inside the region. Attractors in pockets of
  *               the region walled off from the sea by other regions stay unreached.
  *               Landlocked regions are exempt (they must cross a neighbour to drain).
+ *   Look        optional knobs, all off by default (see docs/research/space-colonization-
+ *               branch-variants.md): inertia (keep the current heading), a perception
+ *               cone (only attractors ahead pull; caps junction angles), wander
+ *               (random motion inherited from the parent → bends, not wiggle) and
+ *               main-stem dominance (weak side branches are not grown; their nearby
+ *               attractors drain straight into the stem).
  *   Width       each node counts the attractors it reached; summed upstream this is the
  *               flow of the river at that node (a river's mouth carries all attractors
  *               its tree reached). Line width is drawn from the flow.
@@ -49,6 +55,29 @@ export function pullWeight(power: PullPower, d2: number, di2: number): number {
   }
 }
 
+export type ConeAngle = 0 | 150 | 144 | 120 | 90 | 60;
+
+/**
+ * cos(cone / 2) for each cone angle, built from √ only (bit-exact everywhere):
+ * cos 75° = (√6 − √2)/4, cos 72° = (√5 − 1)/4, cos 60° = ½, cos 45° = √½, cos 30° = √3/2.
+ */
+export function coneCos(cone: ConeAngle): number {
+  switch (cone) {
+    case 150:
+      return (Math.sqrt(6) - Math.sqrt(2)) / 4;
+    case 144:
+      return (Math.sqrt(5) - 1) / 4;
+    case 120:
+      return 0.5;
+    case 90:
+      return Math.sqrt(0.5);
+    case 60:
+      return Math.sqrt(3) / 2;
+    default:
+      return -1;
+  }
+}
+
 export interface RiverParams {
   /** attractors per eligible subbiome */
   perSub: number;
@@ -66,6 +95,29 @@ export interface RiverParams {
    * 'squared' k = 2 (far attractors dominate), 'sqrt' k = ½ (mildly favours far ones).
    */
   pull: PullPower;
+  /**
+   * Inertia: weight of the node's own heading (parent → node) blended into the pull
+   * direction before random motion (Palubicki et al. 2009 §4.3). 0 = off.
+   */
+  inertia: number;
+  /**
+   * Perception cone, full angle in degrees (0 = off, a full circle): an attractor only
+   * pulls a node that has it within ±cone/2 of the node's heading (Palubicki et al.
+   * 2009 §4.1). Roots have no heading and see all round. Caps junction angles.
+   */
+  cone: ConeAngle;
+  /**
+   * Correlated random motion: 0 = a fresh random direction every step (the classic
+   * jitter); towards 1 each node passes its random direction on to its children,
+   * only nudging it, so random motion makes long coherent bends instead of wiggle.
+   */
+  wander: number;
+  /**
+   * Main-stem dominance (apical control, after Palubicki et al. 2009 §4.2): a node that
+   * already has a child only sprouts a side branch when it is pulled by at least
+   * `apical` × as many attractors as that child. 0 = off.
+   */
+  apical: number;
   /** leave out subbiomes that touch the ocean */
   skipCoast: boolean;
   /** how many biome steps a landlocked region searches for an ocean */
@@ -116,6 +168,8 @@ const MAX_BANS = 12;
 const MAX_BLOCKED_PASSES = 6;
 /** a node that has grown this many children and still wants more is stopped */
 const MAX_CHILDREN = 8;
+/** main-stem dominance counts pulls this many nodes downstream of each puller */
+const APICAL_DEPTH = 48;
 
 /** Random vector in the unit disc (rejection sampling: no trig, so bit-exact everywhere). */
 function discVec(rng: Rng, out: [number, number]): void {
@@ -323,7 +377,26 @@ export class Rivers {
     let own = new Int32Array(cap);
     /** 1 = the node may not grow any more (its pulls lead out of the region) */
     let dead = new Uint8Array(cap);
+    /** unit heading (parent → node; 0,0 for roots), wander direction, first child (−1 = none) */
+    let hx = new Float64Array(cap);
+    let hy = new Float64Array(cap);
+    let wvx = new Float64Array(cap);
+    let wvy = new Float64Array(cap);
+    let firstChild = new Int32Array(cap).fill(-1);
     let n = 0;
+    /** main-stem dominance: a suppressed side branch's attractors within this distance drain into the stem */
+    const absorb2 = (P.kill + 2 * P.step) ** 2;
+    const cc = coneCos(P.cone);
+    const cc2 = cc * cc;
+    /**
+     * Perception cone: may attractor a (at squared distance d2) pull node k? Compared
+     * squared (dot ≥ 0 and dot² ≥ cos²·d²) since every half-angle here is ≤ 90°.
+     */
+    const sees = (k: number, a: number, d2: number): boolean => {
+      if (cc < 0 || (hx[k] === 0 && hy[k] === 0) || d2 === 0) return true;
+      const dot = (ax[a] - nx[k]) * hx[k] + (ay[a] - ny[k]) * hy[k];
+      return dot >= 0 && dot * dot >= cc2 * d2;
+    };
     const di2 = P.influence * P.influence;
     const dk2 = P.kill * P.kill;
     // node grid with cell size dᵢ (to re-find an attractor's nearest node when one dies)
@@ -355,6 +428,11 @@ export class Rivers {
         par = grow(par, Int32Array);
         own = grow(own, Int32Array);
         dead = grow(dead, Uint8Array);
+        hx = grow(hx, Float64Array);
+        hy = grow(hy, Float64Array);
+        wvx = grow(wvx, Float64Array);
+        wvy = grow(wvy, Float64Array);
+        firstChild = grow(firstChild, Int32Array);
       }
       const id = n++;
       nx[id] = x;
@@ -362,6 +440,21 @@ export class Rivers {
       par[id] = parent;
       own[id] = 0;
       dead[id] = 0;
+      firstChild[id] = -1;
+      wvx[id] = 0;
+      wvy[id] = 0;
+      hx[id] = 0;
+      hy[id] = 0;
+      if (parent >= 0) {
+        const ex = x - nx[parent];
+        const ey = y - ny[parent];
+        const el = Math.sqrt(ex * ex + ey * ey);
+        if (el > 1e-9) {
+          hx[id] = ex / el;
+          hy[id] = ey / el;
+        }
+        if (firstChild[parent] < 0) firstChild[parent] = id;
+      }
       const nk = gk(Math.floor(x / G), Math.floor(y / G));
       const nl = nodeGrid.get(nk);
       if (nl) nl.push(id);
@@ -383,7 +476,7 @@ export class Rivers {
               reachedBy[a] = id;
               own[id]++;
               aliveCount--;
-            } else if (d2 < nearD2[a] || (d2 === nearD2[a] && id < near[a])) {
+            } else if ((d2 < nearD2[a] || (d2 === nearD2[a] && id < near[a])) && sees(id, a, d2)) {
               nearD2[a] = d2;
               near[a] = id;
             }
@@ -428,7 +521,8 @@ export class Rivers {
           if (!list) continue;
           for (const m of list) {
             if (dead[m] || isBanned(a, m)) continue;
-            cands.push({ m, d2: (ax[a] - nx[m]) ** 2 + (ay[a] - ny[m]) ** 2 });
+            const d2 = (ax[a] - nx[m]) ** 2 + (ay[a] - ny[m]) ** 2;
+            if (sees(m, a, d2)) cands.push({ m, d2 });
           }
         }
       }
@@ -494,6 +588,10 @@ export class Rivers {
     let lastChild = new Int32Array(cap).fill(-1);
     /** children grown per node */
     let kids = new Int32Array(cap);
+    /** attractors pulling each node this iteration, and (main-stem dominance) pulls summed over a node's subtree */
+    let cnt = new Int32Array(cap);
+    let sub = new Int32Array(cap);
+    let subStamp = new Int32Array(cap);
     let iterations = 0;
     let bridges = 0;
     let blockedPasses = 0;
@@ -513,6 +611,9 @@ export class Rivers {
         const kc = new Int32Array(cap);
         kc.set(kids);
         kids = kc;
+        cnt = new Int32Array(cap);
+        sub = new Int32Array(cap);
+        subStamp = new Int32Array(cap);
       }
       touched.length = 0;
       for (let a = 0; a < A; a++) {
@@ -524,9 +625,13 @@ export class Rivers {
           touched.push(k);
           closeA[k] = a;
           closeD[k] = nearD2[a];
-        } else if (nearD2[a] < closeD[k]) {
-          closeA[k] = a;
-          closeD[k] = nearD2[a];
+          cnt[k] = 1;
+        } else {
+          cnt[k]++;
+          if (nearD2[a] < closeD[k]) {
+            closeA[k] = a;
+            closeD[k] = nearD2[a];
+          }
         }
         const wgt = pullWeight(P.pull, nearD2[a], di2) / d;
         sx[k] += (ax[a] - nx[k]) * wgt;
@@ -584,11 +689,54 @@ export class Rivers {
         continue;
       }
       touched.sort((p, q) => p - q);
+      if (P.apical > 0) {
+        // pulls on each subtree (within APICAL_DEPTH nodes downstream of the puller)
+        for (const k of touched) {
+          let m = k;
+          for (let d = 0; d < APICAL_DEPTH && m >= 0; d++, m = par[m]) {
+            if (subStamp[m] !== iterations) {
+              subStamp[m] = iterations;
+              sub[m] = 0;
+            }
+            sub[m] += cnt[k];
+          }
+        }
+      }
       for (const k of touched) {
         let dx = sx[k];
         let dy = sy[k];
         sx[k] = 0;
         sy[k] = 0;
+        if (P.apical > 0 && kids[k] > 0) {
+          // a side branch must be pulled by ≥ apical × what pulls on the main stem's
+          // subtree. A weaker one is not grown: its attractors close to the stem drain
+          // straight into it (flow without a visible channel), the farther ones turn to
+          // other nodes. (Merely postponing it would only bring it back later as stubs.)
+          const mc = firstChild[k];
+          const main = mc >= 0 && subStamp[mc] === iterations ? sub[mc] : 0;
+          if (cnt[k] < P.apical * main) {
+            // only attractors within dᵢ pull k: they are in the 3×3 grid cells around it
+            const ci = Math.floor(nx[k] / G);
+            const cj = Math.floor(ny[k] / G);
+            const mine: number[] = [];
+            for (let gj = -1; gj <= 1; gj++) {
+              for (let gi = -1; gi <= 1; gi++) {
+                const list = grid.get(gk(ci + gi, cj + gj));
+                if (list) for (const a of list) if (alive[a] && near[a] === k && nearD2[a] < di2) mine.push(a);
+              }
+            }
+            mine.sort((p, q) => p - q);
+            for (const a of mine) {
+              if (nearD2[a] <= absorb2) {
+                alive[a] = 0;
+                reachedBy[a] = k;
+                own[k]++;
+                aliveCount--;
+              }
+            }
+            continue;
+          }
+        }
         let len = Math.sqrt(dx * dx + dy * dy);
         if (len < 1e-9) {
           // opposing pulls cancel: head for the closest one
@@ -599,10 +747,34 @@ export class Rivers {
         }
         dx /= len;
         dy /= len;
+        if (P.inertia > 0 && (hx[k] !== 0 || hy[k] !== 0)) {
+          // keep going the way the river already runs
+          const ix = dx + P.inertia * hx[k];
+          const iy = dy + P.inertia * hy[k];
+          const il = Math.sqrt(ix * ix + iy * iy);
+          if (il > 1e-9) {
+            dx = ix / il;
+            dy = iy / il;
+          }
+        }
+        // random motion: fresh each step, or (wander) inherited from the node and nudged
+        let jx = 0;
+        let jy = 0;
         if (P.jitter > 0) {
           discVec(rng, rv);
-          dx += P.jitter * rv[0];
-          dy += P.jitter * rv[1];
+          jx = rv[0];
+          jy = rv[1];
+          if (P.wander > 0) {
+            const vx = P.wander * wvx[k] + (1 - P.wander) * rv[0];
+            const vy = P.wander * wvy[k] + (1 - P.wander) * rv[1];
+            const vl = Math.sqrt(vx * vx + vy * vy);
+            if (vl > 1e-9) {
+              jx = vx / vl;
+              jy = vy / vl;
+            }
+          }
+          dx += P.jitter * jx;
+          dy += P.jitter * jy;
           len = Math.sqrt(dx * dx + dy * dy);
           if (len < 1e-9) continue;
           dx /= len;
@@ -646,7 +818,10 @@ export class Rivers {
           kill(k);
           continue;
         }
-        lastChild[k] = addNode(tx, ty, k);
+        const child = addNode(tx, ty, k);
+        lastChild[k] = child;
+        wvx[child] = jx;
+        wvy[child] = jy;
       }
     }
 

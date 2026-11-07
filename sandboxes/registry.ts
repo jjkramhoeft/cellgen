@@ -36,4 +36,12 @@ export const SANDBOXES: SandboxInfo[] = [
     status: 'ready',
     tags: ['Voronoi', 'hierarchy', 'oceans', 'cell merging', 'space colonization', 'infinite world'],
   },
+  {
+    id: 'sandbox4',
+    title: 'Sandbox 4 · Terrain',
+    summary:
+      'Sandbox 3’s map with a height map fitted to its rivers and biomes: river beds rise upstream from the stream-power law, hillslopes are a geodesic distance from rivers and coast with slopes per land type, ridges divide regions and river systems, then detail noise, river burning and Priority-Flood filling so everything drains to the sea. Hillshaded height views and a 3D landscape.',
+    status: 'ready',
+    tags: ['height map', 'stream power', 'fast marching', 'Priority-Flood', 'WebGL', '3D terrain'],
+  },
 ];

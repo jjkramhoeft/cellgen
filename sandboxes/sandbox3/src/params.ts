@@ -1,5 +1,5 @@
 import { bool, defaultsOf, num, opt, str, type ParamDef, type Params, type Section } from '@shared/params/schema';
-import type { PullPower, RiverParams } from './world/rivers';
+import type { ConeAngle, PullPower, RiverParams } from './world/rivers';
 import type { GrowFrom, WorldParams } from './world/world';
 
 const KM = 1000;
@@ -134,6 +134,44 @@ export const RIVER_SECTION: Section = {
       options: opt(['normal', 'Normal (equal pulls)'], ['squared', 'Distance² to target'], ['sqrt', '√ distance to target']),
       help: 'How each attractor’s pull is weighted when a node picks its step direction. Normal = every attractor in range pulls equally (the paper); distance² = far attractors dominate (longer, straighter reaches); √distance = a mild bias towards far ones.',
     },
+    {
+      key: 'riv.inertia',
+      label: 'Inertia',
+      type: 'number',
+      min: 0,
+      max: 3,
+      step: 0.05,
+      default: 0,
+      help: 'Weight of the direction a river already runs in, blended into every step. 0 = off; higher = longer straight reaches and wider bends.',
+    },
+    {
+      key: 'riv.cone',
+      label: 'Perception cone',
+      type: 'select',
+      default: '0',
+      options: opt(['0', 'Off (all round)'], ['150', '150°'], ['144', '144° (72° junctions, humid)'], ['120', '120°'], ['90', '90° (45° junctions, arid)'], ['60', '60°']),
+      help: 'A node is only pulled by attractors within this angle ahead of it. No hooking back, and side branches leave at most half the angle from the main stem.',
+    },
+    {
+      key: 'riv.wander',
+      label: 'Wander',
+      type: 'number',
+      min: 0,
+      max: 0.98,
+      step: 0.01,
+      default: 0,
+      help: 'How much each step’s random motion carries over from the previous one. 0 = fresh every step (wiggle); towards 1 = long, coherent bends. Needs some random motion.',
+    },
+    {
+      key: 'riv.apical',
+      label: 'Main-stem dominance',
+      type: 'number',
+      min: 0,
+      max: 1,
+      step: 0.01,
+      default: 0,
+      help: 'A side branch only sprouts when its pull is at least this fraction of the pull on the main stem it leaves. 0 = off; higher = dominant trunks, fewer short tributaries.',
+    },
     { key: 'riv.coast', label: 'Skip coast subbiomes', type: 'bool', default: true, help: 'No attractors in subbiomes that touch the ocean (the spec).' },
   ],
 };
@@ -147,6 +185,10 @@ export function toRiverParams(p: Params): RiverParams {
     kill: num(p, 'riv.kill') * KM,
     jitter: num(p, 'riv.jitter'),
     pull: str(p, 'riv.pull') as PullPower,
+    inertia: num(p, 'riv.inertia'),
+    cone: Number(str(p, 'riv.cone')) as ConeAngle,
+    wander: num(p, 'riv.wander'),
+    apical: num(p, 'riv.apical'),
     skipCoast: bool(p, 'riv.coast'),
     maxHops: 4,
   };
@@ -187,6 +229,17 @@ export const VIEW_SECTION: Section = {
     },
     { key: 'view.grid', label: 'Kilometre grid', type: 'bool', default: false, view: true },
     { key: 'view.riverWidth', label: 'River width', type: 'number', min: 0.25, max: 4, step: 0.05, default: 1, log: true, view: true, help: 'Scales the flow-based line width.' },
+    {
+      key: 'view.riverExp',
+      label: 'Width exponent',
+      type: 'number',
+      min: 0.2,
+      max: 1,
+      step: 0.01,
+      default: 0.5,
+      view: true,
+      help: 'Width ∝ flow^b. ½ = real rivers (hydraulic geometry) and Leonardo’s rule; ⅓ = Murray’s law, flatter contrast; ¾ and up = trunks dominate. A flow of 100 keeps its width.',
+    },
     { key: 'view.riverMin', label: 'Min river flow', type: 'int', min: 1, max: 200, default: 1, log: true, view: true, help: 'Hide river segments that carry fewer attractors than this (prunes twigs).' },
     { key: 'view.riverSea', label: 'River paths over sea', type: 'bool', default: false, view: true, help: 'Roots sit at ocean biome points, so each river first crosses the water to the coast. Off hides that stretch.' },
     { key: 'view.attractors', label: 'Attractor points', type: 'bool', default: false, view: true, help: 'Reached attractors in grey, unreached in red, river roots as rings.' },
