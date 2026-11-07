@@ -137,6 +137,46 @@ src/params.ts  parameter schema; src/presets.ts presets
 tests/         metric invariants, brute-force search check for every metric, determinism, land ratio
 ```
 
+### Sandbox 3
+
+A prototype of Voronoi cells in base-map generation (spec: [sandbox3.md](sandbox3.md)): three nested levels of cells decide land and ocean and give the map its cell structure.
+
+The world is unbounded and measured in metres. Every level is a stateless lattice Voronoi diagram, as in Sandbox 2, and every decision is a memoised pure function of the seed and a bounded neighbourhood. So you can pan anywhere, in any order, and get the same map. A test explores the map in two different orders, clearing the caches in between, and checks that both give the same result.
+
+| Level | Default | Role |
+|---|---|---|
+| **Regions** | 128 km grid, no warp | Own the biomes whose site lies inside them. Pick **0–2 ocean seeds** and **2–4 biome merges** among them |
+| **Biomes** | 32 km grid, border warp | The land/ocean unit (also meant for factions). Own their subbiomes and pick **2–4 subbiome merges**. Colours are cosmetic |
+| **Subbiomes** | 8 km grid, border warp | Detail cells (sub-biomes, towns, ore, factions) |
+
+| Area | Methods and parameters |
+|---|---|
+| **Oceans** | Seeds per region (min/max) → each seed **links** to its nearest other seed with a 40 % chance, and every biome on the straight line between them turns into ocean, so chains of seeds join into one ocean → **growth**: every linked ocean biome converts its 3 / 2 / 1 / 0 closest land neighbours with chances 10 / 33 / 33 / 23 %. Options: link search radius, grow from linked or from all ocean biomes, and 0–4 growth passes (each later pass grows from the previous pass's new ocean) |
+| **Merges** | Chosen cells join their nearest neighbour (Gabriel graph, by site distance). Chains merge into one cell, and cycles resolve to the smallest key. Biome merges stay on one side of the coast (optional); subbiome merges stay inside one biome |
+| **Cells** | Grid size, jitter (0 = squares), border warp amplitude and frequency per level. **Nesting**: every point is classified through its subbiome, so biome and region borders, and coasts, follow subbiome cells. Turn it off to look each level up independently |
+
+**Evaluating the map:**
+
+- **Colour by:** cosmetic map, land & ocean, **ocean genesis** (lone seed, linked seed, link chain, growth pass), **merged cells**, regions, biomes, subbiomes, and the hierarchy (region hue × biome lightness × subbiome shading).
+- **Overlays:** pixel-exact region, biome and subbiome borders and the coastline. Also ocean seeds and links, growth arrows, merge arrows, sites per level, and a kilometre grid with the origin marked.
+- **Inspector:** hover or click a point to see its region (owned biomes, seeds, links, merges), biome (genesis, merged group, neighbours, owned subbiomes) and subbiome. Click pins the biome and subbiome.
+- **Ruler:** Shift+drag or `M` measures a straight-line distance, with travel days for a horse (32–48 km/day), a marching legion (24–32) and a long-distance hiker (16–24).
+- **In view:** ocean share, cell counts, biomes per region, subbiomes per biome, seeds and links, ocean biomes by genesis, merged groups, render time, cache size, and a determinism fingerprint of a fixed window around the origin.
+- **Sharing:** the seed, every non-default parameter and the camera live in the URL hash. There are 10 presets and PNG export. Subbiomes smaller than ~3 px are skipped automatically.
+
+Keyboard: `+`/`−` zoom · `0`/`H` origin · arrows pan · `R` random seed · `1`–`8` or `[`/`]` colour mode · `B` biome borders · `N` subbiome borders · `L` links · `W` growth · `J` merges · `S` sites · `G` grid · `M` measure · `Esc` unpin · `?` help.
+
+**Code map** (`sandboxes/sandbox3/`):
+
+```
+src/world/     level (stateless warped lattice Voronoi, Gabriel neighbours),
+               world (regions, ocean seeds/links/growth, merges, nesting, caches)
+src/render/    per-pixel raster source with borders per level, vector overlays and ruler
+src/ui/        legend, level box, inspector, view statistics
+src/params.ts  parameter schema and presets
+tests/         nearest-site and neighbour checks, determinism and order independence, ocean and merge rules
+```
+
 ## Research
 
 * Deterministic Noise

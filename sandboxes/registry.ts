@@ -28,4 +28,12 @@ export const SANDBOXES: SandboxInfo[] = [
     status: 'ready',
     tags: ['Voronoi', 'distance functions', 'fractal octaves', 'land/water', 'Worley'],
   },
+  {
+    id: 'sandbox3',
+    title: 'Sandbox 3 · Map hierarchy',
+    summary:
+      'An unbounded, deterministic base map in metres from three nested Voronoi levels: 128 km regions, warped 32 km biomes and 8 km subbiomes. Regions place ocean seeds that link and grow into oceans; cells randomly merge with their nearest neighbour. Ocean-genesis and merge views, arrows, inspector, ruler with travel times.',
+    status: 'ready',
+    tags: ['Voronoi', 'hierarchy', 'oceans', 'cell merging', 'infinite world'],
+  },
 ];
