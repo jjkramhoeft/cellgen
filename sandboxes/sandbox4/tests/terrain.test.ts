@@ -27,7 +27,8 @@ function landRegions(w: World, n: number): number[] {
 /** Is cell q land of region r (whose final heights this tile computed)? */
 const own = (t: TerrainTile, q: number, r: number) => t.cls[q] === LAND && regionAt(t, q) === r;
 
-describe('terrain', () => {
+// whole tiles (4 × 4 regions, plus the rivers around them) take seconds each, more on CI runners
+describe('terrain', { timeout: 60_000 }, () => {
   it('A^−θ from √ only matches Math.pow', () => {
     for (const th of [0.375, 0.4375, 0.5] as const) for (const a of [1, 2, 7.5, 100, 4096]) expect(invPowTheta(a, th)).toBeCloseTo(Math.pow(a, -th), 12);
   });
@@ -134,7 +135,7 @@ describe('terrain', () => {
     }
     expect(compared).toBeGreaterThan(200);
     expect(maxDiff).toBeLessThan(1e-3);
-  }, 60_000);
+  });
 
   it('a tile computes exactly the heights of one raster per region (bit for bit)', () => {
     const per = setup({ tile: 1 });
@@ -200,7 +201,7 @@ describe('terrain', () => {
     expect(mean(setup({ hill: 2 }).t.get(r))).toBeGreaterThan(base);
     expect(mean(setup({ chSlope: 0.05 }).t.get(r))).toBeGreaterThan(base);
     expect(mean(setup({ ridge: 0, divide: 0, noise: 0 }).t.get(r))).toBeLessThan(base);
-  }, 60_000);
+  });
 
   it('floodplain spline: through the points, no overshoot, flat beyond the ends, any point order', () => {
     const f = monotoneSpline([400, 0, 1000, 100], [150, 500, 40, 400]);
