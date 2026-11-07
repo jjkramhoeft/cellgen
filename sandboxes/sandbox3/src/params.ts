@@ -1,4 +1,5 @@
 import { bool, defaultsOf, num, opt, str, type ParamDef, type Params, type Section } from '@shared/params/schema';
+import type { RiverParams } from './world/rivers';
 import type { GrowFrom, WorldParams } from './world/world';
 
 const KM = 1000;
@@ -88,6 +89,60 @@ export const SECTIONS: Section[] = [
   },
 ];
 
+/**
+ * River parameters (left panel). Rivers are computed per region on top of the world,
+ * so changing them never regenerates the map itself.
+ */
+export const RIVER_SECTION: Section = {
+  id: 'rivers',
+  title: 'Rivers · space colonization',
+  enableKey: 'riv.on',
+  open: true,
+  help: 'Per region: a root on the coast of every ocean biome touching the region, attractors in every inland (non-coastal) land subbiome, then space colonization until every attractor is reached. Width = attractors reached upstream.',
+  params: [
+    { key: 'riv.on', label: 'Rivers', type: 'bool', default: true },
+    { key: 'riv.points', label: 'Attractors / subbiome', type: 'int', min: 1, max: 30, default: 10, help: 'Attraction points scattered inside every inland land subbiome.' },
+    { key: 'riv.step', label: 'Step D', type: 'number', min: 0.5, max: 8, step: 0.1, default: 2, log: true, unit: ' km', help: 'Length of one growth step (segment length).' },
+    {
+      key: 'riv.influence',
+      label: 'Influence dᵢ',
+      type: 'number',
+      min: 2,
+      max: 64,
+      step: 0.5,
+      default: 16,
+      log: true,
+      unit: ' km',
+      help: 'An attractor pulls on its nearest node only within this radius. Small = many independent branches; large = fewer, straighter rivers.',
+    },
+    { key: 'riv.kill', label: 'Kill dₖ', type: 'number', min: 0.5, max: 16, step: 0.1, default: 3, log: true, unit: ' km', help: 'An attractor is reached (removed) once a node is this close. Kept above the step D.' },
+    {
+      key: 'riv.jitter',
+      label: 'Random motion',
+      type: 'number',
+      min: 0,
+      max: 2,
+      step: 0.01,
+      default: 0.4,
+      help: 'Weight of a random unit vector added to every growth direction. 0 = straight, smooth branches; 1 = strongly meandering.',
+    },
+    { key: 'riv.coast', label: 'Skip coast subbiomes', type: 'bool', default: true, help: 'No attractors in subbiomes that touch the ocean (the spec).' },
+  ],
+};
+export const RIVER_KEYS = new Set(RIVER_SECTION.params.map((p) => p.key));
+
+export function toRiverParams(p: Params): RiverParams {
+  return {
+    perSub: num(p, 'riv.points'),
+    step: num(p, 'riv.step') * KM,
+    influence: num(p, 'riv.influence') * KM,
+    kill: num(p, 'riv.kill') * KM,
+    jitter: num(p, 'riv.jitter'),
+    skipCoast: bool(p, 'riv.coast'),
+    maxHops: 4,
+  };
+}
+
 export const VIEW_MODES = [
   ['map', 'Map (cosmetic biomes)'],
   ['landsea', 'Land & ocean'],
@@ -122,11 +177,14 @@ export const VIEW_SECTION: Section = {
       view: true,
     },
     { key: 'view.grid', label: 'Kilometre grid', type: 'bool', default: false, view: true },
+    { key: 'view.riverWidth', label: 'River width', type: 'number', min: 0.25, max: 4, step: 0.05, default: 1, log: true, view: true, help: 'Scales the flow-based line width.' },
+    { key: 'view.riverMin', label: 'Min river flow', type: 'int', min: 1, max: 200, default: 1, log: true, view: true, help: 'Hide river segments that carry fewer attractors than this (prunes twigs).' },
+    { key: 'view.attractors', label: 'Attractor points', type: 'bool', default: false, view: true, help: 'Reached attractors in grey, unreached in red, river roots as rings.' },
     { key: 'view.lod', label: 'Detail', type: 'select', default: 'auto', options: opt(['auto', 'Auto (skip sub-pixel cells)'], ['full', 'Always full detail']), view: true },
   ],
 };
 
-export const ALL_DEFS: ParamDef[] = [...SECTIONS.flatMap((s) => s.params), ...VIEW_SECTION.params];
+export const ALL_DEFS: ParamDef[] = [...SECTIONS.flatMap((s) => s.params), ...RIVER_SECTION.params, ...VIEW_SECTION.params];
 export const GEN_KEYS = new Set(SECTIONS.flatMap((s) => s.params.map((p) => p.key)));
 
 export function defaults(): Params {

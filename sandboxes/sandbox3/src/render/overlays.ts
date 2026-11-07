@@ -7,6 +7,7 @@
 import type { Camera, Viewport } from '@shared/render/camera';
 import { LINKED, World } from '../world/world';
 import type { Level } from '../world/level';
+import type { Rivers } from '../world/rivers';
 
 export interface Frame {
   ctx: CanvasRenderingContext2D;
@@ -280,4 +281,99 @@ export function drawRuler(f: Frame, ax: number, ay: number, bx: number, by: numb
   ctx.fillStyle = '#fff';
   ctx.textBaseline = 'alphabetic';
   ctx.fillText(label, lx, ly);
+}
+
+export interface RiverDraw {
+  /** width multiplier */
+  width: number;
+  /** hide segments carrying fewer attractors */
+  minFlow: number;
+  attractors: boolean;
+}
+
+/** On-screen width (CSS px) of a river segment carrying `flow` attractors. */
+export function riverPx(flow: number, stepPx: number, scale: number): number {
+  const zf = Math.min(2.2, Math.max(0.45, stepPx / 7));
+  return scale * zf * (0.45 + 0.3 * Math.sqrt(flow));
+}
+
+/**
+ * Space-colonization rivers of the regions around the view. Regions not computed
+ * yet are computed until `deadline`; returns how many are still pending.
+ */
+export function drawRivers(f: Frame, rivers: Rivers, o: RiverDraw, deadline: number): number {
+  const world = rivers.world;
+  const R = world.regionLevel;
+  if (World.countIn(R, f.x0, f.y0, f.x1, f.y1, 1) > 900) return 0;
+  const { ctx, dpr } = f;
+  const stepPx = rivers.p.step * f.cam.zoom;
+  let pending = 0;
+  const shown: ReturnType<Rivers['get']>[] = [];
+  for (const rk of World.cellsIn(R, f.x0, f.y0, f.x1, f.y1, 1)) {
+    let rr = rivers.peek(rk);
+    if (!rr) {
+      if (performance.now() > deadline) {
+        pending++;
+        continue;
+      }
+      rr = rivers.get(rk);
+    }
+    if (rr.x1 < f.x0 || rr.x0 > f.x1 || rr.y1 < f.y0 || rr.y0 > f.y1) continue;
+    shown.push(rr);
+  }
+  // width buckets of ¼ px so each stroke() covers many segments
+  const buckets = new Map<number, number[][]>();
+  for (const rr of shown) {
+    for (let k = 0; k < rr.n; k++) {
+      const p = rr.parent[k];
+      if (p < 0 || rr.flow[k] < o.minFlow) continue;
+      const w = Math.max(0.5, Math.round(riverPx(rr.flow[k], stepPx, o.width) * dpr * 4) / 4);
+      let b = buckets.get(w);
+      if (!b) buckets.set(w, (b = []));
+      b.push([sx(f, rr.x[p]), sy(f, rr.y[p]), sx(f, rr.x[k]), sy(f, rr.y[k])]);
+    }
+  }
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  ctx.strokeStyle = '#3f93dc';
+  for (const w of [...buckets.keys()].sort((a, b) => a - b)) {
+    ctx.beginPath();
+    for (const [x0, y0, x1, y1] of buckets.get(w)!) {
+      ctx.moveTo(x0, y0);
+      ctx.lineTo(x1, y1);
+    }
+    ctx.lineWidth = w;
+    ctx.stroke();
+  }
+  if (o.attractors) {
+    const r = Math.max(0.8, Math.min(2.2, stepPx * 0.15)) * dpr;
+    for (const pass of [0, 1]) {
+      ctx.beginPath();
+      for (const rr of shown) {
+        for (let a = 0; a < rr.ax.length; a++) {
+          if ((rr.reachedBy[a] < 0 ? 1 : 0) !== pass) continue;
+          const x = sx(f, rr.ax[a]);
+          const y = sy(f, rr.ay[a]);
+          ctx.moveTo(x + r, y);
+          ctx.arc(x, y, r, 0, Math.PI * 2);
+        }
+      }
+      ctx.fillStyle = pass ? '#ff4d4d' : 'rgba(235,240,245,0.55)';
+      ctx.fill();
+    }
+    ctx.beginPath();
+    const rr0 = Math.max(3, Math.min(7, stepPx * 0.6)) * dpr;
+    for (const rr of shown) {
+      for (const k of rr.roots) {
+        const x = sx(f, rr.x[k]);
+        const y = sy(f, rr.y[k]);
+        ctx.moveTo(x + rr0, y);
+        ctx.arc(x, y, rr0, 0, Math.PI * 2);
+      }
+    }
+    ctx.lineWidth = 2 * dpr;
+    ctx.strokeStyle = '#ffffff';
+    ctx.stroke();
+  }
+  return pending;
 }

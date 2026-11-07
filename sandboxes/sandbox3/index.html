@@ -75,12 +75,18 @@
           <li><b>Growth</b>: every linked ocean biome converts its 3 / 2 / 1 / 0 closest land neighbours with chances 10 / 33 / 33 / 23 %.</li>
           <li>Colour by <b>Ocean genesis</b> and turn on <b>Ocean seeds &amp; links</b> and <b>Growth arrows</b> to see each step.</li>
         </ul>
+        <h3>Rivers</h3>
+        <ul>
+          <li>Grown per region by <b>space colonization</b>: a root on the coast of every ocean biome touching the region, and 10 <b>attraction points</b> in every inland (non-coastal) land subbiome.</li>
+          <li>Each step, nodes grow towards the attractors pulling on them, plus some <b>random motion</b>, until every attractor of the region is reached.</li>
+          <li>Line width = <b>attractors reached upstream</b>. Turn on <b>Attractor points</b> to see the attractors (unreached in red) and the roots (rings).</li>
+        </ul>
         <h3>Navigation</h3>
         <ul>
           <li><b>Scroll</b> to zoom at the cursor, <b>drag</b> to pan, <b>pinch</b> on touch, <b>double-click</b> zooms in (Shift zooms out).</li>
           <li><b>Click</b> pins the biome (yellow outline) and subbiome (cyan outline) under the cursor; <b>Esc</b> releases.</li>
           <li><b>Shift+drag</b> or <b>M</b> measures a distance, with travel times for a horse, a marching legion and a hiker.</li>
-          <li><b>+ / −</b> zoom · <b>0 / H</b> origin · arrows pan · <b>R</b> new seed · <b>1–8</b> or <b>[ ]</b> colour mode · <b>B</b> biome borders · <b>N</b> subbiome borders · <b>L</b> links · <b>W</b> growth · <b>J</b> merges · <b>S</b> sites · <b>G</b> grid · <b>?</b> help.</li>
+          <li><b>+ / −</b> zoom · <b>0 / H</b> origin · arrows pan · <b>R</b> new seed · <b>1–8</b> or <b>[ ]</b> colour mode · <b>B</b> biome borders · <b>N</b> subbiome borders · <b>L</b> links · <b>W</b> growth · <b>J</b> merges · <b>V</b> rivers · <b>S</b> sites · <b>G</b> grid · <b>?</b> help.</li>
         </ul>
         <p class="muted">Arrows connect cell <i>sites</i>. With border warp a site can sit slightly outside its own warped cell. Travel speeds are reference data from <code>sandbox3.md</code>; the generator does not use them.</p>
         <div class="dlg-actions"><button class="btn primary">Close</button></div>

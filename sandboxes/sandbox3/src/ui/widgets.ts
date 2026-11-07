@@ -1,6 +1,7 @@
 /** Legend, level box, inspector, view statistics and the ruler readout. */
 import { cssRgb, hashColor } from '@shared/render/colormaps';
 import { keyI, keyJ } from '../world/level';
+import type { Rivers } from '../world/rivers';
 import { LINKED, ORIGIN, SEED, World } from '../world/world';
 import { fmtDist, TRAVEL, travelDays } from '../render/overlays';
 import { GENESIS, keyHash, LAND_TYPES, landType, OCEAN_RGB, type ViewMode } from '../render/source';
@@ -75,7 +76,7 @@ export interface Probe {
   pinned: boolean;
 }
 
-export function renderInspector(host: HTMLElement, world: World | null, pt: Probe | null): void {
+export function renderInspector(host: HTMLElement, world: World | null, rivers: Rivers | null, pt: Probe | null): void {
   if (!world || !pt) {
     host.innerHTML = '<p class="muted">Hover the map to inspect a point. Click to pin the biome and subbiome under the cursor.</p>';
     return;
@@ -92,7 +93,15 @@ export function renderInspector(host: HTMLElement, world: World | null, pt: Prob
   html += `<div class="lvl"><h4><i style="background:${regColor}"></i>Region ${ij(c.region)}</h4>`;
   html += `<div class="kv"><span>Owned biomes</span><b>${reg.biomes.length}</b></div>`;
   html += `<div class="kv"><span>Ocean seeds</span><b>${reg.seeds.length} · ${links.length} link${links.length === 1 ? '' : 's'}</b></div>`;
-  html += `<div class="kv"><span>Biome merges</span><b>${reg.merges.size}</b></div></div>`;
+  html += `<div class="kv"><span>Biome merges</span><b>${reg.merges.size}</b></div>`;
+  const rr = rivers?.peek(c.region);
+  if (rr) {
+    const trees = rr.roots.filter((k) => rr.flow[k] > 0).length;
+    html += `<div class="kv" title="River mouths with at least one attractor upstream / roots placed"><span>Rivers</span><b>${trees} of ${rr.roots.length} roots${rr.landlocked ? ' · landlocked' : ''}</b></div>`;
+    html += `<div class="kv"><span>Attractors reached</span><b>${rr.reached} / ${rr.ax.length}</b></div>`;
+    html += `<div class="kv" title="Growth iterations · nodes · straight bridges over gaps wider than dᵢ · compute time"><span>Growth</span><b>${rr.iterations} it · ${rr.n} nodes · ${rr.bridges} br · ${rr.ms.toFixed(0)} ms</b></div>`;
+  }
+  html += '</div>';
 
   const typeName = c.ocean ? 'Ocean' : LAND_TYPES[landType(c.biome)].name;
   const g = GENESIS.find((x) => x.origin === c.origin);
@@ -121,6 +130,18 @@ export function renderInspector(host: HTMLElement, world: World | null, pt: Prob
   const st = world.subTarget(c.sub);
   html += `<div class="kv"><span>Merged</span><b>${c.subMerged ? (st >= 0 ? `joins ${ij(st)}` : 'yes (group root)') : 'no'}</b></div>`;
   html += `<div class="kv"><span>Neighbours</span><b>${world.subNbrs(world.sub(c.sub)).length}</b></div></div>`;
+  const nr = rivers?.nearestNode(pt.x, pt.y, rivers.p.step * 1.5);
+  if (nr) {
+    const { r, k } = nr;
+    const root = r.tree[k];
+    const ocean = r.rootOcean[r.roots.indexOf(root)];
+    html += `<div class="lvl"><h4><i style="background:#3f93dc"></i>River</h4>`;
+    html += `<div class="kv" title="Attractors reached at this node and everything upstream: sets the line width"><span>Flow here</span><b>${r.flow[k]} attractors</b></div>`;
+    html += `<div class="kv" title="All attractors this river reached"><span>Whole river</span><b>${r.flow[root]} attractors</b></div>`;
+    html += `<div class="kv"><span>Mouth</span><b>${(r.x[root] / 1000).toFixed(1)}, ${(r.y[root] / 1000).toFixed(1)} km</b></div>`;
+    if (ocean !== undefined) html += `<div class="kv"><span>Drains into</span><b>ocean biome ${ij(ocean)}</b></div>`;
+    html += '</div>';
+  }
   html += `<p class="muted small">${pt.pinned ? 'Pinned — Esc to release.' : 'Click to pin.'} Cell ids are lattice indices (i, j).</p>`;
   host.innerHTML = html;
 }
@@ -150,10 +171,48 @@ export interface ViewStats {
   subMembers: number;
   subRaw: number;
   detail: boolean;
+  rivers: RiverStats | null;
   ms: number;
 }
 
-export function computeViewStats(world: World, x0: number, y0: number, x1: number, y1: number, detail: boolean): ViewStats {
+export interface RiverStats {
+  regions: number;
+  pending: number;
+  rivers: number;
+  attractors: number;
+  reached: number;
+  largest: number;
+  nodes: number;
+  bridges: number;
+  landlocked: number;
+  ms: number;
+}
+
+/** River totals over the computed regions whose site is in view. */
+function riverStats(world: World, rivers: Rivers, x0: number, y0: number, x1: number, y1: number): RiverStats {
+  const s: RiverStats = { regions: 0, pending: 0, rivers: 0, attractors: 0, reached: 0, largest: 0, nodes: 0, bridges: 0, landlocked: 0, ms: 0 };
+  for (const rk of World.cellsIn(world.regionLevel, x0, y0, x1, y1, 0)) {
+    const rr = rivers.peek(rk);
+    if (!rr) {
+      s.pending++;
+      continue;
+    }
+    s.regions++;
+    for (const k of rr.roots) {
+      if (rr.flow[k] > 0) s.rivers++;
+      s.largest = Math.max(s.largest, rr.flow[k]);
+    }
+    s.attractors += rr.ax.length;
+    s.reached += rr.reached;
+    s.nodes += rr.n;
+    s.bridges += rr.bridges;
+    if (rr.landlocked) s.landlocked++;
+    s.ms += rr.ms;
+  }
+  return s;
+}
+
+export function computeViewStats(world: World, x0: number, y0: number, x1: number, y1: number, detail: boolean, rivers: Rivers | null = null): ViewStats {
   const t0 = performance.now();
   const nx = 120;
   const ny = Math.max(20, Math.round((nx * (y1 - y0)) / Math.max(1, x1 - x0)));
@@ -240,6 +299,7 @@ export function computeViewStats(world: World, x0: number, y0: number, x1: numbe
     subMembers: sg?.members ?? NaN,
     subRaw: sg?.raw ?? NaN,
     detail,
+    rivers: rivers ? riverStats(world, rivers, x0, y0, x1, y1) : null,
     ms: performance.now() - t0,
   };
 }
@@ -301,6 +361,18 @@ export function renderStats(
     Number.isFinite(s.subGroups) ? `${s.subGroups} · ${pct(s.subMembers / Math.max(1, s.subRaw), 0)} of cells` : 'zoom in',
     'Merged subbiome groups among subbiomes whose site is in view',
   );
+
+  if (s.rivers) {
+    const r = s.rivers;
+    sub('Rivers');
+    add('Regions computed', `${r.regions}${r.pending ? ` (+${r.pending} pending)` : ''}`, 'Regions whose site is in view; rivers are grown per region');
+    add('Rivers', String(r.rivers), 'River mouths with at least one attractor upstream');
+    add('Attractors reached', `${r.reached} / ${r.attractors}`, 'Every attractor of a region is reached unless the region finds no ocean to drain into');
+    add('Largest river', `${r.largest} attractors`);
+    add('Nodes · bridges', `${r.nodes} · ${r.bridges}`, 'Bridges: straight runs added when no attractor was within the influence radius');
+    if (r.landlocked) add('Landlocked regions', String(r.landlocked), 'Regions with no ocean next to their land: roots come from the nearest ocean further out');
+    add('Time per region', r.regions ? `${(r.ms / r.regions).toFixed(0)} ms` : '—');
+  }
 
   sub('Performance');
   const c = extra.cache;

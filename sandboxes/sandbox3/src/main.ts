@@ -16,10 +16,11 @@ import { decodeState, encodeState } from '@shared/params/url';
 import { screenToWorld, zoomAt, type Camera, type Viewport } from '@shared/render/camera';
 import { RasterLayer } from '@shared/render/raster';
 import { buildPanel } from '@shared/ui/panel';
-import { ALL_DEFS, defaults, GEN_KEYS, PRESETS, SECTIONS, toWorldParams, VIEW_MODES, VIEW_SECTION } from './params';
-import { drawGrid, drawGrowth, drawLinks, drawMerges, drawRuler, drawSites, fmtDist, niceStep, type Frame } from './render/overlays';
+import { ALL_DEFS, defaults, GEN_KEYS, PRESETS, RIVER_KEYS, RIVER_SECTION, SECTIONS, toRiverParams, toWorldParams, VIEW_MODES, VIEW_SECTION } from './params';
+import { drawGrid, drawGrowth, drawLinks, drawMerges, drawRivers, drawRuler, drawSites, fmtDist, niceStep, type Frame } from './render/overlays';
 import { DETAIL_PX, mapSource, type ViewMode, type ViewOpts } from './render/source';
 import { computeViewStats, renderInspector, renderLegend, renderLevels, renderRuler, renderStats, type ViewStats } from './ui/widgets';
+import { Rivers } from './world/rivers';
 import { World } from './world/world';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -38,6 +39,9 @@ let seedText = initial?.seed ?? DEFAULT_SEED;
 let params: Params = initial?.params ?? defaults();
 
 let world!: World;
+let rivers!: Rivers;
+/** regions around the view whose rivers are still being computed */
+let riverPending = 0;
 let genId = 0;
 let fingerprint = '';
 let stats: ViewStats | null = null;
@@ -81,7 +85,7 @@ if (urlCam) {
 
 // ------------------------------------------------------------------ panels
 
-const leftPanel = buildPanel($('left'), SECTIONS, params, onParam, resetSection);
+const leftPanel = buildPanel($('left'), [...SECTIONS, RIVER_SECTION], params, onParam, resetSection);
 const viewPanel = buildPanel($('viewPanel'), [VIEW_SECTION], params, onParam, resetSection);
 $('statsSec').querySelector('.sec-head')!.addEventListener('click', () => {
   $('statsSec').classList.toggle('collapsed');
@@ -106,7 +110,11 @@ function setParams(patch: Params): void {
   viewPanel.sync(params);
   const gen = Object.keys(patch).some((k) => GEN_KEYS.has(k) && before[k] !== params[k]);
   if (gen) regenerate();
-  else viewChanged();
+  else {
+    // river settings rebuild only the rivers, never the map
+    if (Object.keys(patch).some((k) => RIVER_KEYS.has(k) && before[k] !== params[k])) rivers = new Rivers(world, toRiverParams(params));
+    viewChanged();
+  }
 }
 
 // ------------------------------------------------------------------ generation
@@ -114,6 +122,7 @@ function setParams(patch: Params): void {
 let fpTimer = 0;
 function regenerate(): void {
   world = new World(toWorldParams(params, seedFromText(seedText)));
+  rivers = new Rivers(world, toRiverParams(params));
   genId++;
   timings.render = 0;
   fingerprint = '';
@@ -181,7 +190,7 @@ function scheduleStats(): void {
     if ($('statsSec').classList.contains('collapsed')) return;
     const [x0, y0] = screenToWorld(cam, vp, 0, 0);
     const [x1, y1] = screenToWorld(cam, vp, vp.w, vp.h);
-    stats = computeViewStats(world, x0, y0, x1, y1, detailOn());
+    stats = computeViewStats(world, x0, y0, x1, y1, detailOn(), params['riv.on'] === true ? rivers : null);
     renderStatsPanel();
     if (str(params, 'view.color') === 'landsea') renderLegend($('legend'), 'landsea', stats.oceanShare, world.p.growPasses);
   }, 350);
@@ -240,6 +249,16 @@ function frame(): void {
   const [x0, y0] = screenToWorld(cam, vp, 0, 0);
   const [x1, y1] = screenToWorld(cam, vp, vp.w, vp.h);
   const f: Frame = { ctx, cam, vp, dpr, x0, y0, x1, y1 };
+  // rivers: cached regions always; new regions are computed between interactions
+  riverPending = 0;
+  if (params['riv.on'] === true) {
+    riverPending = drawRivers(
+      f,
+      rivers,
+      { width: Number(params['view.riverWidth']), minFlow: Number(params['view.riverMin']), attractors: params['view.attractors'] === true },
+      interacting ? 0 : performance.now() + Math.max(12, budget * 0.6),
+    );
+  }
   // vector overlays only once the raster is settled (they trigger the same lazy work)
   if (!layer.busy || !interacting) {
     if (params['view.grid'] === true) drawGrid(f);
@@ -253,8 +272,8 @@ function frame(): void {
 
   updateStatus(layer.busy ? layer.progress : 1);
   renderLevels($('levels'), world, cam.zoom, detailOn());
-  $('busy').hidden = !layer.busy;
-  if (layer.busy) invalidate();
+  $('busy').hidden = !layer.busy && riverPending === 0;
+  if (layer.busy || riverPending > 0) invalidate();
   else if (interacting || fresh) {
     clearTimeout(idleTimer);
     idleTimer = window.setTimeout(invalidate, 170);
@@ -273,12 +292,13 @@ function updateStatus(progress: number): void {
     `<span title="Metres per CSS pixel">${mpp >= 1000 ? `<b>${(mpp / 1000).toFixed(2)}</b> km/px` : `<b>${mpp.toFixed(0)}</b> m/px`}</span>` +
     `<span title="Width of the view">view <b>${fmtDist(vp.w / cam.zoom)}</b></span>` +
     (progress < 1 ? `<span class="rendering">rendering ${(progress * 100).toFixed(0)}%</span>` : '') +
+    (riverPending > 0 ? `<span class="rendering" title="Regions whose rivers are still growing">rivers: ${riverPending} regions to go</span>` : '') +
     `<span class="scalebar"><i style="width:${px.toFixed(0)}px"></i>${fmtDist(len)}</span>`;
 }
 
 function updateInspector(): void {
   const pt = pinned ?? hover;
-  renderInspector($('inspector'), world, pt ? { ...pt, pinned: !!pinned } : null);
+  renderInspector($('inspector'), world, params['riv.on'] === true ? rivers : null, pt ? { ...pt, pinned: !!pinned } : null);
 }
 
 let inspectTimer = 0;
@@ -602,6 +622,10 @@ window.addEventListener('keydown', (e) => {
     case 'j':
     case 'J':
       toggle('view.mergeArrows');
+      break;
+    case 'v':
+    case 'V':
+      toggle('riv.on');
       break;
     case 'g':
     case 'G':
