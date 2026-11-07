@@ -6,13 +6,23 @@ A Procedural Cell Generation Sandbox
 
 Should run in a browser
 
-Be deployable from Github Pages
+Be deployable from GitHub Pages
+
+### Sandbox 1
+
+Focus on Cell generation and the ability to configure params and methods and then visually evaluate the cells
+
+Include zoom and pan on the resulting cells
+
+### Sandbox 2
+
+Future work - not defined yet.
 
 ## Research
 
-* Determenistic Noise
-* Voronoi Diagram 
+* Deterministic Noise
+* Voronoi Diagram
 * Worley Noise
 * Distance functions
-* The Spase Colonization Algorithm (and its usage to generate rive networks)
+* The Space Colonization Algorithm (and its usage to generate river networks)
 * Using the intersection of two noise maps to generate lines/networks
