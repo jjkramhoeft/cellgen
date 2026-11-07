@@ -10,7 +10,8 @@
  *
  * Oceans (on raw biome cells, before merging):
  *   1. Seeds: every region marks n ∈ [min, max] of its biomes as ocean seeds.
- *   2. Links: each seed, with probability `connectChance`, links to the nearest other
+ *   2. Links: each seed, with probability `doubleLinkChance`, links to its two nearest
+ *      other seeds; otherwise, with probability `connectChance`, it links to the nearest other
  *      seed (searching regions up to `connectRange` away). Every biome crossed by the
  *      straight segment between the two seed sites becomes ocean ("chain"), so more
  *      than two seeds can join into one ocean.
@@ -47,6 +48,8 @@ export interface WorldParams {
   biomeMergeMax: number;
   // oceans
   connectChance: number;
+  /** chance that a seed links to its two nearest seeds instead (overrides connectChance) */
+  doubleLinkChance: number;
   connectRange: number;
   /** relative weights of converting 0, 1, 2, 3 neighbours */
   growWeights: [number, number, number, number];
@@ -152,6 +155,7 @@ export interface Cell {
 const ST_SEEDS = 0x5e01;
 const ST_MERGE = 0x5e02;
 const ST_LINK = 0x5e03;
+const ST_DLINK = 0x5e05;
 const ST_GROW = 0x5e10;
 const ST_SUBMERGE = 0x5e04;
 
@@ -270,7 +274,7 @@ export class World {
 
   /**
    * Register this region's ocean sources: its seeds, and for every seed that links,
-   * the chain of biomes to the nearest other seed.
+   * the chain of biomes to its nearest other seed (or two nearest, see linkCount).
    */
   private source(rkey: number): void {
     if (this.sourced.has(rkey)) return;
@@ -280,10 +284,10 @@ export class World {
     for (const s of r.seeds) {
       this.flag(s, SEED);
       const sb = this.biome(s);
-      if (toUnit(hash4(p.seed, ST_LINK, sb.i, sb.j)) >= p.connectChance) continue;
-      // nearest other seed within connectRange regions (by site distance, ties by key)
-      let best = Infinity;
-      let to = -1;
+      const n = this.linkCount(sb);
+      if (n === 0) continue;
+      // the n nearest other seeds within connectRange regions (by site distance, ties by key)
+      const cands: { key: number; d: number }[] = [];
       const R = p.connectRange;
       for (let dj = -R; dj <= R; dj++) {
         for (let di = -R; di <= R; di++) {
@@ -291,21 +295,30 @@ export class World {
           for (const t of o.seeds) {
             if (t === s) continue;
             const tb = this.biome(t);
-            const d = (tb.x - sb.x) * (tb.x - sb.x) + (tb.y - sb.y) * (tb.y - sb.y);
-            if (d < best || (d === best && t < to)) {
-              best = d;
-              to = t;
-            }
+            cands.push({ key: t, d: (tb.x - sb.x) * (tb.x - sb.x) + (tb.y - sb.y) * (tb.y - sb.y) });
           }
         }
       }
-      if (to < 0) continue;
-      const chain = this.trace(sb, this.biome(to));
-      for (const c of chain) this.flag(c, LINKED);
-      links.push({ from: s, to, chain });
+      cands.sort((a, b) => a.d - b.d || a.key - b.key);
+      for (const { key: to } of cands.slice(0, n)) {
+        const chain = this.trace(sb, this.biome(to));
+        for (const c of chain) this.flag(c, LINKED);
+        links.push({ from: s, to, chain });
+      }
     }
     r.links = links;
     this.sourced.add(rkey);
+  }
+
+  /**
+   * How many links a seed makes: 2 (its two nearest seeds) with `doubleLinkChance`,
+   * otherwise 1 with `connectChance`, otherwise 0. The two draws use independent hash
+   * streams, so a double-link chance of 0 leaves every single link unchanged.
+   */
+  linkCount(sb: Biome): number {
+    const p = this.p;
+    if (toUnit(hash4(p.seed, ST_DLINK, sb.i, sb.j)) < p.doubleLinkChance) return 2;
+    return toUnit(hash4(p.seed, ST_LINK, sb.i, sb.j)) < p.connectChance ? 1 : 0;
   }
 
   private flag(bkey: number, f: number): void {

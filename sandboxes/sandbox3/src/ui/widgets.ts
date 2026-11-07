@@ -91,7 +91,7 @@ export function renderInspector(host: HTMLElement, world: World | null, pt: Prob
 
   html += `<div class="lvl"><h4><i style="background:${regColor}"></i>Region ${ij(c.region)}</h4>`;
   html += `<div class="kv"><span>Owned biomes</span><b>${reg.biomes.length}</b></div>`;
-  html += `<div class="kv"><span>Ocean seeds</span><b>${reg.seeds.length} · ${links.length} linked</b></div>`;
+  html += `<div class="kv"><span>Ocean seeds</span><b>${reg.seeds.length} · ${links.length} link${links.length === 1 ? '' : 's'}</b></div>`;
   html += `<div class="kv"><span>Biome merges</span><b>${reg.merges.size}</b></div></div>`;
 
   const typeName = c.ocean ? 'Ocean' : LAND_TYPES[landType(c.biome)].name;
@@ -111,7 +111,7 @@ export function renderInspector(host: HTMLElement, world: World | null, pt: Prob
   if (t >= 0) html += `<div class="kv"><span>Joins</span><b>${ij(t)}</b></div>`;
   html += `<div class="kv"><span>Neighbours</span><b>${world.biomeNbrs(broot).length}</b></div>`;
   html += `<div class="kv"><span>Owned subbiomes</span><b>${world.biomeSubs(braw).length}</b></div>`;
-  if (f & SEED) html += `<div class="kv"><span>Ocean seed</span><b>${f & LINKED ? 'linked' : 'lone'}</b></div>`;
+  if (f & SEED) html += `<div class="kv"><span>Ocean seed</span><b>${f & LINKED ? (world.linkCount(world.biome(c.biome)) === 2 ? 'double-linked' : 'linked') : 'lone'}</b></div>`;
   const grows = world.growthFrom(c.biome);
   if (grows.length) html += `<div class="kv"><span>Converted</span><b>${grows.length} neighbour${grows.length > 1 ? 's' : ''}</b></div>`;
   html += `<div class="kv"><span>Site</span><b>${(broot.x / 1000).toFixed(1)}, ${(broot.y / 1000).toFixed(1)} km</b></div></div>`;

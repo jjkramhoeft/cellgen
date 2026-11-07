@@ -151,7 +151,7 @@ The world is unbounded and measured in metres. Every level is a stateless lattic
 
 | Area | Methods and parameters |
 |---|---|
-| **Oceans** | Seeds per region (min/max) → each seed **links** to its nearest other seed with a 40 % chance, and every biome on the straight line between them turns into ocean, so chains of seeds join into one ocean → **growth**: every linked ocean biome converts its 3 / 2 / 1 / 0 closest land neighbours with chances 10 / 33 / 33 / 23 %. Options: link search radius, grow from linked or from all ocean biomes, and 0–4 growth passes (each later pass grows from the previous pass's new ocean) |
+| **Oceans** | Seeds per region (min/max) → each seed **links** to its nearest other seed with a 40 % chance, or with a 5 % **double link** chance to its two nearest seeds, and every biome on the straight line between them turns into ocean, so chains of seeds join into one ocean → **growth**: every linked ocean biome converts its 3 / 2 / 1 / 0 closest land neighbours with chances 10 / 33 / 33 / 23 %. Options: link search radius, grow from linked or from all ocean biomes, and 0–4 growth passes (each later pass grows from the previous pass's new ocean) |
 | **Merges** | Chosen cells join their nearest neighbour (Gabriel graph, by site distance). Chains merge into one cell, and cycles resolve to the smallest key. Biome merges stay on one side of the coast (optional); subbiome merges stay inside one biome |
 | **Cells** | Grid size, jitter (0 = squares), border warp amplitude and frequency per level. **Nesting**: every point is classified through its subbiome, so biome and region borders, and coasts, follow subbiome cells. Turn it off to look each level up independently |
 

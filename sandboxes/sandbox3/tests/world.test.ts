@@ -129,6 +129,53 @@ describe('world', () => {
     expect(links).toBeGreaterThan(10);
   });
 
+  it('double links connect a seed to its two nearest seeds', () => {
+    const w = new World(base({ connectChance: 0, doubleLinkChance: 1, growPasses: 0, oceanMin: 1, oceanMax: 2 }));
+    let doubles = 0;
+    for (const r of World.cellsIn(w.regionLevel, -300000, -300000, 300000, 300000, 0)) {
+      const bySeed = new Map<number, number[]>();
+      for (const l of w.links(r)) bySeed.set(l.from, [...(bySeed.get(l.from) ?? []), l.to]);
+      for (const s of w.region(r).seeds) {
+        const to = bySeed.get(s) ?? [];
+        expect(to.length).toBe(2);
+        doubles++;
+        // the two targets are the two nearest other seeds in the search window
+        const sb = w.biome(s);
+        const d2 = (k: number) => (w.biome(k).x - sb.x) ** 2 + (w.biome(k).y - sb.y) ** 2;
+        const others: number[] = [];
+        const R = w.p.connectRange;
+        for (let dj = -R; dj <= R; dj++)
+          for (let di = -R; di <= R; di++) for (const t of w.region(packKey(keyI(r) + di, keyJ(r) + dj)).seeds) if (t !== s) others.push(t);
+        others.sort((a, b) => d2(a) - d2(b) || a - b);
+        expect(to).toEqual(others.slice(0, 2));
+        expect(d2(to[0])).toBeLessThanOrEqual(d2(to[1]));
+      }
+    }
+    expect(doubles).toBeGreaterThan(10);
+  });
+
+  it('double link chance sets the share of double-linked seeds and leaves single links alone at 0', () => {
+    const count = (w: World) => {
+      let seeds = 0;
+      let doubles = 0;
+      for (const r of World.cellsIn(w.regionLevel, -1500000, -1500000, 1500000, 1500000, 0)) {
+        for (const s of w.region(r).seeds) {
+          seeds++;
+          if (w.linkCount(w.biome(s)) === 2) doubles++;
+        }
+      }
+      return doubles / seeds;
+    };
+    const share = count(new World(base({ doubleLinkChance: 0.05 })));
+    expect(share).toBeGreaterThan(0.02);
+    expect(share).toBeLessThan(0.09);
+    const single = new World(base({ doubleLinkChance: 0 }));
+    for (const r of World.cellsIn(single.regionLevel, -300000, -300000, 300000, 300000, 0)) {
+      const from = single.links(r).map((l) => l.from);
+      expect(new Set(from).size).toBe(from.length);
+    }
+  });
+
   it('grows only from linked ocean and converts at most 3 closest land neighbours per pass', () => {
     const w = new World(base({ growPasses: 1, growWeights: [0, 0, 0, 1] }));
     let grew = 0;
