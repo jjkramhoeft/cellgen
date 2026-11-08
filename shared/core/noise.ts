@@ -1,5 +1,6 @@
 /**
- * Seeded 2D simplex noise with a stateless lattice hash, plus fBm and ridged fBm.
+ * Seeded 2D simplex and classic Perlin (gradient) noise with a stateless lattice hash,
+ * plus fBm (over either) and ridged fBm.
  *
  * Following the research recommendation (gaps §6.1) this is an in-house simplex that
  * picks gradients with a pcg-style hash of the lattice coordinates instead of a
@@ -76,8 +77,34 @@ export interface FbmParams {
 const RC = 0.8;
 const RS = 0.6;
 
-/** Fractal Brownian motion, normalised to roughly [-1, 1]. */
-export function fbm(seed: number, x: number, y: number, p: FbmParams): number {
+/**
+ * Classic 2D Perlin (gradient) noise in [-1, 1] for a given 32-bit seed: a gradient at
+ * every integer lattice point (the same 12 directions and hash as simplex2), blended
+ * with Perlin's quintic fade. Zero at every lattice point.
+ */
+export function perlin2(seed: number, x: number, y: number): number {
+  const i = Math.floor(x);
+  const j = Math.floor(y);
+  const fx = x - i;
+  const fy = y - j;
+  const u = fx * fx * fx * (fx * (fx * 6 - 15) + 10);
+  const v = fy * fy * fy * (fy * (fy * 6 - 15) + 10);
+  const g00 = pcg3(i, j, seed) % 12;
+  const g10 = pcg3(i + 1, j, seed) % 12;
+  const g01 = pcg3(i, j + 1, seed) % 12;
+  const g11 = pcg3(i + 1, j + 1, seed) % 12;
+  const n00 = GX[g00] * fx + GY[g00] * fy;
+  const n10 = GX[g10] * (fx - 1) + GY[g10] * fy;
+  const n01 = GX[g01] * fx + GY[g01] * (fy - 1);
+  const n11 = GX[g11] * (fx - 1) + GY[g11] * (fy - 1);
+  const a = n00 + u * (n10 - n00);
+  const b = n01 + u * (n11 - n01);
+  // unit gradients bound the raw value by √2 / 2 (reached at a cell centre)
+  return Math.SQRT2 * (a + v * (b - a));
+}
+
+/** Sum of `p.octaves` octaves of `basis`, each rotated and scaled by the lacunarity, with weights 1, gain, gain², … */
+function octaves(basis: (seed: number, x: number, y: number) => number, seed: number, x: number, y: number, p: FbmParams): { sum: number; norm: number } {
   let sum = 0;
   let amp = 1;
   let norm = 0;
@@ -85,7 +112,7 @@ export function fbm(seed: number, x: number, y: number, p: FbmParams): number {
   let py = y;
   const oct = Math.max(1, Math.floor(p.octaves));
   for (let o = 0; o < oct; o++) {
-    sum += amp * simplex2((seed + Math.imul(o, 0x3c6ef372)) | 0, px, py);
+    sum += amp * basis((seed + Math.imul(o, 0x3c6ef372)) | 0, px, py);
     norm += amp;
     amp *= p.gain;
     const nx = (RC * px - RS * py) * p.lacunarity + 17.3;
@@ -93,7 +120,22 @@ export function fbm(seed: number, x: number, y: number, p: FbmParams): number {
     px = nx;
     py = ny;
   }
-  return sum / norm;
+  return { sum, norm };
+}
+
+/** Fractal Brownian motion of simplex noise, normalised to roughly [-1, 1]. */
+export function fbm(seed: number, x: number, y: number, p: FbmParams): number {
+  const o = octaves(simplex2, seed, x, y, p);
+  return o.sum / o.norm;
+}
+
+/**
+ * Fractal Brownian motion of Perlin noise in [-1, 1], divided by the sum of the octave
+ * weights (so the bound holds; the spread narrows as octaves are added).
+ */
+export function perlinFbm(seed: number, x: number, y: number, p: FbmParams): number {
+  const o = octaves(perlin2, seed, x, y, p);
+  return o.sum / o.norm;
 }
 
 /** Ridged multifractal (Musgrave-style weighting), mapped to [-1, 1]. */

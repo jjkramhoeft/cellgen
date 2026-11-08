@@ -8,6 +8,8 @@ import { fmtDist, TRAVEL, travelDays } from '../render/overlays';
 import { GENESIS, heightColor, keyHash, type ViewMode } from '../render/source';
 import { ELEVATION_ZONE_TYPES, elevationZoneType } from '../world/zones';
 import type { Terrain } from '../world/terrain';
+import type { Climate } from '../world/climate';
+import { rampRgb, STOPS, type ClimateField } from '../render/climate';
 
 /** Packed ABGR pixel → CSS colour. */
 const cssHex = (c: number) => `rgb(${c & 255},${(c >>> 8) & 255},${(c >>> 16) & 255})`;
@@ -36,7 +38,28 @@ const NOTES: Record<ViewMode, [string, string]> = {
   height: ['Height', 'Fitted height map, hillshaded from the north-west. Regions are computed as you look; flat colours mean “not ready yet”.'],
 };
 
-export function renderLegend(host: HTMLElement, mode: ViewMode, oceanShare: number | null, passes: number): void {
+/** A climate overlay in the legend: its field and the range of its parameters. */
+export interface ClimateLegend {
+  field: ClimateField;
+  min: number;
+  max: number;
+}
+
+const CLIMATE_NAMES: Record<ClimateField, [string, string]> = { temperature: ['Initial temperature', '°C'], humidity: ['Initial humidity', '%'] };
+
+/** A gradient bar over [min, max] for one climate overlay (drawn at 50 % on the map). */
+function climateBar(c: ClimateLegend): string {
+  const [name, unit] = CLIMATE_NAMES[c.field];
+  const span = c.max - c.min;
+  const stops = [0, 0.25, 0.5, 0.75, 1].map((t) => `${cssRgb(rampRgb(STOPS[c.field], c.min + span * t))} ${t * 100}%`).join(',');
+  return (
+    `<div class="lg-clim"><div class="lg-clim-name">${esc(name)} <em>overlay · 50 %</em></div>` +
+    `<div class="lg-bar" style="background:linear-gradient(90deg,${stops})"></div>` +
+    `<div class="lg-clim-ends"><span>${c.min} ${unit}</span><span>${c.max} ${unit}</span></div></div>`
+  );
+}
+
+export function renderLegend(host: HTMLElement, mode: ViewMode, oceanShare: number | null, passes: number, climate: ClimateLegend[] = []): void {
   const [title, note] = NOTES[mode];
   const min = host.classList.contains('min');
   let html = `<div class="lg-title" title="Click to collapse / expand">${esc(title)}</div>`;
@@ -58,6 +81,7 @@ export function renderLegend(host: HTMLElement, mode: ViewMode, oceanShare: numb
     html += '<div class="lg-cats">' + sw('#e8913a', 'Merged elevation zone group') + sw('#f4dd63', 'Merged subbiome group') + sw('#767c70', 'Unmerged land') + sw('#283a54', 'Unmerged ocean') + '</div>';
   }
   html += `<div class="lg-note">${esc(note)}</div>`;
+  for (const c of climate) html += climateBar(c);
   host.innerHTML = html;
   host.classList.toggle('min', min);
   host.querySelector('.lg-title')!.addEventListener('click', () => host.classList.toggle('min'));
@@ -83,7 +107,7 @@ export interface Probe {
   pinned: boolean;
 }
 
-export function renderInspector(host: HTMLElement, world: World | null, rivers: Rivers | null, pt: Probe | null, terrain: Terrain | null = null): void {
+export function renderInspector(host: HTMLElement, world: World | null, rivers: Rivers | null, pt: Probe | null, terrain: Terrain | null = null, climate: Climate | null = null): void {
   if (!world || !pt) {
     host.innerHTML = '<p class="muted">Hover the map to inspect a point. Click to pin the elevation zone and subbiome under the cursor.</p>';
     return;
@@ -101,6 +125,11 @@ export function renderInspector(host: HTMLElement, world: World | null, rivers: 
     const t = terrain.peek(c.region);
     html += `<div class="kv" title="Height map (bilinear in the tile raster)"><span>Height</span><b>${h === h ? `${h.toFixed(0)} m` : 'not computed yet'}</b></div>`;
     if (t) html += `<div class="kv" title="Tile raster (a block of k × k regions, 2 × 2 by default): cells · cells raised by the pit fill (largest raise) · compute time"><span>Terrain raster</span><b>${t.nx}×${t.ny} · ${t.filled} filled (≤ ${t.maxFill.toFixed(1)} m) · ${t.ms.toFixed(0)} ms</b></div>`;
+  }
+
+  if (climate) {
+    html += `<div class="kv" title="Initial temperature map (Perlin noise)"><span>Initial temperature</span><b>${climate.temperatureAt(pt.x, pt.y).toFixed(1)} °C</b></div>`;
+    html += `<div class="kv" title="Initial humidity map (Perlin noise)"><span>Initial humidity</span><b>${climate.humidityAt(pt.x, pt.y).toFixed(0)} %</b></div>`;
   }
 
   html += `<div class="lvl"><h4><i style="background:${regColor}"></i>Region ${ij(c.region)}</h4>`;

@@ -150,6 +150,37 @@
   font-size: 11.5px;
 }
 
+.lg-clim {
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.lg-clim-name {
+  font-size: 12px;
+  margin-bottom: 4px;
+}
+
+.lg-clim-name em {
+  color: var(--muted);
+  font-style: normal;
+  font-size: 11px;
+}
+
+.lg-bar {
+  height: 10px;
+  border-radius: 3px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+.lg-clim-ends {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 2px;
+  font: 11px var(--mono);
+  color: var(--muted);
+}
+
 #levels {
   top: 12px;
   right: 12px;

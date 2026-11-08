@@ -16,11 +16,13 @@ import { decodeState, encodeState } from '@shared/params/url';
 import { screenToWorld, zoomAt, type Camera, type Viewport } from '@shared/render/camera';
 import { RasterLayer } from '@shared/render/raster';
 import { buildPanel } from '@shared/ui/panel';
-import { ALL_DEFS, DEFAULT_SEED, defaults, GEN_KEYS, PRESETS, RIVER_KEYS, RIVER_SECTION, FLOODPLAIN_SECTION, GRADIENT_SECTION, HILLSLOPE_SECTION, SECTIONS, TERRAIN_KEYS, TERRAIN_SECTION, toRiverParams, toTerrainParams, toWorldParams, VIEW_MODES, VIEW_SECTION } from './params';
+import { ALL_DEFS, CLIMATE_KEYS, CLIMATE_SECTIONS, DEFAULT_SEED, defaults, GEN_KEYS, PRESETS, RIVER_KEYS, RIVER_SECTION, FLOODPLAIN_SECTION, GRADIENT_SECTION, HILLSLOPE_SECTION, SECTIONS, TERRAIN_KEYS, TERRAIN_SECTION, toClimateParams, toRiverParams, toTerrainParams, toWorldParams, VIEW_MODES, VIEW_SECTION } from './params';
 import { drawGrid, drawGrowth, drawLinks, drawMerges, drawRivers, drawRuler, drawSites, fmtDist, niceStep, type Frame } from './render/overlays';
+import { climateSource, type ClimateField } from './render/climate';
 import { DETAIL_PX, mapSource, type ViewMode, type ViewOpts } from './render/source';
 import { computeViewStats, renderInspector, renderLegend, renderLevels, renderRuler, renderStats, type ViewStats } from './ui/widgets';
 import { buildMesh, View3D, type HeightGrid, type Rect } from './render/view3d';
+import { Climate } from './world/climate';
 import { Rivers } from './world/rivers';
 import { FLOOD_REF_FLOW, monotoneSpline, Terrain } from './world/terrain';
 import type { FromTerrainWorker, ToTerrainWorker } from './world/terrain.worker';
@@ -40,6 +42,11 @@ const TERRAIN_MAX_REGIONS = 64;
 const MESH_COLS = 480;
 /** the 3D mesh reaches this many view widths (heights) beyond each side of the view, so a pan slides real terrain into view */
 const MESH_MARGIN = 0.5;
+/** climate overlays: device px per CSS px of their raster (the fields are smooth), and while moving */
+const CLIMATE_SCALE = 0.5;
+const CLIMATE_PREVIEW = 0.25;
+/** opacity of each climate overlay */
+const CLIMATE_ALPHA = 0.5;
 
 // ------------------------------------------------------------------ state
 
@@ -50,6 +57,7 @@ let params: Params = initial?.params ?? defaults();
 let world!: World;
 let rivers!: Rivers;
 let terrain!: Terrain;
+let climate!: Climate;
 /** bumped when new terrain rasters are ready (part of the raster key, so the map re-renders) */
 let terrainVer = 0;
 /** terrain tiles around the view still being computed (-1 = view too large) */
@@ -87,6 +95,7 @@ const timings = { render: 0 };
 const canvas = $<HTMLCanvasElement>('view');
 const ctx = canvas.getContext('2d', { alpha: false })!;
 const layer = new RasterLayer();
+const climateLayers: Record<ClimateField, RasterLayer> = { temperature: new RasterLayer(), humidity: new RasterLayer() };
 let vp: Viewport = { w: 1, h: 1 };
 let cam: Camera = { cx: 0, cy: 0, zoom: 1e-3 };
 let homed = true;
@@ -114,7 +123,7 @@ if (urlCam) {
 
 // ------------------------------------------------------------------ panels
 
-const leftPanel = buildPanel($('left'), [...SECTIONS, RIVER_SECTION, TERRAIN_SECTION, HILLSLOPE_SECTION, GRADIENT_SECTION, FLOODPLAIN_SECTION], params, onParam, resetSection);
+const leftPanel = buildPanel($('left'), [...SECTIONS, RIVER_SECTION, TERRAIN_SECTION, HILLSLOPE_SECTION, GRADIENT_SECTION, FLOODPLAIN_SECTION, ...CLIMATE_SECTIONS], params, onParam, resetSection);
 
 /** Live plot of the floodplain curve (half-width over bed height) in its panel section. */
 function renderFloodPlot(): void {
@@ -188,6 +197,7 @@ function setParams(patch: Params): void {
     const riv = changed(RIVER_KEYS);
     if (riv) rivers = new Rivers(world, toRiverParams(params));
     if (riv || changed(TERRAIN_KEYS)) newTerrain();
+    if (changed(CLIMATE_KEYS)) newClimate();
     viewChanged();
   }
 }
@@ -199,6 +209,7 @@ function regenerate(): void {
   world = new World(toWorldParams(params, seedFromText(seedText)));
   rivers = new Rivers(world, toRiverParams(params));
   newTerrain();
+  newClimate();
   genId++;
   timings.render = 0;
   fingerprint = '';
@@ -214,6 +225,23 @@ function regenerate(): void {
     }
   }, 700);
   viewChanged();
+}
+
+function newClimate(): void {
+  climate = new Climate(toClimateParams(params, seedFromText(seedText)));
+}
+
+/** The climate overlays that are on, bottom first. */
+function climateOn(): ClimateField[] {
+  const on: ClimateField[] = [];
+  if (params['view.temp'] === true) on.push('temperature');
+  if (params['view.humid'] === true) on.push('humidity');
+  return on;
+}
+
+/** Legend entries for the climate overlays that are on. */
+function climateLegend(): { field: ClimateField; min: number; max: number }[] {
+  return climateOn().map((field) => ({ field, min: climate.p[field].min, max: climate.p[field].max }));
 }
 
 /** Terrain tiles are computed in a worker; without one (very old browsers) on the main thread. */
@@ -368,7 +396,7 @@ function viewOpts(): ViewOpts {
 function viewChanged(): void {
   meshDirty = texDirty = true;
   show3d();
-  renderLegend($('legend'), viewOpts().mode, stats ? stats.oceanShare : null, world.p.growPasses);
+  renderLegend($('legend'), viewOpts().mode, stats ? stats.oceanShare : null, world.p.growPasses, climateLegend());
   updateInspector();
   writeUrl();
   scheduleStats();
@@ -395,7 +423,7 @@ function scheduleStats(): void {
     const [x1, y1] = screenToWorld(cam, vp, vp.w, vp.h);
     stats = computeViewStats(world, x0, y0, x1, y1, detailOn(), params['riv.on'] === true ? rivers : null);
     renderStatsPanel();
-    if (str(params, 'view.color') === 'landsea') renderLegend($('legend'), 'landsea', stats.oceanShare, world.p.growPasses);
+    if (str(params, 'view.color') === 'landsea') renderLegend($('legend'), 'landsea', stats.oceanShare, world.p.growPasses, climateLegend());
   }, 350);
 }
 
@@ -473,6 +501,18 @@ function frame(): void {
       interacting ? 0 : performance.now() + Math.max(12, budget * 0.6),
     );
   }
+  // climate overlays: half transparent, over the map and rivers (coarse while moving)
+  let climateBusy = false;
+  for (const field of climateOn()) {
+    const cl = climateLayers[field];
+    const csrc = climateSource(climate, field);
+    const cs = interacting ? CLIMATE_PREVIEW : CLIMATE_SCALE;
+    if (!cl.isCurrent(csrc, cam, vp, cs) && !(cs < CLIMATE_SCALE && cl.isCurrent(csrc, cam, vp, CLIMATE_SCALE))) cl.start(csrc, cam, vp, cs);
+    if (cl.step(performance.now() + Math.max(6, budget * 0.25))) climateBusy = true;
+    ctx.globalAlpha = CLIMATE_ALPHA;
+    cl.draw(ctx, cam, vp, dpr, csrc.key, true, true);
+    ctx.globalAlpha = 1;
+  }
   // vector overlays only once the raster is settled (they trigger the same lazy work)
   if (!layer.busy || !interacting) {
     if (params['view.grid'] === true) drawGrid(f);
@@ -487,10 +527,10 @@ function frame(): void {
   updateStatus(layer.busy ? layer.progress : 1);
   renderLevels($('levels'), world, cam.zoom, detailOn());
   const terrainBusy = terrainPending > 0;
-  $('busy').hidden = !layer.busy && riverPending === 0 && !terrainBusy;
-  if (params['view.3d'] === true) update3d(interacting, !terrainBusy, !layer.busy && riverPending === 0 && !terrainBusy && !interacting);
+  $('busy').hidden = !layer.busy && riverPending === 0 && !terrainBusy && !climateBusy;
+  if (params['view.3d'] === true) update3d(interacting, !terrainBusy, !layer.busy && riverPending === 0 && !terrainBusy && !climateBusy && !interacting);
   // with a worker, arriving tiles wake the loop (no need to spin while it works)
-  if (layer.busy || riverPending > 0 || (terrainBusy && !terrainWorker)) invalidate();
+  if (layer.busy || climateBusy || riverPending > 0 || (terrainBusy && !terrainWorker)) invalidate();
   else if (interacting || fresh) {
     clearTimeout(idleTimer);
     idleTimer = window.setTimeout(invalidate, 170);
@@ -517,7 +557,7 @@ function updateStatus(progress: number): void {
 
 function updateInspector(): void {
   const pt = pinned ?? hover;
-  renderInspector($('inspector'), world, params['riv.on'] === true ? rivers : null, pt ? { ...pt, pinned: !!pinned } : null, needTerrain() ? terrain : null);
+  renderInspector($('inspector'), world, params['riv.on'] === true ? rivers : null, pt ? { ...pt, pinned: !!pinned } : null, needTerrain() ? terrain : null, climate);
 }
 
 let inspectTimer = 0;
