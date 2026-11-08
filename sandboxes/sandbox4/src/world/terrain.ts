@@ -14,7 +14,7 @@
  *                        stream-power law integrated upstream from the sea (the χ
  *                        integral, Mudd et al. 2014 Eq. 4): z_k = z_parent + Δx·S₀·A^−θ,
  *                        with A = flow (attractors upstream) as the drainage-area proxy
- *                        and a configurable gradient factor per land type.
+ *                        and a configurable gradient factor per elevation zone type.
  *                        Strictly rising upstream by construction.
  *   1. Envelope          a geodesic distance (Dijkstra on an 8-connected grid, i.e. a
  *                        chamfer fast-marching) from every river bed and from the coast,
@@ -23,7 +23,7 @@
  *                        half-width is a spline over the bed height (optionally ∝ √flow).
  *   2. Divides           a ridge along region borders (which rivers never cross) and a
  *                        smaller one where the basins of two different river systems meet.
- *   3. Detail noise      fbm / ridged per land type, masked to zero near the channels.
+ *   3. Detail noise      fbm / ridged per elevation zone type, masked to zero near the channels.
  *   4. Burn              the rivers are imprinted (AGREE: a trench plus a linear buffer).
  *   5. Fill              ε-Priority-Flood over the region's own land, seeded from the
  *                        sea and the region border: no pits, everything drains.
@@ -38,10 +38,10 @@
 import { MinHeap } from '@shared/core/heap';
 import { fbm, ridged } from '@shared/core/noise';
 import { hash4 } from '@shared/core/hash';
-import { landType } from '../render/source';
 import { keyI, keyJ, packKey } from './level';
 import type { RegionRivers, Rivers } from './rivers';
 import { World } from './world';
+import { elevationZoneType } from './zones';
 
 export type Theta = 0.375 | 0.4375 | 0.5;
 
@@ -52,17 +52,17 @@ export interface TerrainParams {
   chSlope: number;
   /** concavity θ of the river profiles (dyadic, so √ suffices) */
   theta: Theta;
-  /** multiplier on the hillslope steepness of every land type */
+  /** multiplier on the hillslope steepness of every elevation zone type */
   hill: number;
-  /** hillslope steepness per land type (index = LAND_TYPES order), m/m; defaults: hgt.hs.* in defaults.json */
+  /** hillslope steepness per elevation zone type (index = ELEVATION_ZONE_TYPES order; the ocean entry is unused), m/m; defaults: hgt.hs.* in defaults.json */
   hillType: number[];
   /**
-   * Levelling of low-gradient biomes, 0–1: a biome with river gradient factor c < 1 has
+   * Levelling of low-gradient elevation zones, 0–1: an elevation zone with river gradient factor c < 1 has
    * its river entries lowered by level × (1 − c) of the way to its lowest entry.
    */
   level: number;
   /**
-   * River gradient factor per land type (index = LAND_TYPES order): how fast the bed
+   * River gradient factor per elevation zone type (index = ELEVATION_ZONE_TYPES order; the ocean entry is unused): how fast the bed
    * rises upstream there, relative to S₀.
    */
   chanFactor: number[];
@@ -71,13 +71,13 @@ export interface TerrainParams {
   floodW: number[];
   /** scale the floodplain with river size: × √(flow / FLOOD_REF_FLOW) */
   floodFlow: boolean;
-  /** strength of the region-scale relief field (mountain belts across biomes) */
+  /** strength of the region-scale relief field (mountain belts across elevation zones) */
   relief: number;
   /** height of the ridge along region borders, metres */
   ridge: number;
   /** extra height where the basins of two different river systems meet, metres */
   divide: number;
-  /** multiplier on the detail noise amplitude of every land type */
+  /** multiplier on the detail noise amplitude of every elevation zone type */
   noise: number;
   /** channel depth burnt below the bed profile, metres */
   burn: number;
@@ -104,22 +104,14 @@ export function tileSide(regionSize: number): number {
 const CACHE_CELLS = 12_000_000;
 
 /**
- * Relief per cosmetic land type (index = LAND_TYPES order in render/source.ts).
- * Starting points from the report's §7.2 table, not sourced values.
+ * Detail-noise relief per elevation zone type (index = ELEVATION_ZONE_TYPES order in
+ * world/zones.ts). Starting points from the report's §7.2 table, not sourced values.
  */
-const TYPES: { amp: number; ridged: number }[] = [
-  { amp: 10, ridged: 0 }, // Grassland
-  { amp: 20, ridged: 0 }, // Forest
-  { amp: 20, ridged: 0 }, // Old forest
-  { amp: 10, ridged: 0 }, // Steppe
-  { amp: 25, ridged: 1 }, // Desert (dune-like ridges)
-  { amp: 30, ridged: 0.3 }, // Tundra
-  { amp: 2, ridged: 0 }, // Marsh
+const ZONE_RELIEF: { amp: number; ridged: number }[] = [
+  { amp: 0, ridged: 0 }, // Ocean (unused: noise is land only)
+  { amp: 8, ridged: 0 }, // Flat
+  { amp: 25, ridged: 0.15 }, // Lowland
   { amp: 80, ridged: 1 }, // Hills
-  { amp: 10, ridged: 0 }, // Savanna
-  { amp: 20, ridged: 0 }, // Taiga
-  { amp: 30, ridged: 0.3 }, // Scrub
-  { amp: 30, ridged: 0.3 }, // Heath
   { amp: 180, ridged: 1 }, // Mountains
 ];
 
@@ -184,7 +176,7 @@ export function monotoneSpline(xs: number[], ys: number[]): (x: number) => numbe
  * region (tested) with 20–25 % fewer cells than the earlier 48 km.
  */
 export const HALO = 24_000;
-/** blend width of the per-land-type parameters across biome borders, metres */
+/** blend width of the per-zone-type parameters across elevation zone borders, metres */
 const BLEND = 4_000;
 /** ridge widths, metres */
 const BORDER_W = 10_000;
@@ -345,13 +337,13 @@ export class Terrain {
     return t;
   }
 
-  /** Hillslope steepness of a land type (0.03 for an unknown index). */
+  /** Hillslope steepness of an elevation zone type (0.03 for an unknown index). */
   hillOf(type: number): number {
     const v = this.p.hillType[type];
     return v === undefined ? 0.03 : Math.max(0, v);
   }
 
-  /** River gradient factor of a land type (1 for an unknown index). */
+  /** River gradient factor of an elevation zone type (1 for an unknown index). */
   chanOf(type: number): number {
     const f = this.p.chanFactor[type];
     return f === undefined ? 1 : f;
@@ -371,7 +363,7 @@ export class Terrain {
     return this.getTile(this.tileOf(rkey));
   }
 
-  /** Region-scale relief factor (mountain belts spanning several biomes). */
+  /** Region-scale relief factor (mountain belts spanning several elevation zones). */
   reliefAt(x: number, y: number): number {
     if (this.p.relief <= 0) return 1;
     const f = fbm(this.seedR, x / 220_000, y / 220_000, RELIEF_FBM);
@@ -384,13 +376,13 @@ export class Terrain {
    *   Rise      z_k = z_parent + Δx·S₀·c·A^−θ (c = gradient factor × relief), but never
    *             steeper than the hillslope of the land around (a river climbing faster than
    *             its valley sides would stand above the land).
-   *   Levelling a biome with factor c < 1 is a plain: its rivers may enter it at several
+   *   Levelling an elevation zone with factor c < 1 is a plain: its rivers may enter it at several
    *             points (they wander out into steeper neighbours and back), each carrying the
    *             height it climbed to outside. Every entry is lowered by level × (1 − c) of
-   *             the way to the biome's lowest entry. A river cannot run uphill, so the cap
+   *             the way to the elevation zone's lowest entry. A river cannot run uphill, so the cap
    *             is pushed downstream: the stretch between the sea and a lowered entry is cut
    *             down to it (a gorge through the steeper land). Lowering one entry can lower
-   *             another biome's lowest entry, so this repeats until nothing changes.
+   *             another elevation zone's lowest entry, so this repeats until nothing changes.
    *
    * A pure function of the region (its rivers and the map), so every tile agrees.
    */
@@ -427,9 +419,9 @@ export class Terrain {
     const P = this.p;
     const n = rr.n;
     const par = rr.parent;
-    // per node: biome (merged root, −1 over the sea), rise above the parent, levelling share
+    // per node: elevation zone (merged root, −1 over the sea), rise above the parent, levelling share
     const env = cross ? this.bedEnvelope(rkey, rr, this.neighbourSources(rkey, rr), null) : null;
-    const bio = new Float64Array(n).fill(-1);
+    const zone = new Float64Array(n).fill(-1);
     const rise = new Float64Array(n);
     /** segment length to the parent */
     const len = new Float64Array(n);
@@ -441,19 +433,19 @@ export class Terrain {
       const x = rr.x[k];
       const y = rr.y[k];
       const c = w.cellAt(x, y, true);
-      const type = landType(c.biome);
+      const type = elevationZoneType(c.elevationZone, c.ocean);
       const rf = this.reliefAt(x, y);
       const dx = Math.sqrt((x - rr.x[p]) ** 2 + (y - rr.y[p]) ** 2);
       const ch = P.chSlope * this.chanOf(type) * rf * invPowTheta(Math.max(1, rr.flow[k]), P.theta);
       // the same (blurred) hillslope the envelope uses, so a river never caps itself
       const hs = env && env.slope[k] >= 0 ? env.slope[k] : this.hillOf(type) * P.hill * rf;
-      bio[k] = c.biome;
+      zone[k] = c.elevationZone;
       len[k] = dx;
       rise[k] = dx * Math.min(ch, hs);
       const cf = Math.min(1, Math.max(0, this.chanOf(type)));
       keep[k] = 1 - Math.min(1, Math.max(0, P.level)) * (1 - cf);
     }
-    const isEntry = (k: number) => bio[k] >= 0 && bio[par[k]] !== bio[k];
+    const isEntry = (k: number) => zone[k] >= 0 && zone[par[k]] !== zone[k];
     const zz = new Float64Array(n);
     const cap = new Float64Array(n).fill(Infinity);
     const envs = env ? [env] : [];
@@ -484,20 +476,20 @@ export class Terrain {
       }
     };
     const lowest = new Map<number, number>();
-    /** levelling: cap every entry of a low-gradient biome towards its lowest entry */
+    /** levelling: cap every entry of a low-gradient elevation zone towards its lowest entry */
     const level = (): boolean => {
       lowest.clear();
       for (let k = 0; k < n; k++) {
         if (!isEntry(k)) continue;
         const zp = zz[par[k]];
-        const l = lowest.get(bio[k]);
-        if (l === undefined || zp < l) lowest.set(bio[k], zp);
+        const l = lowest.get(zone[k]);
+        if (l === undefined || zp < l) lowest.set(zone[k], zp);
       }
       let capped = false;
       for (let k = 0; k < n; k++) {
         if (!isEntry(k) || keep[k] >= 1) continue;
         const zp = zz[par[k]];
-        const l = lowest.get(bio[k])!;
+        const l = lowest.get(zone[k])!;
         const t = l + keep[k] * (zp - l) + rise[k];
         if (t < cap[k] - BED_TOL) {
           cap[k] = t;
@@ -625,17 +617,17 @@ export class Terrain {
     return [x0, y0, x1, y1];
   }
 
-  /** Raster bounding box of a region: its drawn biomes' sites plus a cell of slack, plus the halo. */
+  /** Raster bounding box of a region: its drawn elevation zones' sites plus a cell of slack, plus the halo. */
   private regionBox(rkey: number): [number, number, number, number] {
     const w = this.world;
-    const B = w.biomeLevel.size;
+    const B = w.elevationZoneLevel.size;
     let x0 = Infinity;
     let y0 = Infinity;
     let x1 = -Infinity;
     let y1 = -Infinity;
-    const keys = new Set([...this.rivers.regionBiomes(rkey), ...w.region(rkey).biomes]);
+    const keys = new Set([...this.rivers.regionElevationZones(rkey), ...w.region(rkey).elevationZones]);
     for (const b of keys) {
-      const bd = w.biome(b);
+      const bd = w.elevationZone(b);
       x0 = Math.min(x0, bd.x);
       y0 = Math.min(y0, bd.y);
       x1 = Math.max(x1, bd.x);
@@ -646,7 +638,7 @@ export class Terrain {
       x0 = x1 = reg.x;
       y0 = y1 = reg.y;
     }
-    const m = 1.6 * B * (1 + w.p.biomeWarp) + HALO;
+    const m = 1.6 * B * (1 + w.p.elevationZoneWarp) + HALO;
     return [x0 - m, y0 - m, x1 + m, y1 + m];
   }
 
@@ -690,7 +682,7 @@ export class Terrain {
           ocean[q] = 1;
           continue;
         }
-        hill[q] = this.hillOf(landType(c.biome));
+        hill[q] = this.hillOf(elevationZoneType(c.elevationZone, false));
         relief[q] = this.reliefAt(x, y);
       }
     }
@@ -910,7 +902,7 @@ export class Terrain {
     const cx = (i: number) => X0 + i * res;
     const cy = (j: number) => Y0 + j * res;
 
-    // ---- classify + per-land-type parameters
+    // ---- classify + per-zone-type parameters
     const cls = new Uint8Array(N);
     /** region of each cell, as an index into regKeys */
     const reg = new Int32Array(N);
@@ -930,14 +922,14 @@ export class Terrain {
           regIndex.set(c.region, ri);
         }
         reg[q] = ri;
-        if (!c.ocean) lt[q] = landType(c.biome);
+        if (!c.ocean) lt[q] = elevationZoneType(c.elevationZone, false);
       }
     }
     // blended over land cells (box blur, separable): slope, noise amplitude, ridged share
     const rb = Math.max(1, Math.round(BLEND / res));
     const slope = blurLand(nx, ny, cls, rb, (q) => this.hillOf(lt[q]));
-    const amp = blurLand(nx, ny, cls, rb, (q) => TYPES[lt[q]].amp);
-    const rmix = blurLand(nx, ny, cls, rb, (q) => TYPES[lt[q]].ridged);
+    const amp = blurLand(nx, ny, cls, rb, (q) => ZONE_RELIEF[lt[q]].amp);
+    const rmix = blurLand(nx, ny, cls, rb, (q) => ZONE_RELIEF[lt[q]].ridged);
     for (let j = 0; j < ny; j++) {
       for (let i = 0; i < nx; i++) {
         const q = j * nx + i;

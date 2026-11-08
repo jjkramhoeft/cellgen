@@ -2,7 +2,7 @@
  * Sandbox 4 · Terrain (a three-level base map plus a height map and a 3D view).
  *
  * Generation: an unbounded world (metres) of three nested Voronoi levels — regions,
- * biomes, subbiomes — with ocean seeds / links / growth and random merges
+ * elevation zones, subbiomes — with ocean seeds / links / growth and random merges
  * (src/world). Everything is a lazily memoised pure function of seed + parameters.
  *
  * Display: a progressive per-pixel raster (shared RasterLayer) with pixel-exact
@@ -76,7 +76,7 @@ let fingerprint = '';
 let stats: ViewStats | null = null;
 let hover: { x: number; y: number } | null = null;
 let pinned: { x: number; y: number } | null = null;
-let pinBiome = -1;
+let pinElevationZone = -1;
 let pinSub = -1;
 let measuring = false;
 let ruler: { ax: number; ay: number; bx: number; by: number } | null = null;
@@ -342,11 +342,11 @@ function prepareTerrain(deadline: number): number {
 
 function refreshPins(): void {
   if (!pinned) {
-    pinBiome = pinSub = -1;
+    pinElevationZone = pinSub = -1;
     return;
   }
   const c = world.cellAt(pinned.x, pinned.y, true);
-  pinBiome = c.biome;
+  pinElevationZone = c.elevationZone;
   pinSub = c.sub;
 }
 
@@ -354,11 +354,11 @@ function viewOpts(): ViewOpts {
   return {
     mode: str(params, 'view.color') as ViewMode,
     regEdges: params['view.regEdges'] === true,
-    bioEdges: params['view.bioEdges'] === true,
+    zoneEdges: params['view.zoneEdges'] === true,
     subEdges: params['view.subEdges'] === true,
     coast: params['view.coast'] === true,
     lod: str(params, 'view.lod') as 'auto' | 'full',
-    pinBiome,
+    pinElevationZone,
     pinSub,
     hillshade: params['view.hillshade'] === true,
   };
@@ -707,10 +707,10 @@ function endPointer(e: PointerEvent): void {
         invalidate();
       }
     } else if (drag.moved <= 3 && e.type === 'pointerup') {
-      // click: pin the biome and subbiome under the cursor (click it again to release)
+      // click: pin the elevation zone and subbiome under the cursor (click it again to release)
       const [wx, wy] = screenToWorld(cam, vp, ...local(e));
       const c = world.cellAt(wx, wy, true);
-      if (pinned && c.biome === pinBiome && c.sub === pinSub) pinned = null;
+      if (pinned && c.elevationZone === pinElevationZone && c.sub === pinSub) pinned = null;
       else pinned = { x: wx, y: wy };
       refreshPins();
       viewChanged();
@@ -889,7 +889,7 @@ window.addEventListener('keydown', (e) => {
       break;
     case 'b':
     case 'B':
-      toggle('view.bioEdges');
+      toggle('view.zoneEdges');
       break;
     case 'n':
     case 'N':
@@ -921,7 +921,7 @@ window.addEventListener('keydown', (e) => {
       break;
     case 's':
     case 'S':
-      cycle('view.sites', ['none', 'regions', 'biomes', 'all'], 1);
+      cycle('view.sites', ['none', 'regions', 'elevationZones', 'all'], 1);
       break;
     case 'm':
     case 'M':

@@ -1,15 +1,15 @@
 /**
  * Space-colonization rivers (Runions et al. 2005, open venation), computed per region.
  *
- * For one region (as drawn: a biome merged into a neighbouring region's biome belongs
- * to that region, see `regionBiomes`):
+ * For one region (as drawn: an elevation zone merged into a neighbouring region's elevation zone belongs
+ * to that region, see `regionElevationZones`):
  *   Attractors  every land, non-coastal subbiome drawn in the region gets `perSub`
  *               points, scattered inside the subbiome's cell.
- *   Roots       one per ocean biome that touches the region's land (a Gabriel
- *               neighbour of a land biome it owns, or an ocean biome it owns with a land
- *               neighbour). The root sits at the ocean biome's point (its site), so each
+ *   Roots       one per ocean elevation zone that touches the region's land (a Gabriel
+ *               neighbour of a land elevation zone it owns, or an ocean elevation zone it owns with a land
+ *               neighbour). The root sits at the ocean elevation zone's point (its site), so each
  *               river first grows across the water to the coast. A landlocked region looks
- *               further out (up to `maxHops` biome steps) for the nearest ocean.
+ *               further out (up to `maxHops` elevation zone steps) for the nearest ocean.
  *   Growth      each iteration, every attractor pulls on its nearest node within the
  *               influence radius dᵢ; each pulled node grows one step D towards the mean
  *               direction of its attractors (each weighted by a power of its distance,
@@ -120,7 +120,7 @@ export interface RiverParams {
   apical: number;
   /** leave out subbiomes that touch the ocean */
   skipCoast: boolean;
-  /** how many biome steps a landlocked region searches for an ocean */
+  /** how many elevation zone steps a landlocked region searches for an ocean */
   maxHops: number;
 }
 
@@ -137,7 +137,7 @@ export interface RegionRivers {
   tree: Int32Array;
   /** 1 when the node lies over ocean (the part of a river between its root and the coast) */
   wet: Uint8Array;
-  /** root node indices and the ocean biome each root drains into */
+  /** root node indices and the ocean elevation zone each root drains into */
   roots: number[];
   rootOcean: number[];
   /** attractors and the node that reached each (−1 = never reached) */
@@ -227,17 +227,17 @@ export class Rivers {
   }
 
   /**
-   * Raw biomes drawn as part of a region. This is not `region.biomes` (the biomes whose
-   * site lies in the region): a merged biome is drawn in the region of the biome it
+   * Raw elevation zones drawn as part of a region. This is not `region.elevationZones` (the elevation zones whose
+   * site lies in the region): a merged elevation zone is drawn in the region of the elevation zone it
    * joined, which may be a neighbouring region. Rivers follow what is drawn.
    */
-  regionBiomes(rkey: number): number[] {
+  regionElevationZones(rkey: number): number[] {
     const w = this.world;
     const reg = w.region(rkey);
     const out: number[] = [];
     for (let dj = -1; dj <= 1; dj++) {
       for (let di = -1; di <= 1; di++) {
-        for (const b of w.region(packKey(reg.i + di, reg.j + dj)).biomes) if (w.biomeCell(b).region === rkey) out.push(b);
+        for (const b of w.region(packKey(reg.i + di, reg.j + dj)).elevationZones) if (w.elevationZoneCell(b).region === rkey) out.push(b);
       }
     }
     return out.sort((a, b) => a - b);
@@ -257,9 +257,9 @@ export class Rivers {
     const rng = sfc32(hash4(w.p.seed, ST_ATTR, reg.i, reg.j));
     const ax: number[] = [];
     const ay: number[] = [];
-    for (const b of this.regionBiomes(rkey)) {
-      if (w.biomeCell(b).ocean) continue;
-      for (const s of w.biomeSubs(w.biome(b))) {
+    for (const b of this.regionElevationZones(rkey)) {
+      if (w.elevationZoneCell(b).ocean) continue;
+      for (const s of w.elevationZoneSubs(w.elevationZone(b))) {
         const sc = w.subCell(s);
         if (sc.ocean || sc.region !== rkey) continue;
         if (this.p.skipCoast && this.isCoastSub(s)) continue;
@@ -293,18 +293,18 @@ export class Rivers {
     return { ax, ay };
   }
 
-  /** Ocean biomes that receive a root, and the land biome each root faces. */
+  /** Ocean elevation zones that receive a root, and the land elevation zone each root faces. */
   rootPairs(rkey: number): { pairs: { ocean: number; land: number }[]; landlocked: boolean } {
     const w = this.world;
-    const mine = this.regionBiomes(rkey);
+    const mine = this.regionElevationZones(rkey);
     const own = new Set(mine);
-    const isOcean = (b: number) => w.biomeCell(b).ocean;
+    const isOcean = (b: number) => w.elevationZoneCell(b).ocean;
     const land = mine.filter((b) => !isOcean(b));
-    // nearest land neighbour of an ocean biome, preferring the region's own biomes
+    // nearest land neighbour of an ocean elevation zone, preferring the region's own elevation zones
     const facing = (o: number): number => {
       let best = -1;
       let bestOwn = false;
-      for (const n of w.biomeNbrs(w.biome(o))) {
+      for (const n of w.elevationZoneNbrs(w.elevationZone(o))) {
         if (isOcean(n)) continue;
         const mine = own.has(n);
         if (best < 0 || (mine && !bestOwn)) {
@@ -315,18 +315,18 @@ export class Rivers {
       return best;
     };
     const oceans = new Set<number>();
-    for (const b of land) for (const n of w.biomeNbrs(w.biome(b))) if (isOcean(n)) oceans.add(n);
+    for (const b of land) for (const n of w.elevationZoneNbrs(w.elevationZone(b))) if (isOcean(n)) oceans.add(n);
     for (const b of mine) if (isOcean(b) && facing(b) >= 0) oceans.add(b);
     let landlocked = false;
     if (oceans.size === 0 && land.length > 0) {
-      // breadth-first search outwards for the nearest ocean biomes
+      // breadth-first search outwards for the nearest ocean elevation zones
       landlocked = true;
       let frontier = land;
       const seen = new Set(land);
       for (let hop = 0; hop < this.p.maxHops && oceans.size === 0; hop++) {
         const next: number[] = [];
         for (const b of frontier) {
-          for (const n of w.biomeNbrs(w.biome(b))) {
+          for (const n of w.elevationZoneNbrs(w.elevationZone(b))) {
             if (seen.has(n)) continue;
             seen.add(n);
             if (isOcean(n)) oceans.add(n);
@@ -553,14 +553,14 @@ export class Rivers {
     const rootOcean: number[] = [];
     if (A > 0) {
       for (const pr of pairs) {
-        const o = w.biome(pr.ocean);
+        const o = w.elevationZone(pr.ocean);
         let px = o.x;
         let py = o.y;
         if (!w.cellAt(px, py, true).ocean) {
-          // coasts follow subbiome cells, so the biome's site can fall on a sliver of
-          // land: use the closest ocean subbiome site of the biome instead
+          // coasts follow subbiome cells, so the elevation zone's site can fall on a sliver of
+          // land: use the closest ocean subbiome site of the elevation zone instead
           let bd = Infinity;
-          for (const s of w.biomeSubs(o)) {
+          for (const s of w.elevationZoneSubs(o)) {
             const sd = w.sub(s);
             const d2 = (sd.x - o.x) ** 2 + (sd.y - o.y) ** 2;
             if (d2 < bd && w.cellAt(sd.x, sd.y, true).ocean) {

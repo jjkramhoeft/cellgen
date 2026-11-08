@@ -6,9 +6,9 @@ import { LINKED, ORIGIN, resolveRoot, SEED, World, type WorldParams } from '../s
 
 const base = (over: Partial<WorldParams> = {}): WorldParams => ({ ...toWorldParams(defaults(), 12345), ...over });
 
-/** Raw biome keys whose site lies in a square around the origin. */
-function biomesNear(w: World, half: number): number[] {
-  return World.cellsIn(w.biomeLevel, -half, -half, half, half, 0);
+/** Raw elevation zone keys whose site lies in a square around the origin. */
+function elevationZonesNear(w: World, half: number): number[] {
+  return World.cellsIn(w.elevationZoneLevel, -half, -half, half, half, 0);
 }
 
 describe('level', () => {
@@ -87,31 +87,31 @@ describe('world', () => {
   });
 
   it('gives each region an ocean seed and merge count inside the configured range', () => {
-    const w = new World(base({ oceanMin: 1, oceanMax: 2, biomeMergeMin: 2, biomeMergeMax: 4 }));
+    const w = new World(base({ oceanMin: 1, oceanMax: 2, elevationZoneMergeMin: 2, elevationZoneMergeMax: 4 }));
     const counts = new Set<number>();
     for (const r of World.cellsIn(w.regionLevel, -500000, -500000, 500000, 500000, 0)) {
       const reg = w.region(r);
-      expect(reg.biomes.length).toBeGreaterThan(4);
+      expect(reg.elevationZones.length).toBeGreaterThan(4);
       expect(reg.seeds.length).toBeGreaterThanOrEqual(1);
       expect(reg.seeds.length).toBeLessThanOrEqual(2);
       expect(reg.merges.size).toBeGreaterThanOrEqual(2);
       expect(reg.merges.size).toBeLessThanOrEqual(4);
       counts.add(reg.seeds.length);
-      for (const s of reg.seeds) expect(w.biome(s).region).toBe(r);
+      for (const s of reg.seeds) expect(w.elevationZone(s).region).toBe(r);
     }
     expect(counts.size).toBe(2);
   });
 
   it('turns exactly the seeds into ocean when nothing links or grows', () => {
     const w = new World(base({ connectChance: 0, growPasses: 0 }));
-    for (const b of biomesNear(w, 400000)) {
-      const isSeed = w.region(w.biome(b).region).seeds.includes(b);
+    for (const b of elevationZonesNear(w, 400000)) {
+      const isSeed = w.region(w.elevationZone(b).region).seeds.includes(b);
       expect(w.ocean(b)).toBe(isSeed);
       if (isSeed) expect(w.origin(b)).toBe(ORIGIN.loneSeed);
     }
   });
 
-  it('links every seed to its nearest seed through a chain of ocean biomes', () => {
+  it('links every seed to its nearest seed through a chain of ocean elevation zones', () => {
     const w = new World(base({ connectChance: 1, growPasses: 0, oceanMin: 1, oceanMax: 1 }));
     let links = 0;
     for (const r of World.cellsIn(w.regionLevel, -300000, -300000, 300000, 300000, 0)) {
@@ -140,8 +140,8 @@ describe('world', () => {
         expect(to.length).toBe(2);
         doubles++;
         // the two targets are the two nearest other seeds in the search window
-        const sb = w.biome(s);
-        const d2 = (k: number) => (w.biome(k).x - sb.x) ** 2 + (w.biome(k).y - sb.y) ** 2;
+        const sb = w.elevationZone(s);
+        const d2 = (k: number) => (w.elevationZone(k).x - sb.x) ** 2 + (w.elevationZone(k).y - sb.y) ** 2;
         const others: number[] = [];
         const R = w.p.connectRange;
         for (let dj = -R; dj <= R; dj++)
@@ -161,7 +161,7 @@ describe('world', () => {
       for (const r of World.cellsIn(w.regionLevel, -1500000, -1500000, 1500000, 1500000, 0)) {
         for (const s of w.region(r).seeds) {
           seeds++;
-          if (w.linkCount(w.biome(s)) === 2) doubles++;
+          if (w.linkCount(w.elevationZone(s)) === 2) doubles++;
         }
       }
       return doubles / seeds;
@@ -179,7 +179,7 @@ describe('world', () => {
   it('grows only from linked ocean and converts at most 3 closest land neighbours per pass', () => {
     const w = new World(base({ growPasses: 1, growWeights: [0, 0, 0, 1] }));
     let grew = 0;
-    for (const g of biomesNear(w, 400000)) {
+    for (const g of elevationZonesNear(w, 400000)) {
       const edges = w.growthFrom(g);
       if (!edges.length) continue;
       grew++;
@@ -188,24 +188,24 @@ describe('world', () => {
       for (const e of edges) {
         expect(w.oceanAt(e.to, 0)).toBe(false);
         expect(w.ocean(e.to)).toBe(true);
-        expect(w.biomeNbrs(w.biome(g))).toContain(e.to);
+        expect(w.elevationZoneNbrs(w.elevationZone(g))).toContain(e.to);
       }
     }
     expect(grew).toBeGreaterThan(5);
     // weights [1, 0, 0, 0] = never convert anything
     const still = new World(base({ growPasses: 2, growWeights: [1, 0, 0, 0] }));
-    for (const b of biomesNear(still, 300000)) expect(still.ocean(b)).toBe(still.oceanAt(b, 0));
+    for (const b of elevationZonesNear(still, 300000)) expect(still.ocean(b)).toBe(still.oceanAt(b, 0));
   });
 
-  it('keeps merges on one side of the coast and inside the parent biome', () => {
-    const w = new World(base({ biomeMergeMin: 4, biomeMergeMax: 6, subMergeMin: 3, subMergeMax: 5 }));
+  it('keeps merges on one side of the coast and inside the parent elevation zone', () => {
+    const w = new World(base({ elevationZoneMergeMin: 4, elevationZoneMergeMax: 6, subMergeMin: 3, subMergeMax: 5 }));
     let bm = 0;
-    for (const b of biomesNear(w, 300000)) {
-      const t = w.biomeTarget(b);
+    for (const b of elevationZonesNear(w, 300000)) {
+      const t = w.elevationZoneTarget(b);
       if (t < 0) continue;
       bm++;
       expect(w.ocean(t)).toBe(w.ocean(b));
-      expect(w.biomeNbrs(w.biome(b))).toContain(t);
+      expect(w.elevationZoneNbrs(w.elevationZone(b))).toContain(t);
     }
     expect(bm).toBeGreaterThan(10);
     let sm = 0;
@@ -213,19 +213,19 @@ describe('world', () => {
       const t = w.subTarget(s);
       if (t < 0) continue;
       sm++;
-      expect(w.biomeRoot(w.sub(t).biome)).toBe(w.biomeRoot(w.sub(s).biome));
+      expect(w.elevationZoneRoot(w.sub(t).elevationZone)).toBe(w.elevationZoneRoot(w.sub(s).elevationZone));
     }
     expect(sm).toBeGreaterThan(5);
   });
 
-  it('nests: a subbiome cell reports the merged biome and region of its merged site', () => {
+  it('nests: a subbiome cell reports the merged elevation zone and region of its merged site', () => {
     const w = new World(base());
     for (let t = 0; t < 300; t++) {
       const c = w.cellAt(((t * 7919) % 400) * 1000 - 200000, ((t * 6271) % 400) * 1000 - 200000, true);
-      const owner = w.sub(c.sub).biome;
-      expect(c.biome).toBe(w.biomeRoot(owner));
-      expect(c.region).toBe(w.biome(c.biome).region);
-      expect(c.ocean).toBe(w.ocean(c.biome));
+      const owner = w.sub(c.sub).elevationZone;
+      expect(c.elevationZone).toBe(w.elevationZoneRoot(owner));
+      expect(c.region).toBe(w.elevationZone(c.elevationZone).region);
+      expect(c.ocean).toBe(w.ocean(c.elevationZone));
     }
   });
 
@@ -251,7 +251,7 @@ describe('world', () => {
 
 describe('params', () => {
   it('round-trips through the URL', () => {
-    const p = { ...defaults(), 'bio.warp': 0.5, 'oc.passes': 3, 'sub.nest': false };
+    const p = { ...defaults(), 'ez.warp': 0.5, 'oc.passes': 3, 'sub.nest': false };
     const back = decodeState(`#${encodeState('abc', p, ALL_DEFS)}`, ALL_DEFS, 'x');
     expect(back?.seed).toBe('abc');
     expect(back?.params).toEqual(p);
@@ -260,12 +260,12 @@ describe('params', () => {
   it('keeps levels nested and every preset valid', () => {
     for (const pr of PRESETS) {
       const wp = toWorldParams({ ...defaults(), ...pr.params }, 1);
-      expect(wp.biomeSize).toBeLessThan(wp.regionSize);
-      expect(wp.subSize).toBeLessThan(wp.biomeSize);
+      expect(wp.elevationZoneSize).toBeLessThan(wp.regionSize);
+      expect(wp.subSize).toBeLessThan(wp.elevationZoneSize);
       for (const k of Object.keys(pr.params)) expect(ALL_DEFS.some((d) => d.key === k), k).toBe(true);
     }
-    const wp = toWorldParams({ ...defaults(), 'reg.size': 32, 'bio.size': 128, 'sub.size': 32 }, 1);
-    expect(wp.biomeSize).toBeLessThan(wp.regionSize);
-    expect(wp.subSize).toBeLessThan(wp.biomeSize);
+    const wp = toWorldParams({ ...defaults(), 'reg.size': 32, 'ez.size': 128, 'sub.size': 32 }, 1);
+    expect(wp.elevationZoneSize).toBeLessThan(wp.regionSize);
+    expect(wp.subSize).toBeLessThan(wp.elevationZoneSize);
   });
 });

@@ -1,30 +1,31 @@
 /**
  * The three-level map hierarchy (spec: sandbox3.md), as a pure function of (seed, params).
  *
- *   Regions    128 km lattice Voronoi, no warp. Each region owns the biomes whose
- *              site lies inside it, and picks among them 0–2 ocean seeds and 2–4
- *              biome mergers.
- *   Biomes      32 km lattice Voronoi with border warp. Each biome owns the
- *              subbiomes whose site lies inside it, and picks 2–4 subbiome mergers.
- *   Subbiomes    8 km lattice Voronoi with border warp.
+ *   Regions           128 km lattice Voronoi, no warp. Each region owns the elevation
+ *                     zones whose site lies inside it, and picks among them 0–2 ocean
+ *                     seeds and 2–4 elevation zone mergers.
+ *   Elevation zones    32 km lattice Voronoi with border warp. Each elevation zone owns
+ *                     the subbiomes whose site lies inside it, and picks 2–4 subbiome
+ *                     mergers. Its type (ocean, flat, lowland, hills, mountains): zones.ts.
+ *   Subbiomes           8 km lattice Voronoi with border warp.
  *
- * Oceans (on raw biome cells, before merging):
- *   1. Seeds: every region marks n ∈ [min, max] of its biomes as ocean seeds.
+ * Oceans (on raw elevation zone cells, before merging):
+ *   1. Seeds: every region marks n ∈ [min, max] of its elevation zones as ocean seeds.
  *   2. Links: each seed, with probability `doubleLinkChance`, links to its two nearest
  *      other seeds; otherwise, with probability `connectChance`, it links to the nearest other
- *      seed (searching regions up to `connectRange` away). Every biome crossed by the
+ *      seed (searching regions up to `connectRange` away). Every elevation zone crossed by the
  *      straight segment between the two seed sites becomes ocean ("chain"), so more
  *      than two seeds can join into one ocean.
- *   3. Growth: every linked ocean biome (or every ocean biome, see `growFrom`) turns
+ *   3. Growth: every linked ocean elevation zone (or every ocean elevation zone, see `growFrom`) turns
  *      its n closest land neighbours into ocean, n ∈ {0,1,2,3} drawn with the given
- *      weights. Further passes grow from the biomes converted in the previous pass.
+ *      weights. Further passes grow from the elevation zones converted in the previous pass.
  *
  * Merges: a chosen cell joins its nearest neighbour (Gabriel graph, by site
- * distance). Biome merges stay on one side of the coast unless `mergeAcrossCoast`;
- * subbiome merges stay inside one (merged) biome. Chains X→Y→Z merge into one cell,
+ * distance). Elevation zone merges stay on one side of the coast unless `mergeAcrossCoast`;
+ * subbiome merges stay inside one (merged) elevation zone. Chains X→Y→Z merge into one cell,
  * and a cycle X→Y→X resolves to the smaller key.
  *
- * Nesting: with `nest`, a subbiome belongs to the biome under its site and a biome
+ * Nesting: with `nest`, a subbiome belongs to the elevation zone under its site and an elevation zone
  * to the region under its site, and every pixel is classified through its subbiome,
  * so the borders of all three levels line up (coasts follow 8 km cells).
  *
@@ -44,8 +45,8 @@ export interface WorldParams {
   regionJitter: number;
   oceanMin: number;
   oceanMax: number;
-  biomeMergeMin: number;
-  biomeMergeMax: number;
+  elevationZoneMergeMin: number;
+  elevationZoneMergeMax: number;
   // oceans
   connectChance: number;
   /** chance that a seed links to its two nearest seeds instead (overrides connectChance) */
@@ -55,11 +56,11 @@ export interface WorldParams {
   growWeights: [number, number, number, number];
   growFrom: GrowFrom;
   growPasses: number;
-  // biomes
-  biomeSize: number;
-  biomeJitter: number;
-  biomeWarp: number;
-  biomeWarpFreq: number;
+  // elevation zones
+  elevationZoneSize: number;
+  elevationZoneJitter: number;
+  elevationZoneWarp: number;
+  elevationZoneWarpFreq: number;
   mergeAcrossCoast: boolean;
   subMergeMin: number;
   subMergeMax: number;
@@ -75,7 +76,7 @@ export interface WorldParams {
 export const SEED = 1;
 export const LINKED = 2;
 
-/** Ocean genesis of a biome, for display. */
+/** Ocean genesis of an elevation zone, for display. */
 export const ORIGIN = {
   land: 0,
   loneSeed: 1,
@@ -91,8 +92,8 @@ export interface Region {
   j: number;
   x: number;
   y: number;
-  /** owned biome keys (sites inside this region), lattice order */
-  biomes: number[];
+  /** owned elevation zone keys (sites inside this region), lattice order */
+  elevationZones: number[];
   seeds: number[];
   merges: Set<number>;
   /** seed links that start in this region (null until sourced) */
@@ -105,7 +106,7 @@ export interface Link {
   chain: number[];
 }
 
-export interface Biome {
+export interface ElevationZone {
   key: number;
   i: number;
   j: number;
@@ -130,8 +131,8 @@ export interface Sub {
   j: number;
   x: number;
   y: number;
-  /** owning raw biome: the biome containing the site */
-  biome: number;
+  /** owning raw elevation zone: the elevation zone containing the site */
+  elevationZone: number;
   nbrs: number[] | null;
   target: number;
   root: number;
@@ -139,17 +140,17 @@ export interface Sub {
 
 /** Everything the renderer needs about one map location. */
 export interface Cell {
-  /** subbiome (raw and merged root); −1 when resolved at biome level only */
+  /** subbiome (raw and merged root); −1 when resolved at elevation zone level only */
   subRaw: number;
   sub: number;
-  biomeRaw: number;
-  biome: number;
+  elevationZoneRaw: number;
+  elevationZone: number;
   region: number;
   ocean: boolean;
   origin: number;
   /** member of a merged group */
   subMerged: boolean;
-  biomeMerged: boolean;
+  elevationZoneMerged: boolean;
 }
 
 const ST_SEEDS = 0x5e01;
@@ -182,17 +183,17 @@ function between(lo: number, hi: number, u: number): number {
 export class World {
   readonly p: WorldParams;
   readonly regionLevel: Level;
-  readonly biomeLevel: Level;
+  readonly elevationZoneLevel: Level;
   readonly subLevel: Level;
   /** cumulative normalised growth weights */
   private readonly growCdf: number[];
 
   private regions = new Map<number, Region>();
-  private biomes = new Map<number, Biome>();
+  private elevationZones = new Map<number, ElevationZone>();
   private subs = new Map<number, Sub>();
   private subCells = new Map<number, Cell>();
-  private biomeCells = new Map<number, Cell>();
-  /** base ocean flags per biome key, OR-merged by region sourcing */
+  private elevationZoneCells = new Map<number, Cell>();
+  /** base ocean flags per elevation zone key, OR-merged by region sourcing */
   private base = new Map<number, number>();
   private sourced = new Set<number>();
   /** regions whose whole sourcing neighbourhood is done */
@@ -202,7 +203,7 @@ export class World {
     this.p = p;
     const s = p.seed | 0;
     this.regionLevel = new Level({ seed: (s ^ 0x1b873593) | 0, size: p.regionSize, jitter: p.regionJitter, warp: 0, warpFreq: 1 });
-    this.biomeLevel = new Level({ seed: (s ^ 0x7f4a7c15) | 0, size: p.biomeSize, jitter: p.biomeJitter, warp: p.biomeWarp, warpFreq: p.biomeWarpFreq });
+    this.elevationZoneLevel = new Level({ seed: (s ^ 0x7f4a7c15) | 0, size: p.elevationZoneSize, jitter: p.elevationZoneJitter, warp: p.elevationZoneWarp, warpFreq: p.elevationZoneWarpFreq });
     this.subLevel = new Level({ seed: (s ^ 0x6c8e9cf5) | 0, size: p.subSize, jitter: p.subJitter, warp: p.subWarp, warpFreq: p.subWarpFreq });
     const w = p.growWeights.map((x) => Math.max(0, x));
     const sum = w.reduce((a, b) => a + b, 0) || 1;
@@ -212,21 +213,21 @@ export class World {
 
   /** Number of memoised objects (for the cache budget). */
   get cacheSize(): number {
-    return this.regions.size + this.biomes.size + this.subs.size + this.subCells.size + this.biomeCells.size;
+    return this.regions.size + this.elevationZones.size + this.subs.size + this.subCells.size + this.elevationZoneCells.size;
   }
 
-  get cacheStats(): { regions: number; biomes: number; subs: number; cells: number } {
-    return { regions: this.regions.size, biomes: this.biomes.size, subs: this.subs.size, cells: this.subCells.size + this.biomeCells.size };
+  get cacheStats(): { regions: number; elevationZones: number; subs: number; cells: number } {
+    return { regions: this.regions.size, elevationZones: this.elevationZones.size, subs: this.subs.size, cells: this.subCells.size + this.elevationZoneCells.size };
   }
 
   /** Drop every cache when over budget. Results are pure, so this never changes the map. */
   trim(limit: number): boolean {
     if (this.cacheSize <= limit) return false;
     this.regions.clear();
-    this.biomes.clear();
+    this.elevationZones.clear();
     this.subs.clear();
     this.subCells.clear();
-    this.biomeCells.clear();
+    this.elevationZoneCells.clear();
     this.base.clear();
     this.sourced.clear();
     this.settled.clear();
@@ -241,29 +242,29 @@ export class World {
     const i = keyI(key);
     const j = keyJ(key);
     const L = this.regionLevel;
-    // owned biomes: candidates from the biome lattice cells covering the region's
+    // owned elevation zones: candidates from the elevation zone lattice cells covering the region's
     // lattice neighbourhood, kept when the region under their site is this one
-    const B = this.biomeLevel.size;
+    const B = this.elevationZoneLevel.size;
     const R = L.size;
     const bi0 = Math.floor(((i - 1) * R) / B);
     const bi1 = Math.floor(((i + 2) * R) / B);
     const bj0 = Math.floor(((j - 1) * R) / B);
     const bj1 = Math.floor(((j + 2) * R) / B);
-    const biomes: number[] = [];
+    const elevationZones: number[] = [];
     for (let bj = bj0; bj <= bj1; bj++) {
       for (let bi = bi0; bi <= bi1; bi++) {
-        const b = this.biome(packKey(bi, bj));
-        if (b.region === key) biomes.push(b.key);
+        const b = this.elevationZone(packKey(bi, bj));
+        if (b.region === key) elevationZones.push(b.key);
       }
     }
     const p = this.p;
     const rng = sfc32(hash4(p.seed, ST_SEEDS, i, j));
     const nSeeds = between(p.oceanMin, p.oceanMax, rng());
-    const seeds = pick(biomes, nSeeds, rng);
+    const seeds = pick(elevationZones, nSeeds, rng);
     const rngM = sfc32(hash4(p.seed, ST_MERGE, i, j));
-    const nMerge = between(p.biomeMergeMin, p.biomeMergeMax, rngM());
-    const merges = new Set(pick(biomes, nMerge, rngM));
-    r = { key, i, j, x: L.siteX(i, j), y: L.siteY(i, j), biomes, seeds, merges, links: null };
+    const nMerge = between(p.elevationZoneMergeMin, p.elevationZoneMergeMax, rngM());
+    const merges = new Set(pick(elevationZones, nMerge, rngM));
+    r = { key, i, j, x: L.siteX(i, j), y: L.siteY(i, j), elevationZones, seeds, merges, links: null };
     this.regions.set(key, r);
     return r;
   }
@@ -274,7 +275,7 @@ export class World {
 
   /**
    * Register this region's ocean sources: its seeds, and for every seed that links,
-   * the chain of biomes to its nearest other seed (or two nearest, see linkCount).
+   * the chain of elevation zones to its nearest other seed (or two nearest, see linkCount).
    */
   private source(rkey: number): void {
     if (this.sourced.has(rkey)) return;
@@ -283,7 +284,7 @@ export class World {
     const links: Link[] = [];
     for (const s of r.seeds) {
       this.flag(s, SEED);
-      const sb = this.biome(s);
+      const sb = this.elevationZone(s);
       const n = this.linkCount(sb);
       if (n === 0) continue;
       // the n nearest other seeds within connectRange regions (by site distance, ties by key)
@@ -294,14 +295,14 @@ export class World {
           const o = this.region(packKey(r.i + di, r.j + dj));
           for (const t of o.seeds) {
             if (t === s) continue;
-            const tb = this.biome(t);
+            const tb = this.elevationZone(t);
             cands.push({ key: t, d: (tb.x - sb.x) * (tb.x - sb.x) + (tb.y - sb.y) * (tb.y - sb.y) });
           }
         }
       }
       cands.sort((a, b) => a.d - b.d || a.key - b.key);
       for (const { key: to } of cands.slice(0, n)) {
-        const chain = this.trace(sb, this.biome(to));
+        const chain = this.trace(sb, this.elevationZone(to));
         for (const c of chain) this.flag(c, LINKED);
         links.push({ from: s, to, chain });
       }
@@ -315,7 +316,7 @@ export class World {
    * otherwise 1 with `connectChance`, otherwise 0. The two draws use independent hash
    * streams, so a double-link chance of 0 leaves every single link unchanged.
    */
-  linkCount(sb: Biome): number {
+  linkCount(sb: ElevationZone): number {
     const p = this.p;
     if (toUnit(hash4(p.seed, ST_DLINK, sb.i, sb.j)) < p.doubleLinkChance) return 2;
     return toUnit(hash4(p.seed, ST_LINK, sb.i, sb.j)) < p.connectChance ? 1 : 0;
@@ -325,15 +326,15 @@ export class World {
     this.base.set(bkey, (this.base.get(bkey) ?? 0) | f);
   }
 
-  /** Biomes crossed by the straight segment between two biome sites (both ends included). */
-  trace(a: Biome, b: Biome): number[] {
+  /** Elevation zones crossed by the straight segment between two elevation zone sites (both ends included). */
+  trace(a: ElevationZone, b: ElevationZone): number[] {
     const out: number[] = [a.key];
     const seen = new Set<number>(out);
     const len = Math.hypot(b.x - a.x, b.y - a.y);
-    const n = Math.max(1, Math.ceil(len / (this.biomeLevel.size * 0.12)));
+    const n = Math.max(1, Math.ceil(len / (this.elevationZoneLevel.size * 0.12)));
     for (let k = 1; k < n; k++) {
       const t = k / n;
-      const key = this.biomeLevel.query(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t);
+      const key = this.elevationZoneLevel.query(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t);
       if (!seen.has(key)) {
         seen.add(key);
         out.push(key);
@@ -343,14 +344,14 @@ export class World {
     return out;
   }
 
-  /** Radius (in region lattice cells) of the regions whose sources can reach a biome. */
+  /** Radius (in region lattice cells) of the regions whose sources can reach an elevation zone. */
   get sourceRadius(): number {
     return this.p.connectRange + 5;
   }
 
-  /** Base ocean flags of a raw biome (seed / linked), complete. */
+  /** Base ocean flags of a raw elevation zone (seed / linked), complete. */
   baseFlags(bkey: number): number {
-    const b = this.biome(bkey);
+    const b = this.elevationZone(bkey);
     if (!this.settled.has(b.region)) {
       const ri = keyI(b.region);
       const rj = keyJ(b.region);
@@ -361,14 +362,14 @@ export class World {
     return this.base.get(bkey) ?? 0;
   }
 
-  // ------------------------------------------------------------------ biomes
+  // ------------------------------------------------------------------ elevation zones
 
-  biome(key: number): Biome {
-    let b = this.biomes.get(key);
+  elevationZone(key: number): ElevationZone {
+    let b = this.elevationZones.get(key);
     if (b) return b;
     const i = keyI(key);
     const j = keyJ(key);
-    const L = this.biomeLevel;
+    const L = this.elevationZoneLevel;
     const x = L.siteX(i, j);
     const y = L.siteY(i, j);
     b = {
@@ -386,18 +387,18 @@ export class World {
       subs: null,
       subMerges: null,
     };
-    this.biomes.set(key, b);
+    this.elevationZones.set(key, b);
     return b;
   }
 
-  biomeNbrs(b: Biome): number[] {
-    if (!b.nbrs) b.nbrs = this.biomeLevel.neighbours(b.i, b.j).map((n) => n.key);
+  elevationZoneNbrs(b: ElevationZone): number[] {
+    if (!b.nbrs) b.nbrs = this.elevationZoneLevel.neighbours(b.i, b.j).map((n) => n.key);
     return b.nbrs;
   }
 
-  /** Is the raw biome ocean after growth pass p (0 = seeds and chains only)? */
+  /** Is the raw elevation zone ocean after growth pass p (0 = seeds and chains only)? */
   oceanAt(key: number, p: number): boolean {
-    const b = this.biome(key);
+    const b = this.elevationZone(key);
     const memo = b.oceanP[p];
     if (memo >= 0) return memo === 1;
     let v: boolean;
@@ -405,7 +406,7 @@ export class World {
     else if (this.oceanAt(key, p - 1)) v = true;
     else {
       v = false;
-      for (const g of this.biomeNbrs(b)) {
+      for (const g of this.elevationZoneNbrs(b)) {
         if (this.isGrower(g, p) && this.growPicks(g, p).includes(key)) {
           v = true;
           break;
@@ -416,14 +417,14 @@ export class World {
     return v;
   }
 
-  /** Growth edges out of biome g: the biomes it converted, per pass. */
+  /** Growth edges out of elevation zone g: the elevation zones it converted, per pass. */
   growthFrom(g: number): { p: number; to: number }[] {
     const out: { p: number; to: number }[] = [];
     for (let p = 1; p <= this.p.growPasses; p++) if (this.isGrower(g, p)) for (const to of this.growPicks(g, p)) out.push({ p, to });
     return out;
   }
 
-  /** Does biome g grow in pass p? */
+  /** Does elevation zone g grow in pass p? */
   isGrower(g: number, p: number): boolean {
     if (p === 1) {
       const f = this.baseFlags(g);
@@ -434,7 +435,7 @@ export class World {
 
   /** The land neighbours grower g converts in pass p (its n closest). */
   growPicks(g: number, p: number): number[] {
-    const b = this.biome(g);
+    const b = this.elevationZone(g);
     const memo = b.picks[p];
     if (memo) return memo;
     const u = toUnit(hash4(this.p.seed, ST_GROW + p, b.i, b.j));
@@ -442,7 +443,7 @@ export class World {
     while (n < 3 && u >= this.growCdf[n]) n++;
     const out: number[] = [];
     if (n > 0) {
-      for (const c of this.biomeNbrs(b)) {
+      for (const c of this.elevationZoneNbrs(b)) {
         if (out.length >= n) break;
         if (!this.oceanAt(c, p - 1)) out.push(c);
       }
@@ -455,7 +456,7 @@ export class World {
     return this.oceanAt(key, this.p.growPasses);
   }
 
-  /** Ocean genesis of a raw biome (ORIGIN code). */
+  /** Ocean genesis of a raw elevation zone (ORIGIN code). */
   origin(key: number): number {
     if (!this.ocean(key)) return ORIGIN.land;
     const f = this.baseFlags(key);
@@ -465,14 +466,14 @@ export class World {
     return ORIGIN.land;
   }
 
-  /** The biome a merged biome joins, or −1. */
-  biomeTarget(key: number): number {
-    const b = this.biome(key);
+  /** The elevation zone a merged elevation zone joins, or −1. */
+  elevationZoneTarget(key: number): number {
+    const b = this.elevationZone(key);
     if (!Number.isNaN(b.target)) return b.target;
     let t = -1;
     if (this.region(b.region).merges.has(key)) {
       const oc = this.ocean(key);
-      for (const c of this.biomeNbrs(b)) {
+      for (const c of this.elevationZoneNbrs(b)) {
         if (this.p.mergeAcrossCoast || this.ocean(c) === oc) {
           t = c;
           break;
@@ -483,26 +484,26 @@ export class World {
     return t;
   }
 
-  biomeRoot(key: number): number {
-    const b = this.biome(key);
-    if (Number.isNaN(b.root)) b.root = resolveRoot(key, (k) => this.biomeTarget(k));
+  elevationZoneRoot(key: number): number {
+    const b = this.elevationZone(key);
+    if (Number.isNaN(b.root)) b.root = resolveRoot(key, (k) => this.elevationZoneTarget(k));
     return b.root;
   }
 
-  /** Is the biome part of a merged group (merged into another, or something merged into it)? */
-  biomeMerged(key: number): boolean {
-    const root = this.biomeRoot(key);
+  /** Is the elevation zone part of a merged group (merged into another, or something merged into it)? */
+  elevationZoneMerged(key: number): boolean {
+    const root = this.elevationZoneRoot(key);
     if (root !== key) return true;
-    for (const n of this.biomeNbrs(this.biome(key))) if (this.biomeRoot(n) === key) return true;
+    for (const n of this.elevationZoneNbrs(this.elevationZone(key))) if (this.elevationZoneRoot(n) === key) return true;
     return false;
   }
 
-  /** Subbiomes owned by a raw biome (sites inside it), lattice order. */
-  biomeSubs(b: Biome): number[] {
+  /** Subbiomes owned by a raw elevation zone (sites inside it), lattice order. */
+  elevationZoneSubs(b: ElevationZone): number[] {
     if (b.subs) return b.subs;
-    const B = this.biomeLevel.size;
+    const B = this.elevationZoneLevel.size;
     const S = this.subLevel.size;
-    const m = Math.ceil(this.biomeLevel.warp) + 1;
+    const m = Math.ceil(this.elevationZoneLevel.warp) + 1;
     const si0 = Math.floor(((b.i - m) * B) / S);
     const si1 = Math.floor(((b.i + 1 + m) * B) / S);
     const sj0 = Math.floor(((b.j - m) * B) / S);
@@ -511,7 +512,7 @@ export class World {
     for (let sj = sj0; sj <= sj1; sj++) {
       for (let si = si0; si <= si1; si++) {
         const s = this.sub(packKey(si, sj));
-        if (s.biome === b.key) out.push(s.key);
+        if (s.elevationZone === b.key) out.push(s.key);
       }
     }
     b.subs = out;
@@ -519,11 +520,11 @@ export class World {
   }
 
   private subMergeSet(bkey: number): Set<number> {
-    const b = this.biome(bkey);
+    const b = this.elevationZone(bkey);
     if (!b.subMerges) {
       const rng = sfc32(hash4(this.p.seed, ST_SUBMERGE, b.i, b.j));
       const n = between(this.p.subMergeMin, this.p.subMergeMax, rng());
-      b.subMerges = new Set(pick(this.biomeSubs(b), n, rng));
+      b.subMerges = new Set(pick(this.elevationZoneSubs(b), n, rng));
     }
     return b.subMerges;
   }
@@ -538,7 +539,7 @@ export class World {
     const L = this.subLevel;
     const x = L.siteX(i, j);
     const y = L.siteY(i, j);
-    s = { key, i, j, x, y, biome: this.biomeLevel.query(x, y), nbrs: null, target: NaN, root: NaN };
+    s = { key, i, j, x, y, elevationZone: this.elevationZoneLevel.query(x, y), nbrs: null, target: NaN, root: NaN };
     this.subs.set(key, s);
     return s;
   }
@@ -552,10 +553,10 @@ export class World {
     const s = this.sub(key);
     if (!Number.isNaN(s.target)) return s.target;
     let t = -1;
-    if (this.subMergeSet(s.biome).has(key)) {
-      const home = this.biomeRoot(s.biome);
+    if (this.subMergeSet(s.elevationZone).has(key)) {
+      const home = this.elevationZoneRoot(s.elevationZone);
       for (const c of this.subNbrs(s)) {
-        if (this.biomeRoot(this.sub(c).biome) === home) {
+        if (this.elevationZoneRoot(this.sub(c).elevationZone) === home) {
           t = c;
           break;
         }
@@ -580,26 +581,26 @@ export class World {
 
   // ------------------------------------------------------------------ resolution
 
-  /** Cell info for a raw biome (biome-level detail). */
-  biomeCell(bkey: number): Cell {
-    let c = this.biomeCells.get(bkey);
+  /** Cell info for a raw elevation zone (zone-level detail). */
+  elevationZoneCell(bkey: number): Cell {
+    let c = this.elevationZoneCells.get(bkey);
     if (c) return c;
-    const root = this.biomeRoot(bkey);
+    const root = this.elevationZoneRoot(bkey);
     const ocean = this.ocean(root);
     // genesis of the raw cell, so merged groups still show why each part is ocean
     const rawOrigin = this.origin(bkey);
     c = {
       subRaw: -1,
       sub: -1,
-      biomeRaw: bkey,
-      biome: root,
-      region: this.biome(root).region,
+      elevationZoneRaw: bkey,
+      elevationZone: root,
+      region: this.elevationZone(root).region,
       ocean,
       origin: !ocean ? ORIGIN.land : rawOrigin !== ORIGIN.land ? rawOrigin : this.origin(root),
       subMerged: false,
-      biomeMerged: this.biomeMerged(root),
+      elevationZoneMerged: this.elevationZoneMerged(root),
     };
-    this.biomeCells.set(bkey, c);
+    this.elevationZoneCells.set(bkey, c);
     return c;
   }
 
@@ -608,7 +609,7 @@ export class World {
     let c = this.subCells.get(skey);
     if (c) return c;
     const sr = this.subRoot(skey);
-    const bc = this.biomeCell(this.sub(sr).biome);
+    const bc = this.elevationZoneCell(this.sub(sr).elevationZone);
     c = { ...bc, subRaw: skey, sub: sr, subMerged: this.subMerged(sr) };
     this.subCells.set(skey, c);
     return c;
@@ -622,9 +623,9 @@ export class World {
   cellAt(x: number, y: number, detail: boolean, out?: Cell): Cell {
     if (this.p.nest) {
       if (detail) return this.subCell(this.subLevel.query(x, y));
-      return this.biomeCell(this.biomeLevel.query(x, y));
+      return this.elevationZoneCell(this.elevationZoneLevel.query(x, y));
     }
-    const bc = this.biomeCell(this.biomeLevel.query(x, y));
+    const bc = this.elevationZoneCell(this.elevationZoneLevel.query(x, y));
     const o = out ?? ({} as Cell);
     Object.assign(o, bc);
     o.region = this.regionLevel.query(x, y);
@@ -682,7 +683,7 @@ export class World {
         const wy = -half + ((y + 0.5) / n) * 2 * half;
         const c = this.cellAt(wx, wy, true);
         mix(c.sub + 1);
-        mix(c.biome + 1);
+        mix(c.elevationZone + 1);
         mix(c.region + 1);
         mix(c.ocean ? 1 : 2);
       }

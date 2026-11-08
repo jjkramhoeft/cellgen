@@ -10,18 +10,19 @@ import type { RasterSource } from '@shared/render/raster';
 import { keyI, keyJ } from '../world/level';
 import { ORIGIN, type Cell, type World } from '../world/world';
 import { sample, type Terrain } from '../world/terrain';
+import { ELEVATION_ZONE_TYPES, elevationZoneType, OCEAN_ZONE } from '../world/zones';
 
-export type ViewMode = 'map' | 'landsea' | 'genesis' | 'merges' | 'regions' | 'biomes' | 'subbiomes' | 'hierarchy' | 'height';
+export type ViewMode = 'map' | 'landsea' | 'genesis' | 'merges' | 'regions' | 'elevationZones' | 'subbiomes' | 'hierarchy' | 'height';
 
 export interface ViewOpts {
   mode: ViewMode;
   regEdges: boolean;
-  bioEdges: boolean;
+  zoneEdges: boolean;
   subEdges: boolean;
   coast: boolean;
   /** 'auto' skips the subbiome level when subbiomes are under ~3 px */
   lod: 'auto' | 'full';
-  pinBiome: number;
+  pinElevationZone: number;
   pinSub: number;
   /** shade by the height map (always on for 'height') */
   hillshade: boolean;
@@ -45,27 +46,7 @@ export function keyHash(key: number, salt: number): number {
   return hash4(0x0c0101, salt, keyI(key), keyJ(key));
 }
 
-/** Cosmetic land biome palette: biomes have no climate here, only a look. */
-export const LAND_TYPES: { name: string; rgb: RGB }[] = [
-  { name: 'Grassland', rgb: [143, 174, 93] },
-  { name: 'Forest', rgb: [79, 127, 69] },
-  { name: 'Old forest', rgb: [58, 100, 62] },
-  { name: 'Steppe', rgb: [181, 176, 106] },
-  { name: 'Desert', rgb: [214, 193, 140] },
-  { name: 'Tundra', rgb: [160, 170, 152] },
-  { name: 'Marsh', rgb: [96, 122, 86] },
-  { name: 'Hills', rgb: [154, 138, 98] },
-  { name: 'Savanna', rgb: [194, 169, 90] },
-  { name: 'Taiga', rgb: [88, 118, 98] },
-  { name: 'Scrub', rgb: [163, 156, 107] },
-  { name: 'Heath', rgb: [140, 118, 118] },
-  { name: 'Mountains', rgb: [124, 116, 112] },
-];
-export const OCEAN_RGB: RGB = [38, 84, 132];
-
-export function landType(biomeKey: number): number {
-  return keyHash(biomeKey, 1) % LAND_TYPES.length;
-}
+export const OCEAN_RGB: RGB = ELEVATION_ZONE_TYPES[OCEAN_ZONE].rgb;
 
 export const GENESIS: { origin: number; name: string; rgb: RGB }[] = [
   { origin: ORIGIN.land, name: 'Land', rgb: [96, 104, 92] },
@@ -117,19 +98,19 @@ export function colorOf(c: Cell, mode: ViewMode): number {
       const base = cached('r', c.region, () => packRGB(hashColor(keyHash(c.region, 3))));
       return c.ocean ? scale(base, 0.42) : base;
     }
-    case 'biomes': {
-      const base = cached('b', c.biome, () => packRGB(hashColor(keyHash(c.biome, 4))));
+    case 'elevationZones': {
+      const base = cached('b', c.elevationZone, () => packRGB(hashColor(keyHash(c.elevationZone, 4))));
       return c.ocean ? mix(scale(base, 0.5), 20, 50, 100, 0.45) : base;
     }
     case 'subbiomes': {
-      const k = c.sub >= 0 ? c.sub : c.biome;
+      const k = c.sub >= 0 ? c.sub : c.elevationZone;
       const base = cached('s', k, () => packRGB(hashColor(keyHash(k, 5))));
       return c.ocean ? mix(scale(base, 0.5), 20, 50, 100, 0.45) : base;
     }
     case 'hierarchy': {
       const rh = keyHash(c.region, 3);
       const hue = (rh % 360) / 360;
-      const bh = keyHash(c.biome, 4);
+      const bh = keyHash(c.elevationZone, 4);
       const light = 0.42 + ((bh >>> 4) % 100) / 400;
       let px = packRGB(hsl(hue, 0.5, light));
       if (c.sub >= 0) px = scale(px, jitterF(keyHash(c.sub, 5), 0.07));
@@ -137,24 +118,24 @@ export function colorOf(c: Cell, mode: ViewMode): number {
     }
     case 'merges': {
       let px = c.ocean ? packColor(40, 58, 84) : packColor(118, 124, 112);
-      if (c.biomeMerged) {
-        const h = keyHash(c.biome, 6);
+      if (c.elevationZoneMerged) {
+        const h = keyHash(c.elevationZone, 6);
         px = packRGB(hsl((18 + (h % 34)) / 360, 0.75, c.ocean ? 0.38 : 0.55));
       }
       if (c.subMerged && c.sub >= 0) {
         const h = keyHash(c.sub, 7);
         const y = hsl((50 + (h % 20)) / 360, 0.85, 0.62);
-        px = mix(px, y[0], y[1], y[2], c.biomeMerged ? 0.35 : 0.7);
+        px = mix(px, y[0], y[1], y[2], c.elevationZoneMerged ? 0.35 : 0.7);
       }
       return px;
     }
     default: {
-      // cosmetic map
+      // map: elevation zone types
       if (c.ocean) {
-        const f = jitterF(keyHash(c.biome, 8), 0.07) * (c.sub >= 0 ? jitterF(keyHash(c.sub, 9), 0.03) : 1);
+        const f = jitterF(keyHash(c.elevationZone, 8), 0.07) * (c.sub >= 0 ? jitterF(keyHash(c.sub, 9), 0.03) : 1);
         return packColor(OCEAN_RGB[0] * f, OCEAN_RGB[1] * f, OCEAN_RGB[2] * f);
       }
-      const t = LAND_TYPES[landType(c.biome)].rgb;
+      const t = ELEVATION_ZONE_TYPES[elevationZoneType(c.elevationZone, false)].rgb;
       const f = c.sub >= 0 ? jitterF(keyHash(c.sub, 9), 0.08) : 1;
       return packColor(t[0] * f, t[1] * f, t[2] * f);
     }
@@ -162,7 +143,7 @@ export function colorOf(c: Cell, mode: ViewMode): number {
 }
 
 export function viewKey(v: ViewOpts): string {
-  return `${v.mode}|${+v.regEdges}${+v.bioEdges}${+v.subEdges}${+v.coast}|${v.lod}|${v.pinBiome}|${v.pinSub}|${+v.hillshade}`;
+  return `${v.mode}|${+v.regEdges}${+v.zoneEdges}${+v.subEdges}${+v.coast}|${v.lod}|${v.pinElevationZone}|${v.pinSub}|${+v.hillshade}`;
 }
 
 /** Subbiomes are classified when at least this many raster pixels wide. */
@@ -205,18 +186,18 @@ const SHADE_EXAG = 4;
 
 export function mapSource(world: World, genKey: string, v: ViewOpts, terrain: Terrain | null = null, terrainVer = 0): RasterSource {
   const S = world.subLevel.size;
-  const B = world.biomeLevel.size;
+  const B = world.elevationZoneLevel.size;
   const R = world.regionLevel.size;
   return {
     key: `${genKey}|${viewKey(v)}|t${terrain && (v.hillshade || v.mode === 'height') ? terrainVer : '-'}`,
     create() {
       let cols = 0;
       let sub = new Float64Array(0);
-      let bio = new Float64Array(0);
+      let zone = new Float64Array(0);
       let reg = new Float64Array(0);
       let oc = new Uint8Array(0);
       let pSub = new Float64Array(0);
-      let pBio = new Float64Array(0);
+      let pZone = new Float64Array(0);
       /** region keys of the REGION_THICK rows above (regUp[0] = the row just above) */
       let regUp: Float64Array<ArrayBuffer>[] = [];
       let pOc = new Uint8Array(0);
@@ -229,11 +210,11 @@ export function mapSource(world: World, genKey: string, v: ViewOpts, terrain: Te
         if (n !== cols) {
           cols = n;
           sub = new Float64Array(n);
-          bio = new Float64Array(n);
+          zone = new Float64Array(n);
           reg = new Float64Array(n);
           oc = new Uint8Array(n);
           pSub = new Float64Array(n);
-          pBio = new Float64Array(n);
+          pZone = new Float64Array(n);
           regUp = Array.from({ length: REGION_THICK }, () => new Float64Array(n));
           pOc = new Uint8Array(n);
           hRow = new Float64Array(n);
@@ -244,13 +225,13 @@ export function mapSource(world: World, genKey: string, v: ViewOpts, terrain: Te
         const detail = v.lod === 'full' || S / dwx >= DETAIL_PX;
         // borders fade out before they would turn the map into a mesh
         const subEdges = v.subEdges && detail && S / dwx >= 8;
-        const bioEdges = v.bioEdges && B / dwx >= 8;
+        const zoneEdges = v.zoneEdges && B / dwx >= 8;
         const regEdges = v.regEdges && R / dwx >= 5;
         const useH = terrain !== null && (v.hillshade || v.mode === 'height');
         for (let c = 0; c < n; c++) {
           const cell = world.cellAt(wx0 + c * dwx, wy, detail, tmp);
           sub[c] = cell.sub;
-          bio[c] = cell.biome;
+          zone[c] = cell.elevationZone;
           reg[c] = cell.region;
           oc[c] = cell.ocean ? 1 : 0;
           let px = colorOf(cell, v.mode);
@@ -260,7 +241,7 @@ export function mapSource(world: World, genKey: string, v: ViewOpts, terrain: Te
             hRow[c] = h;
             if (v.mode === 'height' && h === h) px = heightColor(h);
           }
-          if (cell.biome === v.pinBiome) px = mix(px, 253, 231, 37, 0.22);
+          if (cell.elevationZone === v.pinElevationZone) px = mix(px, 253, 231, 37, 0.22);
           out[off + c] = px;
         }
         // dash phase anchored to the world, so dashes don't crawl while panning
@@ -293,12 +274,12 @@ export function mapSource(world: World, genKey: string, v: ViewOpts, terrain: Te
           const dash = (((ix0 + c + iy) % REGION_DASH_PERIOD) + REGION_DASH_PERIOD) % REGION_DASH_PERIOD < REGION_DASH_ON;
           if (regEdge && dash) px = REGION_EDGE;
           else if (v.coast && ((l && oc[c - 1] !== oc[c]) || (u && pOc[c] !== oc[c]))) px = COAST;
-          else if (bioEdges && ((l && bio[c - 1] !== bio[c]) || (u && pBio[c] !== bio[c]))) px = scale(px, 0.5);
+          else if (zoneEdges && ((l && zone[c - 1] !== zone[c]) || (u && pZone[c] !== zone[c]))) px = scale(px, 0.5);
           else if (subEdges && ((l && sub[c - 1] !== sub[c]) || (u && pSub[c] !== sub[c]))) px = scale(px, 0.8);
           // pinned outlines on top
-          if (v.pinBiome >= 0) {
-            const inB = bio[c] === v.pinBiome;
-            if ((l && (bio[c - 1] === v.pinBiome) !== inB) || (u && (pBio[c] === v.pinBiome) !== inB)) px = packColor(253, 231, 37);
+          if (v.pinElevationZone >= 0) {
+            const inB = zone[c] === v.pinElevationZone;
+            if ((l && (zone[c - 1] === v.pinElevationZone) !== inB) || (u && (pZone[c] === v.pinElevationZone) !== inB)) px = packColor(253, 231, 37);
           }
           if (v.pinSub >= 0 && detail) {
             const inS = sub[c] === v.pinSub;
@@ -314,9 +295,9 @@ export function mapSource(world: World, genKey: string, v: ViewOpts, terrain: Te
         let t = pSub;
         pSub = sub;
         sub = t;
-        t = pBio;
-        pBio = bio;
-        bio = t;
+        t = pZone;
+        pZone = zone;
+        zone = t;
         // shift region rows down: regUp[0] ← reg, the oldest row is reused
         t = regUp[REGION_THICK - 1];
         for (let k = REGION_THICK - 1; k > 0; k--) regUp[k] = regUp[k - 1];

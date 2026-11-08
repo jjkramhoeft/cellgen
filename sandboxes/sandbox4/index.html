@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>cellgen · Sandbox 4 · Terrain</title>
-    <meta name="description" content="An infinite, deterministic base map built from three nested levels of Voronoi cells — regions, biomes and subbiomes — with ocean seeds, links and growth, and random cell merges." />
+    <meta name="description" content="An infinite, deterministic base map built from three nested levels of Voronoi cells — regions, elevation zones and subbiomes — with ocean seeds, links and growth, and random cell merges." />
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath fill='%2321918c' d='M16 2l12 7v14l-12 7-12-7V9z'/%3E%3Cpath fill='%23fde725' d='M16 9l6 3.5v7L16 23l-6-3.5v-7z'/%3E%3C/svg%3E" />
   </head>
   <body>
@@ -65,26 +65,26 @@
         <p>An unbounded base map in metres, built from three levels of Voronoi cells. Every cell is a pure function of the seed and the parameters, so the world has no edge: pan anywhere and the same seed always gives the same map.</p>
         <h3>The three levels</h3>
         <ul>
-          <li><b>Regions</b> (128 km, straight borders) own the biomes whose site lies inside them. Each region picks <b>0–2 ocean seeds</b> and <b>2–4 biome merges</b> among its biomes.</li>
-          <li><b>Biomes</b> (32 km, warped borders) are the land/ocean unit. Each biome picks <b>2–4 subbiome merges</b> among the subbiomes it owns. Colours are cosmetic.</li>
+          <li><b>Regions</b> (128 km, straight borders) own the elevation zones whose site lies inside them. Each region picks <b>0–2 ocean seeds</b> and <b>2–4 elevation zone merges</b> among its elevation zones.</li>
+          <li><b>Elevation zones</b> (32 km, warped borders) are the land/ocean unit. Each elevation zone is <b>ocean, flat, lowland, hills or mountains</b> (the map colours) and picks <b>2–4 subbiome merges</b> among the subbiomes it owns.</li>
           <li><b>Subbiomes</b> (8 km, warped borders) carry detail: sub-biomes, towns, ore, factions.</li>
         </ul>
         <h3>Oceans</h3>
         <ul>
-          <li><b>Seeds</b>: each region turns 0–2 of its biomes into ocean.</li>
-          <li><b>Links</b>: with a 40 % chance a seed links to its nearest other seed, and with a 5 % <b>double link</b> chance to its two nearest seeds; every biome on the straight line between them becomes ocean, so several seeds can join into one ocean.</li>
-          <li><b>Growth</b>: every linked ocean biome converts its 3 / 2 / 1 / 0 closest land neighbours with chances 10 / 33 / 33 / 23 %.</li>
+          <li><b>Seeds</b>: each region turns 0–2 of its elevation zones into ocean.</li>
+          <li><b>Links</b>: with a 40 % chance a seed links to its nearest other seed, and with a 5 % <b>double link</b> chance to its two nearest seeds; every elevation zone on the straight line between them becomes ocean, so several seeds can join into one ocean.</li>
+          <li><b>Growth</b>: every linked ocean elevation zone converts its 3 / 2 / 1 / 0 closest land neighbours with chances 10 / 33 / 33 / 23 %.</li>
           <li>Colour by <b>Ocean genesis</b> and turn on <b>Ocean seeds &amp; links</b> and <b>Growth arrows</b> to see each step.</li>
         </ul>
         <h3>Rivers</h3>
         <ul>
-          <li>Grown per region by <b>space colonization</b>: a root at the point of every ocean biome touching the region, and 10 <b>attraction points</b> in every inland (non-coastal) land subbiome.</li>
+          <li>Grown per region by <b>space colonization</b>: a root at the point of every ocean elevation zone touching the region, and 10 <b>attraction points</b> in every inland (non-coastal) land subbiome.</li>
           <li>Each step, nodes grow towards the attractors pulling on them, plus some <b>random motion</b>, until every attractor of the region is reached.</li>
           <li>Line width = <b>attractors reached upstream</b>. Turn on <b>Attractor points</b> to see the attractors (unreached in red) and the roots (rings).</li>
         </ul>
         <h3>Terrain (Sandbox 4)</h3>
         <ul>
-          <li>A <b>height map fitted to the map</b>, computed per region on a raster: river beds rise upstream by the <b>stream-power law</b> (S = S₀·flow<sup>−θ</sup>), hillslopes rise from the rivers and the coast with a <b>steepness per land type</b> (a geodesic distance), and <b>ridges</b> follow region borders and the divides between river systems.</li>
+          <li>A <b>height map fitted to the map</b>, computed per region on a raster: river beds rise upstream by the <b>stream-power law</b> (S = S₀·flow<sup>−θ</sup>), hillslopes rise from the rivers and the coast with a <b>steepness per elevation zone type</b> (a geodesic distance), and <b>ridges</b> follow region borders and the divides between river systems.</li>
           <li>Then <b>detail noise</b> (none on the river beds), the rivers are <b>burnt in</b>, and an <b>ε-Priority-Flood</b> fills every pit so all land drains to the sea or over a region border.</li>
           <li>Colour by <b>Height</b>, or turn on <b>Hillshade</b> for any colour mode. Turn on <b>3D landscape</b> (<b>T</b>) to see the current view in 3D: drag to orbit, scroll to zoom, Shift/right-drag to pan.</li>
           <li>Regions are computed as you look (a few tenths of a second each); zoomed far out the terrain is skipped.</li>
@@ -92,9 +92,9 @@
         <h3>Navigation</h3>
         <ul>
           <li><b>Scroll</b> to zoom at the cursor, <b>drag</b> to pan, <b>pinch</b> on touch, <b>double-click</b> zooms in (Shift zooms out).</li>
-          <li><b>Click</b> pins the biome (yellow outline) and subbiome (cyan outline) under the cursor; <b>Esc</b> releases.</li>
+          <li><b>Click</b> pins the elevation zone (yellow outline) and subbiome (cyan outline) under the cursor; <b>Esc</b> releases.</li>
           <li><b>Shift+drag</b> or <b>M</b> measures a distance, with travel times for a horse, a marching legion and a hiker.</li>
-          <li><b>+ / −</b> zoom · <b>0 / H</b> origin · arrows pan · <b>R</b> new seed · <b>1–9</b> or <b>[ ]</b> colour mode · <b>T</b> 3D landscape · <b>B</b> biome borders · <b>N</b> subbiome borders · <b>L</b> links · <b>W</b> growth · <b>J</b> merges · <b>V</b> rivers · <b>S</b> sites · <b>G</b> grid · <b>?</b> help.</li>
+          <li><b>+ / −</b> zoom · <b>0 / H</b> origin · arrows pan · <b>R</b> new seed · <b>1–9</b> or <b>[ ]</b> colour mode · <b>T</b> 3D landscape · <b>B</b> elevation zone borders · <b>N</b> subbiome borders · <b>L</b> links · <b>W</b> growth · <b>J</b> merges · <b>V</b> rivers · <b>S</b> sites · <b>G</b> grid · <b>?</b> help.</li>
         </ul>
         <p class="muted">Arrows connect cell <i>sites</i>. With border warp a site can sit slightly outside its own warped cell. Travel speeds are reference data from <code>sandbox3.md</code>; the generator does not use them.</p>
         <div class="dlg-actions"><button class="btn primary">Close</button></div>

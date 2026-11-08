@@ -2,8 +2,8 @@
 import { bindDefaults, bool, defaultsOf, num, opt, str, type DefaultsFile, type ParamDef, type Params, type Section } from '@shared/params/schema';
 import type { ConeAngle, PullPower, RiverParams } from './world/rivers';
 import { FLOOD_REF_FLOW, type TerrainParams, type Theta } from './world/terrain';
-import { LAND_TYPES } from './render/source';
 import type { GrowFrom, WorldParams } from './world/world';
+import { ELEVATION_ZONE_TYPES, LAND_ZONE_TYPES } from './world/zones';
 import defaultsJson from '../defaults.json';
 
 const DEFAULTS: DefaultsFile = defaultsJson;
@@ -20,21 +20,21 @@ export const SECTIONS: Section[] = withDefaults.sections([
     id: 'regions',
     title: 'Regions · large cells',
     open: true,
-    help: 'Plain Voronoi cells (no warp). A region owns the biomes whose site lies inside it and decides how many of them become ocean seeds and how many merge.',
+    help: 'Plain Voronoi cells (no warp). A region owns the elevation zones whose site lies inside it and decides how many of them become ocean seeds and how many merge.',
     params: [
       { key: 'reg.size', label: 'Grid size', type: 'number', min: 32, max: 512, step: 1, log: true, unit: ' km' },
       { key: 'reg.jitter', label: 'Jitter', type: 'number', min: 0, max: 1, step: 0.01, help: 'How far a site may move from its lattice cell centre. 0 = a square grid.' },
-      { key: 'reg.oceanMin', label: 'Ocean seeds min', type: 'int', min: 0, max: 4, help: 'Ocean seed biomes per region: a uniform count in [min, max].' },
+      { key: 'reg.oceanMin', label: 'Ocean seeds min', type: 'int', min: 0, max: 4, help: 'Ocean seed elevation zones per region: a uniform count in [min, max].' },
       { key: 'reg.oceanMax', label: 'Ocean seeds max', type: 'int', min: 0, max: 4 },
-      { key: 'reg.mergeMin', label: 'Biome merges min', type: 'int', min: 0, max: 12, help: 'Biomes per region that join their nearest neighbour: a uniform count in [min, max].' },
-      { key: 'reg.mergeMax', label: 'Biome merges max', type: 'int', min: 0, max: 12 },
+      { key: 'reg.mergeMin', label: 'Zone merges min', type: 'int', min: 0, max: 12, help: 'Elevation zones per region that join their nearest neighbour: a uniform count in [min, max].' },
+      { key: 'reg.mergeMax', label: 'Zone merges max', type: 'int', min: 0, max: 12 },
     ],
   },
   {
     id: 'oceans',
     title: 'Oceans',
     open: true,
-    help: 'Seeds → links → growth. A linked seed turns every biome on the straight line to its nearest other seed (or two nearest, with a double link) into ocean; linked ocean biomes then convert some of their closest land neighbours.',
+    help: 'Seeds → links → growth. A linked seed turns every elevation zone on the straight line to its nearest other seed (or two nearest, with a double link) into ocean; linked ocean elevation zones then convert some of their closest land neighbours.',
     params: [
       { key: 'oc.connect', label: 'Link chance', type: 'int', min: 0, max: 100, unit: '%', help: 'Chance that an ocean seed links to its nearest other ocean seed.' },
       {
@@ -47,7 +47,7 @@ export const SECTIONS: Section[] = withDefaults.sections([
         help: 'Chance that an ocean seed links to its two nearest other seeds instead of one. Checked before the link chance, so it applies to every seed.',
       },
       { key: 'oc.range', label: 'Link search', type: 'int', min: 1, max: 3, unit: ' reg', help: 'How many regions away a seed looks for its nearest other seed.' },
-      { key: 'oc.g3', label: 'Grow 3 nbrs', type: 'int', min: 0, max: 100, unit: '%', help: 'Chance that a growing ocean biome converts its 3 closest land neighbours. The four chances are normalised.' },
+      { key: 'oc.g3', label: 'Grow 3 nbrs', type: 'int', min: 0, max: 100, unit: '%', help: 'Chance that a growing ocean elevation zone converts its 3 closest land neighbours. The four chances are normalised.' },
       { key: 'oc.g2', label: 'Grow 2 nbrs', type: 'int', min: 0, max: 100, unit: '%' },
       { key: 'oc.g1', label: 'Grow 1 nbr', type: 'int', min: 0, max: 100, unit: '%' },
       { key: 'oc.g0', label: 'Grow 0 nbrs', type: 'int', min: 0, max: 100, unit: '%' },
@@ -55,25 +55,25 @@ export const SECTIONS: Section[] = withDefaults.sections([
         key: 'oc.from',
         label: 'Grow from',
         type: 'select',
-        options: opt(['connected', 'Linked ocean biomes'], ['all', 'All ocean biomes']),
-        help: 'Which ocean biomes grow in the first pass. "Linked" (the spec) leaves lone seeds as single-biome seas.',
+        options: opt(['connected', 'Linked ocean elevation zones'], ['all', 'All ocean elevation zones']),
+        help: 'Which ocean elevation zones grow in the first pass. "Linked" (the spec) leaves lone seeds as single-zone seas.',
       },
-      { key: 'oc.passes', label: 'Growth passes', type: 'int', min: 0, max: 4, help: 'Later passes grow from the biomes converted in the previous pass.' },
+      { key: 'oc.passes', label: 'Growth passes', type: 'int', min: 0, max: 4, help: 'Later passes grow from the elevation zones converted in the previous pass.' },
     ],
   },
   {
-    id: 'biomes',
-    title: 'Biomes · medium cells',
+    id: 'elevationZones',
+    title: 'Elevation zones · medium cells',
     open: true,
-    help: 'Warped Voronoi cells: the ocean/land unit, and the unit for factions. A biome owns the subbiomes whose site lies inside it.',
+    help: 'Warped Voronoi cells: the ocean/land unit, and the unit for factions. An elevation zone owns the subbiomes whose site lies inside it.',
     params: [
-      { key: 'bio.size', label: 'Grid size', type: 'number', min: 8, max: 128, step: 1, log: true, unit: ' km' },
-      { key: 'bio.jitter', label: 'Jitter', type: 'number', min: 0, max: 1, step: 0.01 },
-      { key: 'bio.warp', label: 'Border warp', type: 'number', min: 0, max: 1, step: 0.01, help: 'Amplitude of the border warp, in cell sizes.' },
-      { key: 'bio.warpFreq', label: 'Warp frequency', type: 'number', min: 0.1, max: 4, step: 0.01, log: true, help: 'Warp noise cycles per cell. Low = gently bent borders, high = wiggly borders.' },
-      { key: 'bio.mergeMin', label: 'Subbiome merges min', type: 'int', min: 0, max: 12, help: 'Subbiomes per biome that join their nearest neighbour in the same biome.' },
-      { key: 'bio.mergeMax', label: 'Subbiome merges max', type: 'int', min: 0, max: 12 },
-      { key: 'bio.mergeCoast', label: 'Merge across coast', type: 'bool', help: 'Allow a land biome to merge into an ocean biome (and vice versa). Off keeps coastlines intact.' },
+      { key: 'ez.size', label: 'Grid size', type: 'number', min: 8, max: 128, step: 1, log: true, unit: ' km' },
+      { key: 'ez.jitter', label: 'Jitter', type: 'number', min: 0, max: 1, step: 0.01 },
+      { key: 'ez.warp', label: 'Border warp', type: 'number', min: 0, max: 1, step: 0.01, help: 'Amplitude of the border warp, in cell sizes.' },
+      { key: 'ez.warpFreq', label: 'Warp frequency', type: 'number', min: 0.1, max: 4, step: 0.01, log: true, help: 'Warp noise cycles per cell. Low = gently bent borders, high = wiggly borders.' },
+      { key: 'ez.mergeMin', label: 'Subbiome merges min', type: 'int', min: 0, max: 12, help: 'Subbiomes per elevation zone that join their nearest neighbour in the same elevation zone.' },
+      { key: 'ez.mergeMax', label: 'Subbiome merges max', type: 'int', min: 0, max: 12 },
+      { key: 'ez.mergeCoast', label: 'Merge across coast', type: 'bool', help: 'Allow a land elevation zone to merge into an ocean elevation zone (and vice versa). Off keeps coastlines intact.' },
     ],
   },
   {
@@ -90,7 +90,7 @@ export const SECTIONS: Section[] = withDefaults.sections([
         key: 'sub.nest',
         label: 'Nest levels',
         type: 'bool',
-        help: 'Classify every point through its subbiome: biome and region borders (and coasts) then follow subbiome cells. Off = each level is looked up at the point itself.',
+        help: 'Classify every point through its subbiome: elevation zone and region borders (and coasts) then follow subbiome cells. Off = each level is looked up at the point itself.',
       },
     ],
   },
@@ -105,7 +105,7 @@ export const RIVER_SECTION: Section = withDefaults.section({
   title: 'Rivers · space colonization',
   enableKey: 'riv.on',
   open: true,
-  help: 'Per region: a root at the point of every ocean biome touching the region, attractors in every inland (non-coastal) land subbiome, then space colonization until every attractor is reached. Width = attractors reached upstream.',
+  help: 'Per region: a root at the point of every ocean elevation zone touching the region, attractors in every inland (non-coastal) land subbiome, then space colonization until every attractor is reached. Width = attractors reached upstream.',
   params: [
     { key: 'riv.on', label: 'Rivers', type: 'bool' },
     { key: 'riv.points', label: 'Attractors / subbiome', type: 'int', min: 1, max: 30, help: 'Attraction points scattered inside every inland land subbiome.' },
@@ -203,7 +203,7 @@ export const TERRAIN_SECTION: Section = withDefaults.section({
   id: 'terrain',
   title: 'Terrain · height map',
   open: true,
-  help: 'Fitted to the map: river beds rise upstream by the stream-power law, hillslopes rise from rivers and coast (steepness per land type), ridges divide regions and river systems, then detail noise, the rivers are burnt in and pits are filled so everything drains to the sea.',
+  help: 'Fitted to the map: river beds rise upstream by the stream-power law, hillslopes rise from rivers and coast (steepness per elevation zone type), ridges divide regions and river systems, then detail noise, the rivers are burnt in and pits are filled so everything drains to the sea.',
   params: [
     {
       key: 'hgt.res',
@@ -229,36 +229,36 @@ export const TERRAIN_SECTION: Section = withDefaults.section({
       options: opt(['0.375', '⅜ (straighter profiles)'], ['0.4375', '7⁄16 (≈ 0.45, typical)'], ['0.5', '½ (more concave)']),
       help: 'How fast rivers flatten downstream as flow grows.',
     },
-    { key: 'hgt.hill', label: 'Hillslope steepness', type: 'number', min: 0.05, max: 4, step: 0.05, log: true, help: 'Multiplier on the hillslope of every land type (set per type under "hillslope by land type").' },
+    { key: 'hgt.hill', label: 'Hillslope steepness', type: 'number', min: 0.05, max: 4, step: 0.05, log: true, help: 'Multiplier on the hillslope of every elevation zone type (set per type under "hillslope by elevation zone").' },
     {
       key: 'hgt.level',
-      label: 'Level flat biomes',
+      label: 'Level flat zones',
       type: 'number',
       min: 0,
       max: 1,
       step: 0.05,
-      help: 'A biome whose river gradient is below 1 sits at one level: the rivers entering it are lowered towards its lowest entry (to the level at gradient 0), cutting gorges through the steeper land downstream. 0 = off: every river keeps the height it climbed to elsewhere.',
+      help: 'An elevation zone whose river gradient is below 1 sits at one level: the rivers entering it are lowered towards its lowest entry (to the level at gradient 0), cutting gorges through the steeper land downstream. 0 = off: every river keeps the height it climbed to elsewhere.',
     },
-    { key: 'hgt.relief', label: 'Mountain belts', type: 'number', min: 0, max: 1, step: 0.01, help: 'Strength of a slow, region-scale relief field that makes several neighbouring biomes rugged or flat together.' },
+    { key: 'hgt.relief', label: 'Mountain belts', type: 'number', min: 0, max: 1, step: 0.01, help: 'Strength of a slow, region-scale relief field that makes several neighbouring elevation zones rugged or flat together.' },
     { key: 'hgt.ridge', label: 'Region ridge', type: 'number', min: 0, max: 400, step: 5, unit: ' m', help: 'Ridge along region borders (rivers never cross them). Fades out near rivers.' },
     { key: 'hgt.divide', label: 'Basin divides', type: 'number', min: 0, max: 300, step: 5, unit: ' m', help: 'Extra height where the basins of two different river systems meet.' },
-    { key: 'hgt.noise', label: 'Detail noise', type: 'number', min: 0, max: 3, step: 0.05, help: 'Multiplier on the noise amplitude of every land type; masked to zero on the river beds.' },
+    { key: 'hgt.noise', label: 'Detail noise', type: 'number', min: 0, max: 3, step: 0.05, help: 'Multiplier on the noise amplitude of every elevation zone type; masked to zero on the river beds.' },
     { key: 'hgt.burn', label: 'Channel depth', type: 'number', min: 0, max: 20, step: 0.5, unit: ' m', help: 'How deep the rivers are burnt below their bed profile.' },
     { key: 'hgt.sea', label: 'Sea depth', type: 'number', min: 0, max: 2000, step: 10, unit: ' m', help: 'Ocean depth 40 km and more from the coast.' },
   ],
 });
 
-/** URL/param key of a land type's river gradient factor, e.g. 'hgt.ch.oldforest'. */
-export const chanKey = (name: string) => `hgt.ch.${name.toLowerCase().replace(/[^a-z]/g, '')}`;
+/** URL/param key of an elevation zone type's river gradient factor, e.g. 'hgt.ch.lowland'. */
+export const chanKey = (id: string) => `hgt.ch.${id}`;
 
-/** How fast the river bed rises upstream in each land type (factor on S₀). */
+/** How fast the river bed rises upstream in each elevation zone type (factor on S₀). */
 export const GRADIENT_SECTION: Section = withDefaults.section({
   id: 'gradient',
-  title: 'Terrain · river gradient by land type',
+  title: 'Terrain · river gradient by elevation zone',
   open: false,
-  help: 'Factor on the channel slope S₀ where a river runs through each land type: how fast the river bed rises upstream (never steeper than the land type’s hillslope). 0 = flat: with "Level flat biomes" the whole biome sits at the level of its lowest river entry; below 1 it is levelled partly.',
-  params: LAND_TYPES.map((t, i) => ({
-    key: chanKey(t.name),
+  help: 'Factor on the channel slope S₀ where a river runs through each type of elevation zone: how fast the river bed rises upstream (never steeper than the zone’s hillslope). 0 = flat: with "Level flat zones" the whole elevation zone sits at the level of its lowest river entry; below 1 it is levelled partly.',
+  params: LAND_ZONE_TYPES.map((t) => ({
+    key: chanKey(t.id),
     label: t.name,
     type: 'number' as const,
     min: 0,
@@ -267,17 +267,17 @@ export const GRADIENT_SECTION: Section = withDefaults.section({
   })),
 });
 
-/** URL/param key of a land type’s hillslope steepness, e.g. 'hgt.hs.oldforest'. */
-export const hillKey = (name: string) => `hgt.hs.${name.toLowerCase().replace(/[^a-z]/g, '')}`;
+/** URL/param key of an elevation zone type’s hillslope steepness, e.g. 'hgt.hs.lowland'. */
+export const hillKey = (id: string) => `hgt.hs.${id}`;
 
-/** How steeply the land rises away from rivers and the coast in each land type. */
+/** How steeply the land rises away from rivers and the coast in each elevation zone type. */
 export const HILLSLOPE_SECTION: Section = withDefaults.section({
   id: 'hillslope',
-  title: 'Terrain · hillslope by land type',
+  title: 'Terrain · hillslope by elevation zone',
   open: false,
   help: 'How steeply the land rises away from its rivers and the coast (metres per metre, × "Hillslope steepness" and the mountain belts). Low values make flat plains, high values rugged hills.',
-  params: LAND_TYPES.map((t, i) => ({
-    key: hillKey(t.name),
+  params: LAND_ZONE_TYPES.map((t) => ({
+    key: hillKey(t.id),
     label: t.name,
     type: 'number' as const,
     min: 0,
@@ -315,9 +315,9 @@ export function toTerrainParams(p: Params): TerrainParams {
     chSlope: num(p, 'hgt.chSlope'),
     theta: Number(str(p, 'hgt.theta')) as Theta,
     hill: num(p, 'hgt.hill'),
-    hillType: LAND_TYPES.map((t) => num(p, hillKey(t.name))),
+    hillType: ELEVATION_ZONE_TYPES.map((t) => (t.id === 'ocean' ? 0 : num(p, hillKey(t.id)))),
     level: num(p, 'hgt.level'),
-    chanFactor: LAND_TYPES.map((t) => num(p, chanKey(t.name))),
+    chanFactor: ELEVATION_ZONE_TYPES.map((t) => (t.id === 'ocean' ? 1 : num(p, chanKey(t.id)))),
     floodH: [1, 2, 3, 4].map((i) => num(p, `hgt.fp.h${i}`)),
     floodW: [1, 2, 3, 4].map((i) => num(p, `hgt.fp.w${i}`)),
     floodFlow: bool(p, 'hgt.fp.flow'),
@@ -332,12 +332,12 @@ export function toTerrainParams(p: Params): TerrainParams {
 
 /** Colour modes: [id, label]. */
 export const VIEW_MODES = [
-  ['map', 'Map (cosmetic biomes)'],
+  ['map', 'Map (elevation zone types)'],
   ['landsea', 'Land & ocean'],
   ['genesis', 'Ocean genesis'],
   ['merges', 'Merged cells'],
   ['regions', 'Regions'],
-  ['biomes', 'Biomes'],
+  ['elevationZones', 'Elevation zones'],
   ['subbiomes', 'Subbiomes'],
   ['hierarchy', 'Hierarchy (all levels)'],
   ['height', 'Height (hypsometric)'],
@@ -360,17 +360,17 @@ export const VIEW_SECTION: Section = withDefaults.section({
     { key: 'view.exag', label: 'Vertical exaggeration', type: 'number', min: 1, max: 60, step: 0.5, log: true, view: true, help: '3D only: heights are this many times taller than true scale.' },
     { key: 'view.hillshade', label: 'Hillshade', type: 'bool', view: true, help: 'Shade any colour mode by the height map (lit from the north-west). Always on for “Height”.' },
     { key: 'view.regEdges', label: 'Region borders', type: 'bool', view: true },
-    { key: 'view.bioEdges', label: 'Biome borders', type: 'bool', view: true },
+    { key: 'view.zoneEdges', label: 'Elevation zone borders', type: 'bool', view: true },
     { key: 'view.subEdges', label: 'Subbiome borders', type: 'bool', view: true, help: 'Drawn when subbiomes are large enough on screen.' },
     { key: 'view.coast', label: 'Coastline', type: 'bool', view: true },
     { key: 'view.links', label: 'Ocean seeds & links', type: 'bool', view: true, help: 'Seeds (●linked ○lone) and the straight links between them.' },
-    { key: 'view.growth', label: 'Growth arrows', type: 'bool', view: true, help: 'Arrow from each growing ocean biome to the land biomes it converted.' },
+    { key: 'view.growth', label: 'Growth arrows', type: 'bool', view: true, help: 'Arrow from each growing ocean elevation zone to the land elevation zones it converted.' },
     { key: 'view.mergeArrows', label: 'Merge arrows', type: 'bool', view: true, help: 'Arrow from each merged cell to the neighbour it joined.' },
     {
       key: 'view.sites',
       label: 'Sites',
       type: 'select',
-      options: opt(['none', 'None'], ['regions', 'Regions'], ['biomes', 'Regions + biomes'], ['all', 'All levels']),
+      options: opt(['none', 'None'], ['regions', 'Regions'], ['elevationZones', 'Regions + elevation zones'], ['all', 'All levels']),
       view: true,
     },
     { key: 'view.grid', label: 'Kilometre grid', type: 'bool', view: true },
@@ -386,7 +386,7 @@ export const VIEW_SECTION: Section = withDefaults.section({
       help: 'Width ∝ flow^b. ½ = real rivers (hydraulic geometry) and Leonardo’s rule; ⅓ = Murray’s law, flatter contrast; ¾ and up = trunks dominate. A flow of 100 keeps its width.',
     },
     { key: 'view.riverMin', label: 'Min river flow', type: 'int', min: 1, max: 200, log: true, view: true, help: 'Hide river segments that carry fewer attractors than this (prunes twigs).' },
-    { key: 'view.riverSea', label: 'River paths over sea', type: 'bool', view: true, help: 'Roots sit at ocean biome points, so each river first crosses the water to the coast. Off hides that stretch.' },
+    { key: 'view.riverSea', label: 'River paths over sea', type: 'bool', view: true, help: 'Roots sit at ocean elevation zone points, so each river first crosses the water to the coast. Off hides that stretch.' },
     { key: 'view.attractors', label: 'Attractor points', type: 'bool', view: true, help: 'Reached attractors in grey, unreached in red, river roots as rings.' },
     { key: 'view.lod', label: 'Detail', type: 'select', options: opt(['auto', 'Auto (skip sub-pixel cells)'], ['full', 'Always full detail']), view: true },
   ],
@@ -407,29 +407,29 @@ export function defaults(): Params {
  */
 export function toWorldParams(p: Params, seed: number): WorldParams {
   const regionSize = num(p, 'reg.size') * KM;
-  const biomeSize = Math.min(regionSize / 1.5, Math.max(regionSize / 16, num(p, 'bio.size') * KM));
-  const subSize = Math.min(biomeSize / 1.5, Math.max(biomeSize / 16, num(p, 'sub.size') * KM));
+  const elevationZoneSize = Math.min(regionSize / 1.5, Math.max(regionSize / 16, num(p, 'ez.size') * KM));
+  const subSize = Math.min(elevationZoneSize / 1.5, Math.max(elevationZoneSize / 16, num(p, 'sub.size') * KM));
   return {
     seed,
     regionSize,
     regionJitter: num(p, 'reg.jitter'),
     oceanMin: num(p, 'reg.oceanMin'),
     oceanMax: num(p, 'reg.oceanMax'),
-    biomeMergeMin: num(p, 'reg.mergeMin'),
-    biomeMergeMax: num(p, 'reg.mergeMax'),
+    elevationZoneMergeMin: num(p, 'reg.mergeMin'),
+    elevationZoneMergeMax: num(p, 'reg.mergeMax'),
     connectChance: num(p, 'oc.connect') / 100,
     doubleLinkChance: num(p, 'oc.double') / 100,
     connectRange: num(p, 'oc.range'),
     growWeights: [num(p, 'oc.g0'), num(p, 'oc.g1'), num(p, 'oc.g2'), num(p, 'oc.g3')],
     growFrom: str(p, 'oc.from') as GrowFrom,
     growPasses: num(p, 'oc.passes'),
-    biomeSize,
-    biomeJitter: num(p, 'bio.jitter'),
-    biomeWarp: num(p, 'bio.warp'),
-    biomeWarpFreq: num(p, 'bio.warpFreq'),
-    mergeAcrossCoast: bool(p, 'bio.mergeCoast'),
-    subMergeMin: num(p, 'bio.mergeMin'),
-    subMergeMax: num(p, 'bio.mergeMax'),
+    elevationZoneSize,
+    elevationZoneJitter: num(p, 'ez.jitter'),
+    elevationZoneWarp: num(p, 'ez.warp'),
+    elevationZoneWarpFreq: num(p, 'ez.warpFreq'),
+    mergeAcrossCoast: bool(p, 'ez.mergeCoast'),
+    subMergeMin: num(p, 'ez.mergeMin'),
+    subMergeMax: num(p, 'ez.mergeMax'),
     subSize,
     subJitter: num(p, 'sub.jitter'),
     subWarp: num(p, 'sub.warp'),
@@ -459,13 +459,13 @@ export const PRESETS: Preset[] = [
   },
   { id: 'inland', label: 'Inland seas (no links)', params: { 'oc.connect': 0, 'oc.from': 'all', 'oc.passes': 2 } },
   { id: 'oceanic', label: 'Ocean world', params: { 'reg.oceanMin': 2, 'reg.oceanMax': 4, 'oc.connect': 90, 'oc.passes': 2, 'oc.from': 'all' } },
-  { id: 'nowarp', label: 'Straight borders (no warp)', params: { 'bio.warp': 0, 'sub.warp': 0 } },
-  { id: 'organic', label: 'Organic borders', params: { 'bio.warp': 0.7, 'bio.warpFreq': 0.45, 'sub.warp': 0.6, 'sub.warpFreq': 0.8 } },
+  { id: 'nowarp', label: 'Straight borders (no warp)', params: { 'ez.warp': 0, 'sub.warp': 0 } },
+  { id: 'organic', label: 'Organic borders', params: { 'ez.warp': 0.7, 'ez.warpFreq': 0.45, 'sub.warp': 0.6, 'sub.warpFreq': 0.8 } },
   {
     id: 'grid',
     label: 'Square grid (jitter 0)',
-    params: { 'reg.jitter': 0, 'bio.jitter': 0, 'sub.jitter': 0, 'bio.warp': 0, 'sub.warp': 0 },
+    params: { 'reg.jitter': 0, 'ez.jitter': 0, 'sub.jitter': 0, 'ez.warp': 0, 'sub.warp': 0 },
   },
-  { id: 'bigmerge', label: 'Heavy merging', params: { 'reg.mergeMin': 6, 'reg.mergeMax': 10, 'bio.mergeMin': 5, 'bio.mergeMax': 9 } },
+  { id: 'bigmerge', label: 'Heavy merging', params: { 'reg.mergeMin': 6, 'reg.mergeMax': 10, 'ez.mergeMin': 5, 'ez.mergeMax': 9 } },
   { id: 'flat', label: 'Independent levels (no nesting)', params: { 'sub.nest': false, 'view.color': 'hierarchy' } },
 ];

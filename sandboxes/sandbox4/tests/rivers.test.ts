@@ -11,7 +11,7 @@ const rp = (over: Partial<RiverParams> = {}): RiverParams => ({ ...toRiverParams
 function landRegions(w: World, n = 6): number[] {
   const out: number[] = [];
   for (const r of World.cellsIn(w.regionLevel, -400000, -400000, 400000, 400000, 0)) {
-    if (w.region(r).biomes.some((b) => !w.biomeCell(b).ocean)) out.push(r);
+    if (w.region(r).elevationZones.some((b) => !w.elevationZoneCell(b).ocean)) out.push(r);
     if (out.length >= n) break;
   }
   return out;
@@ -26,9 +26,9 @@ describe('space-colonization rivers', () => {
     expect(ax.length).toBeGreaterThan(100);
     expect(ax.length % 10).toBe(0);
     let eligible = 0;
-    for (const b of rv.regionBiomes(r)) {
-      if (w.biomeCell(b).ocean) continue;
-      for (const s of w.biomeSubs(w.biome(b))) {
+    for (const b of rv.regionElevationZones(r)) {
+      if (w.elevationZoneCell(b).ocean) continue;
+      for (const s of w.elevationZoneSubs(w.elevationZone(b))) {
         const c = w.subCell(s);
         if (!c.ocean && c.region === r && !rv.isCoastSub(s)) eligible++;
       }
@@ -41,17 +41,17 @@ describe('space-colonization rivers', () => {
     }
   });
 
-  it('follows the drawn regions: a biome merged into a neighbouring region belongs to that region', () => {
+  it('follows the drawn regions: an elevation zone merged into a neighbouring region belongs to that region', () => {
     const w = world();
     const rv = new Rivers(w, rp());
     let moved = 0;
     for (const r of World.cellsIn(w.regionLevel, -400000, -400000, 400000, 400000, 0)) {
-      const mine = new Set(rv.regionBiomes(r));
-      for (const b of w.region(r).biomes) {
-        expect(mine.has(b)).toBe(w.biomeCell(b).region === r);
+      const mine = new Set(rv.regionElevationZones(r));
+      for (const b of w.region(r).elevationZones) {
+        expect(mine.has(b)).toBe(w.elevationZoneCell(b).region === r);
         if (!mine.has(b)) moved++;
       }
-      for (const b of mine) expect(w.biomeCell(b).region).toBe(r);
+      for (const b of mine) expect(w.elevationZoneCell(b).region).toBe(r);
     }
     // the case exists with the default parameters (merges cross region borders)
     expect(moved).toBeGreaterThan(0);
@@ -62,7 +62,7 @@ describe('space-colonization rivers', () => {
     const rv = new Rivers(w, rp());
     let checked = 0;
     for (const r of World.cellsIn(w.regionLevel, -400000, -400000, 400000, 400000, 0)) {
-      if (!w.region(r).biomes.some((b) => !w.biomeCell(b).ocean)) continue;
+      if (!w.region(r).elevationZones.some((b) => !w.elevationZoneCell(b).ocean)) continue;
       const rr = rv.get(r);
       if (rr.landlocked) continue; // exempt: it must cross its neighbours to reach the sea
       const ok = (x: number, y: number) => {
@@ -106,22 +106,22 @@ describe('space-colonization rivers', () => {
     }
   });
 
-  it('puts one root at the point of each ocean biome touching the region, and flags nodes over water', () => {
+  it('puts one root at the point of each ocean elevation zone touching the region, and flags nodes over water', () => {
     const w = world();
     const rv = new Rivers(w, rp());
     for (const r of landRegions(w, 3)) {
       const rr = rv.get(r);
       expect(new Set(rr.rootOcean).size).toBe(rr.rootOcean.length);
       rr.roots.forEach((k, t) => {
-        const o = w.biome(rr.rootOcean[t]);
-        expect(w.biomeCell(o.key).ocean).toBe(true);
-        // at the biome's site, or (when the site sits on a sliver of land) at an ocean subbiome site of it
+        const o = w.elevationZone(rr.rootOcean[t]);
+        expect(w.elevationZoneCell(o.key).ocean).toBe(true);
+        // at the elevation zone's site, or (when the site sits on a sliver of land) at an ocean subbiome site of it
         const atSite = rr.x[k] === o.x && rr.y[k] === o.y;
-        const atSub = w.biomeSubs(o).some((s) => w.sub(s).x === rr.x[k] && w.sub(s).y === rr.y[k]);
+        const atSub = w.elevationZoneSubs(o).some((s) => w.sub(s).x === rr.x[k] && w.sub(s).y === rr.y[k]);
         expect(atSite || atSub).toBe(true);
         expect(w.cellAt(rr.x[k], rr.y[k], true).ocean).toBe(true);
-        // the ocean biome touches land
-        expect(w.biomeNbrs(o).some((n) => !w.biomeCell(n).ocean)).toBe(true);
+        // the ocean elevation zone touches land
+        expect(w.elevationZoneNbrs(o).some((n) => !w.elevationZoneCell(n).ocean)).toBe(true);
       });
       for (let k = 0; k < rr.n; k++) expect(rr.wet[k]).toBe(w.cellAt(rr.x[k], rr.y[k], true).ocean ? 1 : 0);
       // rivers that reached anything cross the coast: some of their nodes are on land

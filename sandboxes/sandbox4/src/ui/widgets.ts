@@ -5,7 +5,8 @@ import { keyI, keyJ } from '../world/level';
 import type { Rivers } from '../world/rivers';
 import { LINKED, ORIGIN, SEED, World } from '../world/world';
 import { fmtDist, TRAVEL, travelDays } from '../render/overlays';
-import { GENESIS, heightColor, keyHash, LAND_TYPES, landType, OCEAN_RGB, type ViewMode } from '../render/source';
+import { GENESIS, heightColor, keyHash, type ViewMode } from '../render/source';
+import { ELEVATION_ZONE_TYPES, elevationZoneType } from '../world/zones';
 import type { Terrain } from '../world/terrain';
 
 /** Packed ABGR pixel → CSS colour. */
@@ -15,7 +16,7 @@ const pct = (v: number, d = 1) => (Number.isFinite(v) ? `${(v * 100).toFixed(d)}
 const ij = (k: number) => `${keyI(k)}, ${keyJ(k)}`;
 const sw = (c: string, label: string, v = '') => `<div class="lg-cat"><i style="background:${c}"></i><span>${esc(label)}</span><em>${esc(v)}</em></div>`;
 
-export const LEVEL_COLORS = { region: '#faecc8', biome: '#fde725', sub: '#5ae6ff' };
+export const LEVEL_COLORS = { region: '#faecc8', elevationZone: '#fde725', sub: '#5ae6ff' };
 
 export function genesisName(o: number): string {
   return GENESIS.find((g) => g.origin === o)?.name ?? `Growth pass ${o - ORIGIN.grow + 1}`;
@@ -24,14 +25,14 @@ export function genesisName(o: number): string {
 // ------------------------------------------------------------------ legend
 
 const NOTES: Record<ViewMode, [string, string]> = {
-  map: ['Map', 'Biome colours are cosmetic: a random look per merged biome, lighter/darker per subbiome. Turn on Hillshade to see the height map.'],
-  landsea: ['Land & ocean', 'The only real classification in this sandbox.'],
-  genesis: ['Ocean genesis', 'Why each ocean biome is ocean. Turn on seeds & links and growth arrows to see the steps.'],
-  merges: ['Merged cells', 'Orange: biomes in a merged group (one colour per group). Yellow: merged subbiome groups.'],
-  regions: ['Regions', 'One colour per region (dark over ocean). With nesting, a region is the union of the biomes it owns.'],
-  biomes: ['Biomes', 'One colour per merged biome (dimmed over ocean).'],
-  subbiomes: ['Subbiomes', 'One colour per merged subbiome. Zoomed far out, subbiomes are skipped and biomes shown.'],
-  hierarchy: ['Hierarchy', 'Hue = region, lightness = biome, fine shading = subbiome. Ocean is darkened.'],
+  map: ['Map', 'Each elevation zone is coloured by its type (ocean, flat, lowland, hills, mountains), lighter/darker per subbiome. Biomes come later, from temperature and humidity. Turn on Hillshade to see the height map.'],
+  landsea: ['Land & ocean', 'Land and ocean, from the ocean genesis.'],
+  genesis: ['Ocean genesis', 'Why each ocean elevation zone is ocean. Turn on seeds & links and growth arrows to see the steps.'],
+  merges: ['Merged cells', 'Orange: elevation zones in a merged group (one colour per group). Yellow: merged subbiome groups.'],
+  regions: ['Regions', 'One colour per region (dark over ocean). With nesting, a region is the union of the elevation zones it owns.'],
+  elevationZones: ['Elevation zones', 'One colour per merged elevation zone (dimmed over ocean).'],
+  subbiomes: ['Subbiomes', 'One colour per merged subbiome. Zoomed far out, subbiomes are skipped and elevation zones shown.'],
+  hierarchy: ['Hierarchy', 'Hue = region, lightness = elevation zone, fine shading = subbiome. Ocean is darkened.'],
   height: ['Height', 'Fitted height map, hillshaded from the north-west. Regions are computed as you look; flat colours mean “not ready yet”.'],
 };
 
@@ -44,8 +45,8 @@ export function renderLegend(host: HTMLElement, mode: ViewMode, oceanShare: numb
     for (const g of GENESIS) if (g.origin < ORIGIN.grow + passes || g.origin < ORIGIN.grow) html += sw(cssRgb(g.rgb), g.name);
     html += '</div>';
   } else if (mode === 'map') {
-    html += '<div class="lg-cats two">' + sw(cssRgb(OCEAN_RGB), 'Ocean');
-    for (const t of LAND_TYPES) html += sw(cssRgb(t.rgb), t.name);
+    html += '<div class="lg-cats two">';
+    for (const t of ELEVATION_ZONE_TYPES) html += sw(cssRgb(t.rgb), t.name);
     html += '</div>';
   } else if (mode === 'landsea') {
     html += '<div class="lg-cats">' + sw('#96b270', 'Land', oceanShare === null ? '' : pct(1 - oceanShare)) + sw('#264e80', 'Ocean', oceanShare === null ? '' : pct(oceanShare)) + '</div>';
@@ -54,7 +55,7 @@ export function renderLegend(host: HTMLElement, mode: ViewMode, oceanShare: numb
     for (const h of [-800, -100, 0, 100, 300, 600, 1000, 1600, 2400]) html += sw(cssHex(heightColor(h)), h < 0 ? `${h} m` : h === 0 ? 'Sea level' : `${h} m`);
     html += '</div>';
   } else if (mode === 'merges') {
-    html += '<div class="lg-cats">' + sw('#e8913a', 'Merged biome group') + sw('#f4dd63', 'Merged subbiome group') + sw('#767c70', 'Unmerged land') + sw('#283a54', 'Unmerged ocean') + '</div>';
+    html += '<div class="lg-cats">' + sw('#e8913a', 'Merged elevation zone group') + sw('#f4dd63', 'Merged subbiome group') + sw('#767c70', 'Unmerged land') + sw('#283a54', 'Unmerged ocean') + '</div>';
   }
   html += `<div class="lg-note">${esc(note)}</div>`;
   host.innerHTML = html;
@@ -69,7 +70,7 @@ export function renderLevels(host: HTMLElement, world: World, zoom: number, deta
     `<span class="${on ? '' : 'dim'}"><i class="lv-dot" style="background:${color}"></i>${name}</span><b class="${on ? '' : 'dim'}">${fmtDist(size)}</b><b class="${on ? '' : 'dim'}">${(size * zoom).toFixed(size * zoom < 10 ? 1 : 0)} px</b>`;
   host.innerHTML =
     row('Region', LEVEL_COLORS.region, world.regionLevel.size, true) +
-    row('Biome', LEVEL_COLORS.biome, world.biomeLevel.size, true) +
+    row('Elevation zone', LEVEL_COLORS.elevationZone, world.elevationZoneLevel.size, true) +
     row('Subbiome', LEVEL_COLORS.sub, world.subLevel.size, detail);
   host.title = detail ? 'Grid size and on-screen size of each level' : 'Subbiomes are under 3 px and are skipped (Display → Detail)';
 }
@@ -84,15 +85,15 @@ export interface Probe {
 
 export function renderInspector(host: HTMLElement, world: World | null, rivers: Rivers | null, pt: Probe | null, terrain: Terrain | null = null): void {
   if (!world || !pt) {
-    host.innerHTML = '<p class="muted">Hover the map to inspect a point. Click to pin the biome and subbiome under the cursor.</p>';
+    host.innerHTML = '<p class="muted">Hover the map to inspect a point. Click to pin the elevation zone and subbiome under the cursor.</p>';
     return;
   }
   const c = world.cellAt(pt.x, pt.y, true);
   const reg = world.region(c.region);
-  const braw = world.biome(c.biomeRaw);
-  const broot = world.biome(c.biome);
+  const braw = world.elevationZone(c.elevationZoneRaw);
+  const broot = world.elevationZone(c.elevationZone);
   const links = world.links(c.region);
-  const f = world.baseFlags(c.biome);
+  const f = world.baseFlags(c.elevationZone);
   const regColor = cssRgb(hashColor(keyHash(c.region, 3)));
   let html = `<div class="kv"><span>Point</span><b>${(pt.x / 1000).toFixed(2)}, ${(pt.y / 1000).toFixed(2)} km</b></div>`;
   if (terrain) {
@@ -103,9 +104,9 @@ export function renderInspector(host: HTMLElement, world: World | null, rivers: 
   }
 
   html += `<div class="lvl"><h4><i style="background:${regColor}"></i>Region ${ij(c.region)}</h4>`;
-  html += `<div class="kv"><span>Owned biomes</span><b>${reg.biomes.length}</b></div>`;
+  html += `<div class="kv"><span>Owned elevation zones</span><b>${reg.elevationZones.length}</b></div>`;
   html += `<div class="kv"><span>Ocean seeds</span><b>${reg.seeds.length} · ${links.length} link${links.length === 1 ? '' : 's'}</b></div>`;
-  html += `<div class="kv"><span>Biome merges</span><b>${reg.merges.size}</b></div>`;
+  html += `<div class="kv"><span>Elevation zone merges</span><b>${reg.merges.size}</b></div>`;
   const rr = rivers?.peek(c.region);
   if (rr) {
     const trees = rr.roots.filter((k) => rr.flow[k] > 0).length;
@@ -115,25 +116,25 @@ export function renderInspector(host: HTMLElement, world: World | null, rivers: 
   }
   html += '</div>';
 
-  const typeName = c.ocean ? 'Ocean' : LAND_TYPES[landType(c.biome)].name;
+  const typeName = ELEVATION_ZONE_TYPES[elevationZoneType(c.elevationZone, c.ocean)].name;
   const g = GENESIS.find((x) => x.origin === c.origin);
   const chipColor = g ? cssRgb(g.rgb) : '#888';
-  html += `<div class="lvl"><h4><i style="background:${LEVEL_COLORS.biome}"></i>Biome ${ij(c.biome)}</h4>`;
+  html += `<div class="lvl"><h4><i style="background:${LEVEL_COLORS.elevationZone}"></i>Elevation zone ${ij(c.elevationZone)}</h4>`;
   html += `<div class="kv"><span>Class</span><b><span class="chip" style="background:${chipColor}">${esc(genesisName(c.origin))}</span></b></div>`;
-  html += `<div class="kv"><span>Look (cosmetic)</span><b>${esc(typeName)}</b></div>`;
-  if (c.biomeMerged) {
-    const members = World.cellsIn(world.biomeLevel, broot.x - 3 * world.biomeLevel.size, broot.y - 3 * world.biomeLevel.size, broot.x + 3 * world.biomeLevel.size, broot.y + 3 * world.biomeLevel.size, 0).filter(
-      (k) => world.biomeRoot(k) === c.biome,
+  html += `<div class="kv"><span>Type</span><b>${esc(typeName)}</b></div>`;
+  if (c.elevationZoneMerged) {
+    const members = World.cellsIn(world.elevationZoneLevel, broot.x - 3 * world.elevationZoneLevel.size, broot.y - 3 * world.elevationZoneLevel.size, broot.x + 3 * world.elevationZoneLevel.size, broot.y + 3 * world.elevationZoneLevel.size, 0).filter(
+      (k) => world.elevationZoneRoot(k) === c.elevationZone,
     );
-    html += `<div class="kv"><span>Merged group</span><b>${members.length} biomes</b></div>`;
+    html += `<div class="kv"><span>Merged group</span><b>${members.length} elevation zones</b></div>`;
   }
-  if (c.biomeRaw !== c.biome) html += `<div class="kv"><span>Raw cell</span><b>${ij(c.biomeRaw)} → ${ij(c.biome)}</b></div>`;
-  const t = world.biomeTarget(c.biome);
+  if (c.elevationZoneRaw !== c.elevationZone) html += `<div class="kv"><span>Raw cell</span><b>${ij(c.elevationZoneRaw)} → ${ij(c.elevationZone)}</b></div>`;
+  const t = world.elevationZoneTarget(c.elevationZone);
   if (t >= 0) html += `<div class="kv"><span>Joins</span><b>${ij(t)}</b></div>`;
-  html += `<div class="kv"><span>Neighbours</span><b>${world.biomeNbrs(broot).length}</b></div>`;
-  html += `<div class="kv"><span>Owned subbiomes</span><b>${world.biomeSubs(braw).length}</b></div>`;
-  if (f & SEED) html += `<div class="kv"><span>Ocean seed</span><b>${f & LINKED ? (world.linkCount(world.biome(c.biome)) === 2 ? 'double-linked' : 'linked') : 'lone'}</b></div>`;
-  const grows = world.growthFrom(c.biome);
+  html += `<div class="kv"><span>Neighbours</span><b>${world.elevationZoneNbrs(broot).length}</b></div>`;
+  html += `<div class="kv"><span>Owned subbiomes</span><b>${world.elevationZoneSubs(braw).length}</b></div>`;
+  if (f & SEED) html += `<div class="kv"><span>Ocean seed</span><b>${f & LINKED ? (world.linkCount(world.elevationZone(c.elevationZone)) === 2 ? 'double-linked' : 'linked') : 'lone'}</b></div>`;
+  const grows = world.growthFrom(c.elevationZone);
   if (grows.length) html += `<div class="kv"><span>Converted</span><b>${grows.length} neighbour${grows.length > 1 ? 's' : ''}</b></div>`;
   html += `<div class="kv"><span>Site</span><b>${(broot.x / 1000).toFixed(1)}, ${(broot.y / 1000).toFixed(1)} km</b></div></div>`;
 
@@ -150,8 +151,8 @@ export function renderInspector(host: HTMLElement, world: World | null, rivers: 
     html += `<div class="lvl"><h4><i style="background:#3f93dc"></i>River</h4>`;
     html += `<div class="kv" title="Attractors reached at this node and everything upstream: sets the line width"><span>Flow here</span><b>${r.flow[k]} attractors</b></div>`;
     html += `<div class="kv" title="All attractors this river reached"><span>Whole river</span><b>${r.flow[root]} attractors</b></div>`;
-    html += `<div class="kv" title="The river's root: the point of the ocean biome it drains into"><span>Root</span><b>${(r.x[root] / 1000).toFixed(1)}, ${(r.y[root] / 1000).toFixed(1)} km</b></div>`;
-    if (ocean !== undefined) html += `<div class="kv"><span>Drains into</span><b>ocean biome ${ij(ocean)}</b></div>`;
+    html += `<div class="kv" title="The river's root: the point of the ocean elevation zone it drains into"><span>Root</span><b>${(r.x[root] / 1000).toFixed(1)}, ${(r.y[root] / 1000).toFixed(1)} km</b></div>`;
+    if (ocean !== undefined) html += `<div class="kv"><span>Drains into</span><b>ocean elevation zone ${ij(ocean)}</b></div>`;
     html += '</div>';
   }
   html += `<p class="muted small">${pt.pinned ? 'Pinned — Esc to release.' : 'Click to pin.'} Cell ids are lattice indices (i, j).</p>`;
@@ -164,21 +165,21 @@ export interface ViewStats {
   samples: number;
   oceanShare: number;
   regions: number;
-  biomes: number;
+  elevationZones: number;
   subs: number;
-  /** ocean biomes (merged roots) by ORIGIN code */
+  /** ocean elevation zones (merged roots) by ORIGIN code */
   origins: Map<number, number>;
-  oceanBiomes: number;
+  oceanElevationZones: number;
   seeds: number;
   linkedSeeds: number;
   links: number;
-  biomesPerRegion: number;
-  subsPerBiome: number;
+  elevationZonesPerRegion: number;
+  subsPerElevationZone: number;
   /** merged groups */
-  biomeGroups: number;
-  biomeGroupMax: number;
-  biomeMembers: number;
-  biomeRaw: number;
+  elevationZoneGroups: number;
+  elevationZoneGroupMax: number;
+  elevationZoneMembers: number;
+  elevationZoneRaw: number;
   subGroups: number;
   subMembers: number;
   subRaw: number;
@@ -229,8 +230,8 @@ export function computeViewStats(world: World, x0: number, y0: number, x1: numbe
   const nx = 120;
   const ny = Math.max(20, Math.round((nx * (y1 - y0)) / Math.max(1, x1 - x0)));
   const regions = new Set<number>();
-  const biomes = new Set<number>();
-  /** genesis per raw biome (merged groups can mix seed, chain and growth) */
+  const elevationZones = new Set<number>();
+  /** genesis per raw elevation zone (merged groups can mix seed, chain and growth) */
   const raw = new Map<number, number>();
   const subs = new Set<number>();
   let ocean = 0;
@@ -239,16 +240,16 @@ export function computeViewStats(world: World, x0: number, y0: number, x1: numbe
       const c = world.cellAt(x0 + ((x + 0.5) / nx) * (x1 - x0), y0 + ((y + 0.5) / ny) * (y1 - y0), detail);
       if (c.ocean) ocean++;
       regions.add(c.region);
-      biomes.add(c.biome);
-      raw.set(c.biomeRaw, c.origin);
+      elevationZones.add(c.elevationZone);
+      raw.set(c.elevationZoneRaw, c.origin);
       if (c.sub >= 0) subs.add(c.sub);
     }
   }
   const origins = new Map<number, number>();
-  let oceanBiomes = 0;
+  let oceanElevationZones = 0;
   for (const o of raw.values()) {
     if (o === ORIGIN.land) continue;
-    oceanBiomes++;
+    oceanElevationZones++;
     origins.set(o, (origins.get(o) ?? 0) + 1);
   }
   let seeds = 0;
@@ -257,16 +258,16 @@ export function computeViewStats(world: World, x0: number, y0: number, x1: numbe
   let owned = 0;
   for (const r of regions) {
     const reg = world.region(r);
-    owned += reg.biomes.length;
+    owned += reg.elevationZones.length;
     seeds += reg.seeds.length;
     for (const s of reg.seeds) if (world.baseFlags(s) & LINKED) linkedSeeds++;
     links += world.links(r).length;
   }
   let subOwned = 0;
   let subOwners = 0;
-  for (const b of biomes.keys()) {
+  for (const b of elevationZones.keys()) {
     if (subOwners >= 120) break;
-    subOwned += world.biomeSubs(world.biome(b)).length;
+    subOwned += world.elevationZoneSubs(world.elevationZone(b)).length;
     subOwners++;
   }
   // merged groups among the raw cells whose site is in view
@@ -287,26 +288,26 @@ export function computeViewStats(world: World, x0: number, y0: number, x1: numbe
       }
     return { groups, members, max, raw: keys.length };
   };
-  const bg = World.countIn(world.biomeLevel, x0, y0, x1, y1, 0) <= 20000 ? groupSizes(World.cellsIn(world.biomeLevel, x0, y0, x1, y1, 0), (k) => world.biomeRoot(k)) : null;
+  const bg = World.countIn(world.elevationZoneLevel, x0, y0, x1, y1, 0) <= 20000 ? groupSizes(World.cellsIn(world.elevationZoneLevel, x0, y0, x1, y1, 0), (k) => world.elevationZoneRoot(k)) : null;
   const sg =
     detail && World.countIn(world.subLevel, x0, y0, x1, y1, 0) <= 12000 ? groupSizes(World.cellsIn(world.subLevel, x0, y0, x1, y1, 0), (k) => world.subRoot(k)) : null;
   return {
     samples: nx * ny,
     oceanShare: ocean / (nx * ny),
     regions: regions.size,
-    biomes: biomes.size,
+    elevationZones: elevationZones.size,
     subs: subs.size,
     origins,
-    oceanBiomes,
+    oceanElevationZones,
     seeds,
     linkedSeeds,
     links,
-    biomesPerRegion: owned / Math.max(1, regions.size),
-    subsPerBiome: subOwned / Math.max(1, subOwners),
-    biomeGroups: bg?.groups ?? NaN,
-    biomeGroupMax: bg?.max ?? NaN,
-    biomeMembers: bg?.members ?? NaN,
-    biomeRaw: bg?.raw ?? NaN,
+    elevationZonesPerRegion: owned / Math.max(1, regions.size),
+    subsPerElevationZone: subOwned / Math.max(1, subOwners),
+    elevationZoneGroups: bg?.groups ?? NaN,
+    elevationZoneGroupMax: bg?.max ?? NaN,
+    elevationZoneMembers: bg?.members ?? NaN,
+    elevationZoneRaw: bg?.raw ?? NaN,
     subGroups: sg?.groups ?? NaN,
     subMembers: sg?.members ?? NaN,
     subRaw: sg?.raw ?? NaN,
@@ -341,20 +342,20 @@ export function renderStats(
     return;
   }
   add('Ocean / land', `${pct(s.oceanShare)} / ${pct(1 - s.oceanShare)}`, `Share of ${s.samples} sample points in the view`);
-  add('Regions · biomes · subbiomes', `${s.regions} · ${s.biomes} · ${s.detail ? s.subs : '—'}`, 'Distinct merged cells under the sample grid');
-  add('Biomes per region', s.biomesPerRegion.toFixed(1), `Owned biomes; nominal (${fmtDist(world.regionLevel.size)}/${fmtDist(world.biomeLevel.size)})² = ${((world.regionLevel.size / world.biomeLevel.size) ** 2).toFixed(1)}`);
-  add('Subbiomes per biome', s.subsPerBiome.toFixed(1), `Owned subbiomes; nominal ${((world.biomeLevel.size / world.subLevel.size) ** 2).toFixed(1)}`);
+  add('Regions · elevation zones · subbiomes', `${s.regions} · ${s.elevationZones} · ${s.detail ? s.subs : '—'}`, 'Distinct merged cells under the sample grid');
+  add('Elevation zones per region', s.elevationZonesPerRegion.toFixed(1), `Owned elevation zones; nominal (${fmtDist(world.regionLevel.size)}/${fmtDist(world.elevationZoneLevel.size)})² = ${((world.regionLevel.size / world.elevationZoneLevel.size) ** 2).toFixed(1)}`);
+  add('Subbiomes per elevation zone', s.subsPerElevationZone.toFixed(1), `Owned subbiomes; nominal ${((world.elevationZoneLevel.size / world.subLevel.size) ** 2).toFixed(1)}`);
 
   sub('Oceans');
   add('Seeds (linked)', `${s.seeds} (${s.linkedSeeds})`, 'Ocean seeds in the regions under the view, and how many take part in a link');
   add('Links', String(s.links));
-  add('Ocean biomes', String(s.oceanBiomes));
+  add('Ocean elevation zones', String(s.oceanElevationZones));
   const bars = document.createElement('div');
   for (const g of GENESIS) {
     if (g.origin === ORIGIN.land) continue;
     const n = s.origins.get(g.origin) ?? 0;
     if (!n && g.origin >= ORIGIN.grow + world.p.growPasses) continue;
-    const f = n / Math.max(1, s.oceanBiomes);
+    const f = n / Math.max(1, s.oceanElevationZones);
     const row = document.createElement('div');
     row.className = 'obar';
     row.innerHTML = `<span>${esc(g.name)}</span><i style="width:${(f * 100).toFixed(1)}%;background:${cssRgb(g.rgb)}"></i><em>${n}</em>`;
@@ -364,9 +365,9 @@ export function renderStats(
 
   sub('Merges');
   add(
-    'Biome groups',
-    Number.isFinite(s.biomeGroups) ? `${s.biomeGroups} · ${pct(s.biomeMembers / Math.max(1, s.biomeRaw), 0)} of cells · max ${s.biomeGroupMax}` : 'zoom in',
-    'Merged biome groups among biomes whose site is in view, share of raw biomes in a group, and the largest group',
+    'Elevation zone groups',
+    Number.isFinite(s.elevationZoneGroups) ? `${s.elevationZoneGroups} · ${pct(s.elevationZoneMembers / Math.max(1, s.elevationZoneRaw), 0)} of cells · max ${s.elevationZoneGroupMax}` : 'zoom in',
+    'Merged elevation zone groups among elevation zones whose site is in view, share of raw elevation zones in a group, and the largest group',
   );
   add(
     'Subbiome groups',
@@ -390,7 +391,7 @@ export function renderStats(
   const c = extra.cache;
   add('Last full render', extra.render > 0 ? `${extra.render.toFixed(0)} ms` : '…');
   add('Statistics pass', `${s.ms.toFixed(0)} ms`);
-  add('Cached cells', `${c.regions} · ${c.biomes} · ${c.subs}`, 'Memoised regions · biomes · subbiomes. The caches are dropped when they grow too large; results never change.');
+  add('Cached cells', `${c.regions} · ${c.elevationZones} · ${c.subs}`, 'Memoised regions · elevation zones · subbiomes. The caches are dropped when they grow too large; results never change.');
   add('Fingerprint', extra.fingerprint || '…', 'Hash of a fixed 768 km sample window around the origin. Same seed + parameters ⇒ same value in every browser.');
 }
 

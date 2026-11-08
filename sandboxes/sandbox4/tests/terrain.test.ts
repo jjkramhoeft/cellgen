@@ -3,8 +3,16 @@ import { defaults, toRiverParams, toTerrainParams, toWorldParams } from '../src/
 import { Rivers } from '../src/world/rivers';
 import { invPowTheta, LAND, monotoneSpline, OCEAN, ownsRegion, regionAt, Terrain, tileSide, type TerrainParams, type TerrainTile } from '../src/world/terrain';
 import { keyI, keyJ, packKey } from '../src/world/level';
-import { LAND_TYPES, landType } from '../src/render/source';
+import { ELEVATION_ZONE_TYPES, elevationZoneType } from '../src/world/zones';
 import { World } from '../src/world/world';
+
+/** Elevation zone type index under a point (merged zone, nested). */
+const typeAt = (w: World, x: number, y: number) => {
+  const c = w.cellAt(x, y, true);
+  return elevationZoneType(c.elevationZone, c.ocean);
+};
+/** Index of an elevation zone type by id. */
+const typeIndex = (id: string) => ELEVATION_ZONE_TYPES.findIndex((t) => t.id === id);
 
 const setup = (over: Partial<TerrainParams> = {}) => {
   const w = new World(toWorldParams(defaults(), 12345));
@@ -18,7 +26,7 @@ const setup = (over: Partial<TerrainParams> = {}) => {
 function landRegions(w: World, n: number): number[] {
   const out: number[] = [];
   for (const r of World.cellsIn(w.regionLevel, -300000, -300000, 300000, 300000, 0)) {
-    if (w.region(r).biomes.some((b) => !w.biomeCell(b).ocean)) out.push(r);
+    if (w.region(r).elevationZones.some((b) => !w.elevationZoneCell(b).ocean)) out.push(r);
     if (out.length >= n) break;
   }
   return out;
@@ -51,7 +59,7 @@ describe('terrain', { timeout: 60_000 }, () => {
         if (z[k] > z[p]) rising++;
       }
     }
-    // level stretches: flat biomes and gorges
+    // level stretches: flat elevation zones and gorges
     expect(rising / dry).toBeGreaterThan(0.5);
   });
 
@@ -233,7 +241,7 @@ describe('terrain', { timeout: 60_000 }, () => {
     for (let x = 0; x <= 3; x += 0.05) expect(g(x)).toBeLessThanOrEqual(10 + 1e-9);
   });
 
-  it('river gradient per land type: factors scale the bed rise, 0 makes that land type flat', () => {
+  it('river gradient per elevation zone type: factors scale the bed rise, 0 makes that type flat', () => {
     const r = landRegions(setup().w, 1)[0];
     // the factor scales the rise exactly while nothing else limits it (no hillslope limit,
     // no levelling, no envelope caps: a huge hillslope)
@@ -241,17 +249,20 @@ describe('terrain', { timeout: 60_000 }, () => {
     const base = setup(free).t.bed(r);
     const twice = setup({ ...free, chanFactor: setup().t.p.chanFactor.map((v) => v * 2) }).t.bed(r);
     for (let k = 0; k < base.length; k++) expect(twice[k]).toBeCloseTo(base[k] * 2, 6);
-    // flatten one land type: its dry nodes no longer rise above their parent
+    // flatten one elevation zone type: its dry nodes no longer rise above their parent
     const { w, rv, t } = setup();
     const rr = rv.get(r);
     const counts = new Map<number, number>();
-    for (let k = 0; k < rr.n; k++) if (!rr.wet[k] && rr.parent[k] >= 0) counts.set(landType(w.cellAt(rr.x[k], rr.y[k], true).biome), (counts.get(landType(w.cellAt(rr.x[k], rr.y[k], true).biome)) ?? 0) + 1);
+    for (let k = 0; k < rr.n; k++) if (!rr.wet[k] && rr.parent[k] >= 0) {
+        const ty = typeAt(w, rr.x[k], rr.y[k]);
+        counts.set(ty, (counts.get(ty) ?? 0) + 1);
+      }
     const type = [...counts.entries()].sort((a, b) => b[1] - a[1])[0][0];
     const flat = setup({ chanFactor: t.p.chanFactor.map((v, i) => (i === type ? 0 : v)) }).t.bed(r);
     let checked = 0;
     for (let k = 0; k < rr.n; k++) {
       const p = rr.parent[k];
-      if (p < 0 || rr.wet[k] || landType(w.cellAt(rr.x[k], rr.y[k], true).biome) !== type) continue;
+      if (p < 0 || rr.wet[k] || typeAt(w, rr.x[k], rr.y[k]) !== type) continue;
       expect(flat[k]).toBe(flat[p]);
       checked++;
     }
@@ -271,34 +282,37 @@ describe('terrain', { timeout: 60_000 }, () => {
     expect(wide).toBeLessThan(narrow);
   });
 
-  it('has a Mountains land type, and it occurs', () => {
-    const i = LAND_TYPES.findIndex((t) => t.name === 'Mountains');
+  it('has a mountains elevation zone type, and it occurs', () => {
+    const i = typeIndex('mountains');
     expect(i).toBeGreaterThanOrEqual(0);
     const { w } = setup();
     let n = 0;
-    for (const b of World.cellsIn(w.biomeLevel, -400000, -400000, 400000, 400000, 0)) if (landType(b) === i) n++;
+    for (const b of World.cellsIn(w.elevationZoneLevel, -400000, -400000, 400000, 400000, 0)) if (elevationZoneType(b, false) === i) n++;
     expect(n).toBeGreaterThan(5);
   });
-  it('levelling: with gradient 0 a biome’s rivers sit at one level (its lowest entry); without levelling they do not', () => {
+  it('levelling: with gradient 0 an elevation zone’s rivers sit at one level (its lowest entry); without levelling they do not', () => {
     const r = landRegions(setup().w, 1)[0];
     const { w, rv } = setup();
     const rr = rv.get(r);
-    // the land type most river nodes run through
+    // the elevation zone type most river nodes run through
     const counts = new Map<number, number>();
-    for (let k = 0; k < rr.n; k++) if (!rr.wet[k] && rr.parent[k] >= 0) counts.set(landType(w.cellAt(rr.x[k], rr.y[k], true).biome), (counts.get(landType(w.cellAt(rr.x[k], rr.y[k], true).biome)) ?? 0) + 1);
+    for (let k = 0; k < rr.n; k++) if (!rr.wet[k] && rr.parent[k] >= 0) {
+        const ty = typeAt(w, rr.x[k], rr.y[k]);
+        counts.set(ty, (counts.get(ty) ?? 0) + 1);
+      }
     const type = [...counts.entries()].sort((a, b) => b[1] - a[1])[0][0];
     const chan = setup().t.p.chanFactor.map((v, i) => (i === type ? 0 : v));
     const spreads = (level: number) => {
       const z = setup({ chanFactor: chan, level }).t.bed(r);
-      const byBiome = new Map<number, number[]>();
+      const byElevationZone = new Map<number, number[]>();
       for (let k = 0; k < rr.n; k++) {
         if (rr.wet[k] || rr.parent[k] < 0) continue;
-        const b = w.cellAt(rr.x[k], rr.y[k], true).biome;
-        if (landType(b) !== type) continue;
-        if (!byBiome.has(b)) byBiome.set(b, []);
-        byBiome.get(b)!.push(z[k]);
+        const b = w.cellAt(rr.x[k], rr.y[k], true).elevationZone;
+        if (elevationZoneType(b, false) !== type) continue;
+        if (!byElevationZone.has(b)) byElevationZone.set(b, []);
+        byElevationZone.get(b)!.push(z[k]);
       }
-      return [...byBiome.values()].filter((v) => v.length >= 5).map((v) => Math.max(...v) - Math.min(...v));
+      return [...byElevationZone.values()].filter((v) => v.length >= 5).map((v) => Math.max(...v) - Math.min(...v));
     };
     const off = spreads(0);
     const on = spreads(1);
@@ -336,30 +350,29 @@ describe('terrain', { timeout: 60_000 }, () => {
     expect(deep / all).toBeLessThan(0.002);
   });
 
-  it('hillslope by land type: plains are flatter than hills and mountains, and the per-type value controls it', () => {
-    const name = (n: string) => LAND_TYPES.findIndex((lt) => lt.name === n);
+  it('hillslope by elevation zone type: flat zones are flatter than hills and mountains, and the per-type value controls it', () => {
     const spreadOf = (over: Partial<TerrainParams>, types: number[]) => {
       const { w, t } = setup(over);
       const T = t.get(landRegions(w, 1)[0]);
-      const byBiome = new Map<number, number[]>();
+      const byElevationZone = new Map<number, number[]>();
       for (let q = 0; q < T.h.length; q++) {
         if (T.cls[q] !== LAND || !ownsRegion(T, regionAt(T, q))) continue;
         const i = q % T.nx;
         const j = (q - i) / T.nx;
-        const b = w.cellAt(T.x0 + i * T.res, T.y0 + j * T.res, true).biome;
-        if (!types.includes(landType(b))) continue;
-        if (!byBiome.has(b)) byBiome.set(b, []);
-        byBiome.get(b)!.push(T.h[q]);
+        const b = w.cellAt(T.x0 + i * T.res, T.y0 + j * T.res, true).elevationZone;
+        if (!types.includes(elevationZoneType(b, false))) continue;
+        if (!byElevationZone.has(b)) byElevationZone.set(b, []);
+        byElevationZone.get(b)!.push(T.h[q]);
       }
-      const sp = [...byBiome.values()].filter((v) => v.length >= 20).map((v) => {
+      const sp = [...byElevationZone.values()].filter((v) => v.length >= 20).map((v) => {
         v.sort((a, b) => a - b);
         return v[Math.floor(0.95 * v.length)] - v[Math.floor(0.05 * v.length)];
       });
       sp.sort((a, b) => a - b);
       return sp[Math.floor(sp.length / 2)];
     };
-    const plains = [name('Marsh'), name('Savanna'), name('Steppe')];
-    const rugged = [name('Hills'), name('Mountains')];
+    const plains = [typeIndex('flat')];
+    const rugged = [typeIndex('hills'), typeIndex('mountains')];
     const p = spreadOf({}, plains);
     const r = spreadOf({}, rugged);
     expect(p * 4).toBeLessThan(r);

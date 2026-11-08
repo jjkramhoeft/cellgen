@@ -80,8 +80,8 @@ export function drawLinks(f: Frame, world: World): void {
   ctx.beginPath();
   for (const r of regions) {
     for (const l of world.links(r)) {
-      const a = world.biome(l.from);
-      const b = world.biome(l.to);
+      const a = world.elevationZone(l.from);
+      const b = world.elevationZone(l.to);
       ctx.moveTo(sx(f, a.x), sy(f, a.y));
       ctx.lineTo(sx(f, b.x), sy(f, b.y));
     }
@@ -89,10 +89,10 @@ export function drawLinks(f: Frame, world: World): void {
   ctx.setLineDash([6 * dpr, 4 * dpr]);
   haloStroke(f, '#3fc1b0', 1.6);
   ctx.setLineDash([]);
-  const rad = Math.max(3, Math.min(7, world.biomeLevel.size * f.cam.zoom * 0.12)) * dpr;
+  const rad = Math.max(3, Math.min(7, world.elevationZoneLevel.size * f.cam.zoom * 0.12)) * dpr;
   for (const r of regions) {
     for (const s of world.region(r).seeds) {
-      const b = world.biome(s);
+      const b = world.elevationZone(s);
       const x = sx(f, b.x);
       const y = sy(f, b.y);
       if (x < -20 || y < -20 || x > f.vp.w * dpr + 20 || y > f.vp.h * dpr + 20) continue;
@@ -108,9 +108,9 @@ export function drawLinks(f: Frame, world: World): void {
   }
 }
 
-/** Arrows from growing ocean biomes to the land biomes they converted. */
+/** Arrows from growing ocean elevation zones to the land elevation zones they converted. */
 export function drawGrowth(f: Frame, world: World): void {
-  const L = world.biomeLevel;
+  const L = world.elevationZoneLevel;
   if (world.p.growPasses === 0 || World.countIn(L, f.x0, f.y0, f.x1, f.y1) > MAX_CELLS / 3) return;
   const colors = ['#5aa0ff', '#8f7bff', '#c06bd8', '#e06aa0'];
   const head = Math.max(4, Math.min(8, L.size * f.cam.zoom * 0.12)) * f.dpr;
@@ -122,26 +122,26 @@ export function drawGrowth(f: Frame, world: World): void {
     if (!edges.length) return;
     f.ctx.beginPath();
     for (const [g, t] of edges) {
-      const a = world.biome(g);
-      const b = world.biome(t);
+      const a = world.elevationZone(g);
+      const b = world.elevationZone(t);
       arrow(f, a.x, a.y, b.x, b.y, head);
     }
     haloStroke(f, colors[p], 1.5);
   });
 }
 
-/** Arrows from each merged cell to the neighbour it joined (biomes; subbiomes when large enough). */
+/** Arrows from each merged cell to the neighbour it joined (elevation zones; subbiomes when large enough). */
 export function drawMerges(f: Frame, world: World): void {
-  const BL = world.biomeLevel;
+  const BL = world.elevationZoneLevel;
   const SL = world.subLevel;
   if (World.countIn(BL, f.x0, f.y0, f.x1, f.y1) <= MAX_CELLS) {
     const head = Math.max(4, Math.min(9, BL.size * f.cam.zoom * 0.15)) * f.dpr;
     f.ctx.beginPath();
     for (const b of World.cellsIn(BL, f.x0, f.y0, f.x1, f.y1)) {
-      const t = world.biomeTarget(b);
+      const t = world.elevationZoneTarget(b);
       if (t < 0) continue;
-      const a = world.biome(b);
-      const c = world.biome(t);
+      const a = world.elevationZone(b);
+      const c = world.elevationZone(t);
       arrow(f, a.x, a.y, c.x, c.y, head);
     }
     haloStroke(f, '#ff9a3c', 2);
@@ -164,7 +164,7 @@ export function drawMerges(f: Frame, world: World): void {
 export function drawSites(f: Frame, world: World, which: string): void {
   const { ctx, dpr } = f;
   const levels: [Level, string, number][] = [[world.regionLevel, '#ffffff', 4.5]];
-  if (which === 'biomes' || which === 'all') levels.push([world.biomeLevel, '#fde725', 3]);
+  if (which === 'elevationZones' || which === 'all') levels.push([world.elevationZoneLevel, '#fde725', 3]);
   if (which === 'all') levels.push([world.subLevel, '#3fc1b0', 2]);
   for (let k = levels.length - 1; k >= 0; k--) {
     const [L, color, r] = levels[k];
@@ -289,7 +289,7 @@ export interface RiverDraw {
   /** hide segments carrying fewer attractors */
   minFlow: number;
   attractors: boolean;
-  /** also draw the stretch from each root (an ocean biome point) across the water to the coast */
+  /** also draw the stretch from each root (an ocean elevation zone point) across the water to the coast */
   sea: boolean;
   /** width exponent b in width ∝ flow^b (½ = Leonardo / hydraulic geometry, ⅓ = Murray) */
   exp: number;
