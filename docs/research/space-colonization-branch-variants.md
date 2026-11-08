@@ -1,6 +1,6 @@
 # Space Colonization Rivers: Ways to Change Branching and Look
 
-*Research date: 2026-11-07. Scope: knobs that change the branching behaviour and look of the space-colonization rivers in `sandboxes/sandbox3/src/world/rivers.ts`. Each knob is described as something that can be added to the existing per-region, open-venation, bit-exact implementation.*
+*Research date: 2026-11-07. Scope: knobs that change the branching behaviour and look of the space-colonization rivers in `sandboxes/sandbox3/src/world/rivers.ts` (now `sandboxes/sandbox4/src/world/rivers.ts`). Each knob is described as something that can be added to the existing per-region, open-venation, bit-exact implementation.*
 
 **How to read the citations**
 

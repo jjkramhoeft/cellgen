@@ -137,9 +137,11 @@ src/params.ts  parameter schema; src/presets.ts presets
 tests/         metric invariants, brute-force search check for every metric, determinism, land ratio
 ```
 
-### Sandbox 3
+### Sandbox 4
 
-A prototype of Voronoi cells in base-map generation (spec: [sandbox3.md](sandbox3.md)): three nested levels of cells decide land and ocean and give the map its cell structure.
+A base map built from Voronoi cells, with a **height map fitted to its rivers and biomes** and a **3D landscape view**. Three nested levels of cells decide land and ocean and give the map its cell structure (spec: [sandbox3.md](sandbox3.md)). The height map is computed on top of that map.
+
+#### Base map
 
 The world is unbounded and measured in metres. Every level is a stateless lattice Voronoi diagram, as in Sandbox 2, and every decision is a memoised pure function of the seed and a bounded neighbourhood. So you can pan anywhere, in any order, and get the same map. A test explores the map in two different orders, clearing the caches in between, and checks that both give the same result.
 
@@ -158,7 +160,7 @@ The world is unbounded and measured in metres. Every level is a stateless lattic
 
 **Evaluating the map:**
 
-- **Colour by:** cosmetic map, land & ocean, **ocean genesis** (lone seed, linked seed, link chain, growth pass), **merged cells**, regions, biomes, subbiomes, and the hierarchy (region hue × biome lightness × subbiome shading).
+- **Colour by:** cosmetic map, land & ocean, **ocean genesis** (lone seed, linked seed, link chain, growth pass), **merged cells**, regions, biomes, subbiomes, the hierarchy (region hue × biome lightness × subbiome shading), and height (see the height map below).
 - **Overlays:** pixel-exact region, biome and subbiome borders and the coastline. Also rivers (width from flow), attractor points (unreached in red) and river roots, ocean seeds and links, growth arrows, merge arrows, sites per level, and a kilometre grid with the origin marked. Rivers are grown region by region while you look, and stay cached.
 - **Rivers in the inspector and statistics:** the river under the cursor (flow here, whole river, root, the ocean biome it drains into); per region the rivers, attractors reached, iterations, nodes and compute time; in view the rivers, attractors reached, the largest river and the time per region.
 - **Inspector:** hover or click a point to see its region (owned biomes, seeds, links, merges), biome (genesis, merged group, neighbours, owned subbiomes) and subbiome. Click pins the biome and subbiome.
@@ -166,24 +168,11 @@ The world is unbounded and measured in metres. Every level is a stateless lattic
 - **In view:** ocean share, cell counts, biomes per region, subbiomes per biome, seeds and links, ocean biomes by genesis, merged groups, render time, cache size, and a determinism fingerprint of a fixed window around the origin.
 - **Sharing:** the seed, every non-default parameter and the camera live in the URL hash. There are 10 presets and PNG export. Subbiomes smaller than ~3 px are skipped automatically.
 
-Keyboard: `+`/`−` zoom · `0`/`H` origin · arrows pan · `R` random seed · `1`–`8` or `[`/`]` colour mode · `B` biome borders · `N` subbiome borders · `L` links · `W` growth · `J` merges · `V` rivers · `S` sites · `G` grid · `M` measure · `Esc` unpin · `?` help.
+Keyboard: `+`/`−` zoom · `0`/`H` origin · arrows pan · `R` random seed · `1`–`9` or `[`/`]` colour mode · `T` 3D landscape · `B` biome borders · `N` subbiome borders · `L` links · `W` growth · `J` merges · `V` rivers · `S` sites · `G` grid · `M` measure · `Esc` unpin · `?` help.
 
-**Code map** (`sandboxes/sandbox3/`):
+#### Height map
 
-```
-src/world/     level (stateless warped lattice Voronoi, Gabriel neighbours),
-               world (regions, ocean seeds/links/growth, merges, nesting, caches),
-               rivers (per-region space colonization: attractors, coastal roots, flow)
-src/render/    per-pixel raster source with borders per level, vector overlays and ruler
-src/ui/        legend, level box, inspector, view statistics
-src/params.ts  parameter schema and presets
-tests/         nearest-site and neighbour checks, determinism and order independence, ocean and merge rules,
-               rivers (attractor placement, every attractor reached, roots at ocean biome points, flow conservation)
-```
-
-### Sandbox 4
-
-Sandbox 3's map plus a **height map fitted to its rivers and biomes** and a **3D landscape view**. It implements "Option B" of [docs/research/heightmap-from-biomes-and-rivers.md](docs/research/heightmap-from-biomes-and-rivers.md). The height map is computed per region, on a raster with a 48 km margin, while you look.
+The height map implements "Option B" of [docs/research/heightmap-from-biomes-and-rivers.md](docs/research/heightmap-from-biomes-and-rivers.md). It is computed per region, on a raster with a 48 km margin, while you look.
 
 | Step | Method |
 |---|---|
@@ -199,7 +188,22 @@ Sandbox 3's map plus a **height map fitted to its rivers and biomes** and a **3D
   - **3D landscape** (`T`): a WebGL2 height mesh over the current view, draped with the 2D map (rivers and borders included). Drag to orbit, scroll to zoom, Shift- or right-drag to pan. Vertical exaggeration is a setting.
 - **Cost:** about 0.1 s per region at 2 km cells and 0.25 s at 1 km. The view computes at most 64 regions at 1 km, scaled by cell area; zoom in beyond that.
 
-**Code map** (additions to Sandbox 3's, in `sandboxes/sandbox4/`): `src/world/terrain.ts` (river profiles and the per-region height pipeline), `src/render/view3d.ts` (WebGL2 mesh, draped texture, orbit camera), and `tests/terrain.test.ts` (monotone beds, drainage of every cell, burnt-in rivers, seamless borders, determinism).
+**Code map** (`sandboxes/sandbox4/`):
+
+```
+src/world/     level (stateless warped lattice Voronoi, Gabriel neighbours),
+               world (regions, ocean seeds/links/growth, merges, nesting, caches),
+               rivers (per-region space colonization: attractors, coastal roots, flow),
+               terrain (river profiles and the per-region height pipeline),
+               terrain.worker (height tiles computed off the main thread)
+src/render/    per-pixel raster source with borders per level, vector overlays and ruler,
+               view3d (WebGL2 mesh, draped texture, orbit camera)
+src/ui/        legend, level box, inspector, view statistics
+src/params.ts  parameter schema and presets
+tests/         nearest-site and neighbour checks, determinism and order independence, ocean and merge rules,
+               rivers (attractor placement, every attractor reached, roots at ocean biome points, flow conservation),
+               terrain (monotone beds, drainage of every cell, burnt-in rivers, seamless borders, determinism)
+```
 
 ## Research
 

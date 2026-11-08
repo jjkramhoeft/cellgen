@@ -1,5 +1,5 @@
 /**
- * Sandbox 4 · Terrain (Sandbox 3 plus a height map and a 3D view).
+ * Sandbox 4 · Terrain (a three-level base map plus a height map and a 3D view).
  *
  * Generation: an unbounded world (metres) of three nested Voronoi levels — regions,
  * biomes, subbiomes — with ocean seeds / links / growth and random merges

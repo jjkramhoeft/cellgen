@@ -1,5 +1,5 @@
 /**
- * The three-level map hierarchy of Sandbox 3, as a pure function of (seed, params).
+ * The three-level map hierarchy (spec: sandbox3.md), as a pure function of (seed, params).
  *
  *   Regions    128 km lattice Voronoi, no warp. Each region owns the biomes whose
  *              site lies inside it, and picks among them 0–2 ocean seeds and 2–4

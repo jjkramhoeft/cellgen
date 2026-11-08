@@ -1,6 +1,6 @@
 # Height Maps That Fit an Existing Map: Coasts, Biomes and Rivers
 
-*Research date: 2026-11-07. Scope: methods that take a map that already exists (land/ocean, biome cells, a river network with flow) and compute a height map that fits it. Rivers must run downhill to the sea, valleys must lie under rivers, and relief should be plausible for each biome. Each method is judged against the infinite, lazily evaluated, bit-exact map in `sandboxes/sandbox3`.*
+*Research date: 2026-11-07. Scope: methods that take a map that already exists (land/ocean, biome cells, a river network with flow) and compute a height map that fits it. Rivers must run downhill to the sea, valleys must lie under rivers, and relief should be plausible for each biome. Each method is judged against the infinite, lazily evaluated, bit-exact map in `sandboxes/sandbox3` (now part of `sandboxes/sandbox4`).*
 
 **How to read the citations**
 

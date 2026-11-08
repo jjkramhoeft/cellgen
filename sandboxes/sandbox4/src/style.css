@@ -1,4 +1,4 @@
-/* Sandbox 4 layout (Sandbox 3's, plus the 3D canvas). Theme tokens and shared components come from shared/ui/base.css. */
+/* Sandbox 4 layout (map stage plus the 3D canvas). Theme tokens and shared components come from shared/ui/base.css. */
 @import '@shared/ui/base.css';
 
 #app {

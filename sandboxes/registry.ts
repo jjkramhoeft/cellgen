@@ -29,18 +29,10 @@ export const SANDBOXES: SandboxInfo[] = [
     tags: ['Voronoi', 'distance functions', 'fractal octaves', 'land/water', 'Worley'],
   },
   {
-    id: 'sandbox3',
-    title: 'Sandbox 3 · Map hierarchy',
-    summary:
-      'An unbounded, deterministic base map in metres from three nested Voronoi levels: 128 km regions, warped 32 km biomes and 8 km subbiomes. Regions place ocean seeds that link and grow into oceans; cells randomly merge with their nearest neighbour; space-colonization rivers grow inland from the ocean biomes, with width from the attractors they reach. Ocean-genesis and merge views, arrows, inspector, ruler with travel times.',
-    status: 'ready',
-    tags: ['Voronoi', 'hierarchy', 'oceans', 'cell merging', 'space colonization', 'infinite world'],
-  },
-  {
     id: 'sandbox4',
     title: 'Sandbox 4 · Terrain',
     summary:
-      'Sandbox 3’s map with a height map fitted to its rivers and biomes: river beds rise upstream from the stream-power law, hillslopes are a geodesic distance from rivers and coast with slopes per land type, ridges divide regions and river systems, then detail noise, river burning and Priority-Flood filling so everything drains to the sea. Hillshaded height views and a 3D landscape.',
+      'An unbounded, deterministic base map from three nested Voronoi levels (128 km regions, warped 32 km biomes, 8 km subbiomes) with oceans, cell merges and space-colonization rivers, plus a height map fitted to its rivers and biomes: river beds rise upstream from the stream-power law, hillslopes are a geodesic distance from rivers and coast with slopes per land type, ridges divide regions and river systems, then detail noise, river burning and Priority-Flood filling so everything drains to the sea. Hillshaded height views and a 3D landscape.',
     status: 'ready',
     tags: ['height map', 'stream power', 'fast marching', 'Priority-Flood', 'WebGL', '3D terrain'],
   },
