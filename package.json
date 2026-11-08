@@ -12,9 +12,6 @@
     "typecheck": "tsc --noEmit",
     "new-sandbox": "node scripts/new-sandbox.mjs"
   },
-  "dependencies": {
-    "delaunator": "^5.1.0"
-  },
   "devDependencies": {
     "@types/node": "^24.19.2",
     "typescript": "^7.0.2",

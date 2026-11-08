@@ -48,11 +48,6 @@ export function toUnit(h: number): number {
   return (h >>> 0) / 4294967296;
 }
 
-/** Uniform [0,1) for an index within a stage. */
-export function rand01(seed: number, stage: number, i: number): number {
-  return toUnit(hash3(seed, stage, i));
-}
-
 /** String → uint32 seed (xmur3-style, as recommended by bryc). */
 export function hashString(str: string): number {
   let h = 1779033703 ^ str.length;

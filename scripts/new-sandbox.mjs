@@ -2,7 +2,7 @@
 /**
  * Scaffold a new sandbox from sandboxes/_template and register it.
  *
- *   npm run new-sandbox -- sandbox2 "Sandbox 2 · River networks"
+ *   npm run new-sandbox -- sandbox5 "Sandbox 5 · River networks"
  *
  * Creates sandboxes/<id>/ (index.html, src/, tests/) and marks the entry in
  * sandboxes/registry.ts as ready (adding it if missing). Vite picks the page up

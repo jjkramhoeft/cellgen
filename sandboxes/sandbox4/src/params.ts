@@ -1,11 +1,12 @@
 /** Sandbox 4 parameter schema (panels and URL state), presets, and its mapping to the World, Rivers and Terrain parameters. */
-import { bindDefaults, bool, defaultsOf, num, opt, str, type ParamDef, type Params, type Section } from '@shared/params/schema';
+import { bindDefaults, bool, defaultsOf, num, opt, str, type DefaultsFile, type ParamDef, type Params, type Section } from '@shared/params/schema';
 import type { ConeAngle, PullPower, RiverParams } from './world/rivers';
 import { FLOOD_REF_FLOW, type TerrainParams, type Theta } from './world/terrain';
 import { LAND_TYPES } from './render/source';
 import type { GrowFrom, WorldParams } from './world/world';
-import DEFAULTS from '../defaults.json';
+import defaultsJson from '../defaults.json';
 
+const DEFAULTS: DefaultsFile = defaultsJson;
 /** Seed used when the URL has none (from sandboxes/sandbox4/defaults.json). */
 export const DEFAULT_SEED = DEFAULTS.seed;
 /** Attaches each parameter's default from sandboxes/sandbox4/defaults.json. */

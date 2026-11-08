@@ -26,14 +26,3 @@ export function fitCamera(W: number, H: number, v: Viewport, margin = 0.94): Cam
   const zoom = Math.min(v.w / W, v.h / H) * margin;
   return { cx: W / 2, cy: H / 2, zoom: Math.max(zoom, 1e-4) };
 }
-
-/** Visible world rectangle [x0, y0, x1, y1]. */
-export function visibleRect(c: Camera, v: Viewport): [number, number, number, number] {
-  const [x0, y0] = screenToWorld(c, v, 0, 0);
-  const [x1, y1] = screenToWorld(c, v, v.w, v.h);
-  return [x0, y0, x1, y1];
-}
-
-export function camEqual(a: Camera | null, b: Camera | null): boolean {
-  return !!a && !!b && a.cx === b.cx && a.cy === b.cy && a.zoom === b.zoom;
-}

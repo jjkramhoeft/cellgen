@@ -1,6 +1,7 @@
-import { bindDefaults, defaultsOf, opt, type ParamDef, type Params, type Section } from '@shared/params/schema';
-import DEFAULTS from '../defaults.json';
+import { bindDefaults, defaultsOf, opt, type DefaultsFile, type ParamDef, type Params, type Section } from '@shared/params/schema';
+import defaultsJson from '../defaults.json';
 
+const DEFAULTS: DefaultsFile = defaultsJson;
 /** Seed used when the URL has none (from sandboxes/{{ID}}/defaults.json). */
 export const DEFAULT_SEED = DEFAULTS.seed;
 /** Attaches each parameter's default from sandboxes/{{ID}}/defaults.json. */

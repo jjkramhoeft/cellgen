@@ -1,3 +1,0 @@
-// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
-
-exports[`pipeline > matches the golden fingerprint for the default world 1`] = `"fd8507f1"`;

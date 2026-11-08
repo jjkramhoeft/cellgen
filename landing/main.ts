@@ -3,12 +3,6 @@ import './style.css';
 import { esc } from '@shared/ui/html';
 import { SANDBOXES } from '../sandboxes/registry';
 
-// Links made before the repo had a landing page pointed at the root with Sandbox 1's
-// state in the hash (#seed=…). Forward those to Sandbox 1.
-if (/(^#|&)seed=/.test(location.hash)) {
-  location.replace(`sandboxes/sandbox1/${location.hash}`);
-}
-
 const host = document.getElementById('sandboxes')!;
 
 host.innerHTML = SANDBOXES.map((s) => {

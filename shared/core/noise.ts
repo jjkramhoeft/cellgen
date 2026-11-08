@@ -1,6 +1,5 @@
 /**
- * Seeded 2D simplex noise with a stateless lattice hash, plus fBm, ridged fBm and
- * domain warping.
+ * Seeded 2D simplex noise with a stateless lattice hash, plus fBm and ridged fBm.
  *
  * Following the research recommendation (gaps §6.1) this is an in-house simplex that
  * picks gradients with a pcg-style hash of the lattice coordinates instead of a
@@ -120,22 +119,4 @@ export function ridged(seed: number, x: number, y: number, p: FbmParams): number
     py = ny;
   }
   return (sum / norm) * 2 - 1;
-}
-
-/**
- * Inigo Quilez's two-level domain warp: f(p + s·r), r = fbm(p + s·q), q = fbm(p).
- * Offsets (5.2,1.3), (1.7,9.2), (8.3,2.8) are from his "domain warping" article.
- */
-export function warpedFbm(seed: number, x: number, y: number, p: FbmParams, strength: number): number {
-  const qx = fbm(seed + 101, x, y, p);
-  const qy = fbm(seed + 101, x + 5.2, y + 1.3, p);
-  const rx = fbm(seed + 202, x + strength * qx + 1.7, y + strength * qy + 9.2, p);
-  const ry = fbm(seed + 202, x + strength * qx + 8.3, y + strength * qy + 2.8, p);
-  return fbm(seed, x + strength * rx, y + strength * ry, p);
-}
-
-/** A 2-vector noise displacement, used for warping cell boundaries. */
-export function warpVec(seed: number, x: number, y: number, p: FbmParams, out: Float64Array): void {
-  out[0] = fbm(seed, x, y, p);
-  out[1] = fbm(seed ^ 0x5bd1e995, x + 31.7, y - 47.3, p);
 }

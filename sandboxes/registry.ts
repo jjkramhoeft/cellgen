@@ -13,22 +13,6 @@ export interface SandboxInfo {
 
 export const SANDBOXES: SandboxInfo[] = [
   {
-    id: 'sandbox1',
-    title: 'Sandbox 1 · Cell generation',
-    summary:
-      'Generate cells (Voronoi, grids, distance-function cells), configure sampling, noise, hydrology, space colonization and cellular automata, then inspect the cells with zoom, pan, statistics and A/B compare.',
-    status: 'ready',
-    tags: ['Voronoi', 'Worley', 'distance functions', 'space colonization', 'noise networks'],
-  },
-  {
-    id: 'sandbox2',
-    title: 'Sandbox 2 · Voronoi cells',
-    summary:
-      'Stateless lattice Voronoi under eight distance functions (L2, L2², L1, L∞, Lp, octagonal, hexagonal, triangular), layered into 1–4 fractal octaves, with a land/water split at an exact chosen ratio. Deep zoom and pan, a distance probe, a metric gallery and coastline statistics.',
-    status: 'ready',
-    tags: ['Voronoi', 'distance functions', 'fractal octaves', 'land/water', 'Worley'],
-  },
-  {
     id: 'sandbox4',
     title: 'Sandbox 4 · Terrain',
     summary:

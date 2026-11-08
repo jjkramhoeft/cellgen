@@ -3,7 +3,6 @@ import { dcos, dexp, dlog, dpow, dsin } from '../core/dmath';
 import { hash3, hashString, sfc32, seedFromText } from '../core/hash';
 import { fbm, simplex2 } from '../core/noise';
 import { generatePoints } from '../core/sampling';
-import { SiteIndex } from '../core/spatial';
 import { MinHeap } from '../core/heap';
 
 describe('hashing', () => {
@@ -82,28 +81,6 @@ describe('sampling', () => {
         expect(pts.ys[i]).toBeGreaterThanOrEqual(0);
         expect(pts.ys[i]).toBeLessThanOrEqual(600);
       }
-    }
-  });
-});
-
-describe('site index', () => {
-  it('nearest agrees with brute force', () => {
-    const pts = generatePoints({ n: 300, W: 500, H: 300, seed: 1, jitter: 0.9, poissonK: 30, density: 'none', densityContrast: 0, densityFreq: 1, method: 'uniform' });
-    const idx = new SiteIndex(pts.xs, pts.ys, 500, 300, 30);
-    const rng = sfc32(3);
-    for (let t = 0; t < 500; t++) {
-      const x = rng() * 500;
-      const y = rng() * 300;
-      let best = -1;
-      let bd = Infinity;
-      for (let i = 0; i < pts.xs.length; i++) {
-        const d = (pts.xs[i] - x) ** 2 + (pts.ys[i] - y) ** 2;
-        if (d < bd) {
-          bd = d;
-          best = i;
-        }
-      }
-      expect(idx.nearest(x, y)).toBe(best);
     }
   });
 });
