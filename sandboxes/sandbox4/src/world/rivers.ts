@@ -39,6 +39,7 @@
  */
 import { hash4, sfc32, type Rng } from '@shared/core/hash';
 import { keyI, keyJ, packKey } from './level';
+import { Climate, type ClimateParams } from './climate';
 import { elevationZoneType, ELEVATION_ZONE_TYPES } from './zones';
 import type { World } from './world';
 
@@ -122,10 +123,13 @@ export interface RiverParams {
   /** leave out subbiomes that touch the ocean */
   skipCoast: boolean;
   /**
-   * Chance (0–1) that a flat elevation zone is river-poor: each of its subbiomes then
-   * gets 0 or 1 attractor (50/50) instead of `perSub`. Rolled per merged elevation zone.
+   * Precipitation cutoff, mm per year: a flat elevation zone whose (merged root's) site
+   * gets less initial precipitation than this is river-poor, and each of its subbiomes
+   * gets 0 or 1 attractor (50/50) instead of `perSub`. 0 = off.
    */
-  flatSparseChance: number;
+  flatSparseCutoff: number;
+  /** the climate maps the precipitation is read from (plain data: sent to the terrain worker) */
+  climate: ClimateParams;
   /** how many elevation zone steps a landlocked region searches for an ocean */
   maxHops: number;
 }
@@ -166,7 +170,6 @@ export interface RegionRivers {
 
 const ST_ATTR = 0x7e01;
 const ST_GROW = 0x7e02;
-const ST_SPARSE = 0x7e03;
 const ST_SPARSE_SUB = 0x7e04;
 const FLAT_ZONE = ELEVATION_ZONE_TYPES.findIndex((t) => t.id === 'flat');
 const MAX_ITER = 6000;
@@ -197,11 +200,14 @@ function discVec(rng: Rng, out: [number, number]): void {
 
 export class Rivers {
   readonly world: World;
+  /** initial climate, for the precipitation that thins flat zones */
+  readonly climate: Climate;
   readonly p: RiverParams;
   private cache = new Map<number, RegionRivers>();
 
   constructor(world: World, p: RiverParams) {
     this.world = world;
+    this.climate = new Climate(p.climate);
     this.p = { ...p, kill: Math.max(p.kill, p.step * 1.05), influence: Math.max(p.influence, p.step * 1.5) };
   }
 
@@ -259,13 +265,14 @@ export class Rivers {
   }
 
   /**
-   * Is this (merged) land elevation zone a river-poor flat zone? Rolled from the zone
-   * key alone, so a zone split across regions is sparse (or not) in all of them.
+   * Is this (merged) land elevation zone a river-poor flat zone: is the initial
+   * precipitation at its site below the cutoff? Depends on the zone alone, so a zone
+   * split across regions is sparse (or not) in all of them.
    */
   isSparseFlat(zkey: number): boolean {
-    const c = this.p.flatSparseChance;
-    if (c <= 0 || elevationZoneType(zkey, false) !== FLAT_ZONE) return false;
-    return hash4(this.world.p.seed, ST_SPARSE, keyI(zkey), keyJ(zkey)) / 4294967296 < c;
+    if (this.p.flatSparseCutoff <= 0 || elevationZoneType(zkey, false) !== FLAT_ZONE) return false;
+    const z = this.world.elevationZone(zkey);
+    return this.climate.precipitationAt(z.x, z.y) < this.p.flatSparseCutoff;
   }
 
   /** Attractor points of a region (land, non-coastal subbiomes drawn in the region). */

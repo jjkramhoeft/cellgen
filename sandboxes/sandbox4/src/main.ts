@@ -16,7 +16,7 @@ import { decodeState, encodeState } from '@shared/params/url';
 import { screenToWorld, zoomAt, type Camera, type Viewport } from '@shared/render/camera';
 import { RasterLayer } from '@shared/render/raster';
 import { buildPanel } from '@shared/ui/panel';
-import { ALL_DEFS, CLIMATE_KEYS, CLIMATE_SECTIONS, DEFAULT_SEED, defaults, GEN_KEYS, PRESETS, RIVER_KEYS, RIVER_SECTION, FLOODPLAIN_SECTION, GRADIENT_SECTION, HILLSLOPE_SECTION, SECTIONS, TERRAIN_KEYS, TERRAIN_SECTION, toClimateParams, toRiverParams, toTerrainParams, toWorldParams, VIEW_MODES, VIEW_SECTION } from './params';
+import { ALL_DEFS, CLIMATE_KEYS, PRECIP_KEYS, CLIMATE_SECTIONS, DEFAULT_SEED, defaults, GEN_KEYS, PRESETS, RIVER_KEYS, RIVER_SECTION, FLOODPLAIN_SECTION, GRADIENT_SECTION, HILLSLOPE_SECTION, SECTIONS, TERRAIN_KEYS, TERRAIN_SECTION, toClimateParams, toRiverParams, toTerrainParams, toWorldParams, VIEW_MODES, VIEW_SECTION } from './params';
 import { drawGrid, drawGrowth, drawLinks, drawMerges, drawRivers, drawRuler, drawSites, fmtDist, niceStep, type Frame } from './render/overlays';
 import { climateSource, type ClimateField } from './render/climate';
 import { DETAIL_PX, mapSource, type ViewMode, type ViewOpts } from './render/source';
@@ -194,8 +194,9 @@ function setParams(patch: Params): void {
   else {
     // river settings rebuild only the rivers (and the terrain on them), never the map
     const changed = (keys: Set<string>) => Object.keys(patch).some((k) => keys.has(k) && before[k] !== params[k]);
-    const riv = changed(RIVER_KEYS);
-    if (riv) rivers = new Rivers(world, toRiverParams(params));
+    // the precipitation map thins the rivers of dry flat zones
+    const riv = changed(RIVER_KEYS) || changed(PRECIP_KEYS);
+    if (riv) rivers = new Rivers(world, toRiverParams(params, seedFromText(seedText)));
     if (riv || changed(TERRAIN_KEYS)) newTerrain();
     if (changed(CLIMATE_KEYS)) newClimate();
     viewChanged();
@@ -207,7 +208,7 @@ function setParams(patch: Params): void {
 let fpTimer = 0;
 function regenerate(): void {
   world = new World(toWorldParams(params, seedFromText(seedText)));
-  rivers = new Rivers(world, toRiverParams(params));
+  rivers = new Rivers(world, toRiverParams(params, seedFromText(seedText)));
   newTerrain();
   newClimate();
   genId++;

@@ -76,13 +76,14 @@ export const SECTIONS: Section[] = withDefaults.sections([
       { key: 'ez.mergeMax', label: 'Subbiome merges max', type: 'int', min: 0, max: 12 },
       { key: 'ez.mergeCoast', label: 'Merge across coast', type: 'bool', help: 'Allow a land elevation zone to merge into an ocean elevation zone (and vice versa). Off keeps coastlines intact.' },
       {
-        key: 'ez.flatSparse',
-        label: 'Flat: sparse river chance',
-        type: 'int',
+        key: 'ez.flatSparseP',
+        label: 'Flat: sparse river precipitation cutoff',
+        type: 'number',
         min: 0,
-        max: 100,
-        unit: '%',
-        help: 'Chance that a flat elevation zone is river-poor: every one of its subbiomes then gets only 0 or 1 river attractor (50/50) instead of "Attractors / subbiome". Rebuilds only the rivers.',
+        max: 20000,
+        step: 10,
+        unit: ' mm/yr',
+        help: 'A flat elevation zone whose point (site) gets less initial precipitation than this is river-poor: every one of its subbiomes then gets only 0 or 1 river attractor (50/50) instead of "Attractors / subbiome". 0 = off. The default makes about a third of the flat zones river-poor. Rebuilds only the rivers.',
       },
     ],
   },
@@ -186,11 +187,11 @@ export const RIVER_SECTION: Section = withDefaults.section({
   ],
 });
 /** Keys shown in the map sections that only feed the rivers (changing them never regenerates the map). */
-const RIVER_ONLY_KEYS = ['ez.flatSparse'];
+const RIVER_ONLY_KEYS = ['ez.flatSparseP'];
 export const RIVER_KEYS = new Set([...RIVER_SECTION.params.map((p) => p.key), ...RIVER_ONLY_KEYS]);
 
-/** Schema → model parameters for Rivers. */
-export function toRiverParams(p: Params): RiverParams {
+/** Schema → model parameters for Rivers (the seed feeds the precipitation map that thins flat zones). */
+export function toRiverParams(p: Params, seed: number): RiverParams {
   return {
     perSub: num(p, 'riv.points'),
     step: num(p, 'riv.step') * KM,
@@ -203,7 +204,8 @@ export function toRiverParams(p: Params): RiverParams {
     wander: num(p, 'riv.wander'),
     apical: num(p, 'riv.apical'),
     skipCoast: bool(p, 'riv.coast'),
-    flatSparseChance: num(p, 'ez.flatSparse') / 100,
+    flatSparseCutoff: num(p, 'ez.flatSparseP'),
+    climate: toClimateParams(p, seed),
     maxHops: 4,
   };
 }
@@ -368,6 +370,8 @@ export const CLIMATE_SECTIONS: Section[] = [
   climateSection('p', 'Climate · initial precipitation', 'Initial precipitation map (mm per year): fBm of Perlin noise with its own seed, on a log scale, so most of the map is dry to moderate and only the strongest highs are very wet. Shown with Display → Precipitation overlay and in the inspector.', ' mm/yr', 10, 20000, 10, true),
 ];
 export const CLIMATE_KEYS = new Set(CLIMATE_SECTIONS.flatMap((sec) => sec.params.map((p) => p.key)));
+/** Precipitation keys: they also feed the rivers (river-poor dry flat zones). */
+export const PRECIP_KEYS = new Set([...CLIMATE_KEYS].filter((k) => k.startsWith('clim.p.')));
 
 function toField(p: Params, id: 't' | 'p'): NoiseFieldParams {
   const a = num(p, `clim.${id}.min`);

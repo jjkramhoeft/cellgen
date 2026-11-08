@@ -151,6 +151,13 @@ export function renderInspector(host: HTMLElement, world: World | null, rivers: 
   html += `<div class="lvl"><h4><i style="background:${LEVEL_COLORS.elevationZone}"></i>Elevation zone ${ij(c.elevationZone)}</h4>`;
   html += `<div class="kv"><span>Class</span><b><span class="chip" style="background:${chipColor}">${esc(genesisName(c.origin))}</span></b></div>`;
   html += `<div class="kv"><span>Type</span><b>${esc(typeName)}</b></div>`;
+  if (rivers && !c.ocean && ELEVATION_ZONE_TYPES[elevationZoneType(c.elevationZone, false)].id === 'flat') {
+    const cut = rivers.p.flatSparseCutoff;
+    const precip = rivers.climate.precipitationAt(broot.x, broot.y);
+    const sparse = rivers.isSparseFlat(c.elevationZone);
+    const why = cut > 0 ? `${precip.toFixed(0)} ${sparse ? '<' : '≥'} ${cut.toFixed(0)} mm/yr` : 'cutoff off';
+    html += `<div class="kv" title="A flat elevation zone whose site gets less initial precipitation than “Flat: sparse river precipitation cutoff” is river-poor: each of its subbiomes gets only 0 or 1 river attractor"><span>Sparse rivers</span><b>${sparse ? 'yes' : 'no'} · ${why}</b></div>`;
+  }
   if (c.elevationZoneMerged) {
     const members = World.cellsIn(world.elevationZoneLevel, broot.x - 3 * world.elevationZoneLevel.size, broot.y - 3 * world.elevationZoneLevel.size, broot.x + 3 * world.elevationZoneLevel.size, broot.y + 3 * world.elevationZoneLevel.size, 0).filter(
       (k) => world.elevationZoneRoot(k) === c.elevationZone,

@@ -16,7 +16,7 @@ const typeIndex = (id: string) => ELEVATION_ZONE_TYPES.findIndex((t) => t.id ===
 
 const setup = (over: Partial<TerrainParams> = {}) => {
   const w = new World(toWorldParams(defaults(), 12345));
-  const rv = new Rivers(w, toRiverParams(defaults()));
+  const rv = new Rivers(w, toRiverParams(defaults(), 12345));
   // 2 km cells keep the tests quick; the pipeline is the same at every resolution
   const t = new Terrain(w, rv, { ...toTerrainParams(defaults()), res: 2000, ...over });
   return { w, rv, t };

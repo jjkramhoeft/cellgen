@@ -3,9 +3,12 @@ import { defaults, toRiverParams, toWorldParams } from '../src/params';
 import { coneCos, Rivers, type RiverParams } from '../src/world/rivers';
 import { RIVER_REF_FLOW, riverPx } from '../src/render/overlays';
 import { World } from '../src/world/world';
+import { elevationZoneType, ELEVATION_ZONE_TYPES } from '../src/world/zones';
+
+const FLAT = ELEVATION_ZONE_TYPES.findIndex((t) => t.id === 'flat');
 
 const world = (seed = 12345) => new World(toWorldParams(defaults(), seed));
-const rp = (over: Partial<RiverParams> = {}): RiverParams => ({ ...toRiverParams(defaults()), ...over });
+const rp = (over: Partial<RiverParams> = {}): RiverParams => ({ ...toRiverParams(defaults(), 12345), ...over });
 
 /** Regions around the origin that have land. */
 function landRegions(w: World, n = 6): number[] {
@@ -20,7 +23,7 @@ function landRegions(w: World, n = 6): number[] {
 describe('space-colonization rivers', () => {
   it('places attractors only in inland land subbiomes drawn in the region, perSub per subbiome', () => {
     const w = world();
-    const rv = new Rivers(w, rp({ perSub: 10, flatSparseChance: 0 }));
+    const rv = new Rivers(w, rp({ perSub: 10, flatSparseCutoff: 0 }));
     const r = landRegions(w, 1)[0];
     const { ax, ay } = rv.attractors(r);
     expect(ax.length).toBeGreaterThan(100);
@@ -41,21 +44,32 @@ describe('space-colonization rivers', () => {
     }
   });
 
-  it('gives the subbiomes of a river-poor flat elevation zone only 0 or 1 attractor', () => {
+  it('gives the subbiomes of a river-poor (dry) flat elevation zone only 0 or 1 attractor', () => {
     const w = world();
     const regions = landRegions(w, 12);
     const count = (rv: Rivers) => regions.reduce((n, r) => n + rv.attractors(r).ax.length, 0);
+    const def = new Rivers(w, rp());
     const flatZones = new Set<number>();
-    for (const r of regions) for (const b of new Rivers(w, rp()).regionElevationZones(r)) if (!w.elevationZoneCell(b).ocean) flatZones.add(w.elevationZoneCell(b).elevationZone);
-    // chance 0: no zone is sparse; chance 1: every flat zone (and nothing else) is
-    const none = new Rivers(w, rp({ perSub: 10, flatSparseChance: 0 }));
-    const all = new Rivers(w, rp({ perSub: 10, flatSparseChance: 1 }));
-    let flat = 0;
+    for (const r of regions) {
+      for (const b of def.regionElevationZones(r)) {
+        const c = w.elevationZoneCell(b);
+        if (!c.ocean && elevationZoneType(c.elevationZone, false) === FLAT) flatZones.add(c.elevationZone);
+      }
+    }
+    expect(flatZones.size).toBeGreaterThan(10);
+    // sparse exactly when the precipitation at the zone's site is below the cutoff
+    const precipAt = (z: number) => def.climate.precipitationAt(w.elevationZone(z).x, w.elevationZone(z).y);
+    for (const z of flatZones) expect(def.isSparseFlat(z)).toBe(precipAt(z) < def.p.flatSparseCutoff);
+    // not random: the same zone gives the same answer in a fresh instance
+    const again = new Rivers(w, rp());
+    for (const z of flatZones) expect(again.isSparseFlat(z)).toBe(def.isSparseFlat(z));
+    // cutoff 0: none sparse; a huge cutoff: every flat zone (and only flat zones) sparse
+    const none = new Rivers(w, rp({ perSub: 10, flatSparseCutoff: 0 }));
+    const all = new Rivers(w, rp({ perSub: 10, flatSparseCutoff: 1e9 }));
     for (const z of flatZones) {
       expect(none.isSparseFlat(z)).toBe(false);
-      if (all.isSparseFlat(z)) flat++;
+      expect(all.isSparseFlat(z)).toBe(true);
     }
-    expect(flat).toBeGreaterThan(0);
     expect(count(all)).toBeLessThan(count(none));
     // per region: perSub for every eligible subbiome outside sparse zones, plus 0 or 1 for each inside one
     for (const r of regions) {
@@ -75,11 +89,25 @@ describe('space-colonization rivers', () => {
       expect(n).toBeGreaterThanOrEqual(dense * 10);
       expect(n).toBeLessThanOrEqual(dense * 10 + sparse);
     }
-    // about a third of the flat zones are sparse at the default chance
-    const def = new Rivers(w, rp());
-    expect(toRiverParams(defaults()).flatSparseChance).toBeCloseTo(0.33);
-    const hits = [...flatZones].filter((z) => all.isSparseFlat(z) && def.isSparseFlat(z)).length;
-    expect(hits).toBeLessThan(flat);
+  });
+
+  it('the default precipitation cutoff makes about a third of the flat elevation zones river-poor', () => {
+    const w = world();
+    const rv = new Rivers(w, rp());
+    const seen = new Set<number>();
+    let flat = 0;
+    let sparse = 0;
+    for (const b of World.cellsIn(w.elevationZoneLevel, -1000000, -1000000, 1000000, 1000000, 0)) {
+      const c = w.elevationZoneCell(b);
+      if (c.ocean || seen.has(c.elevationZone)) continue;
+      seen.add(c.elevationZone);
+      if (elevationZoneType(c.elevationZone, false) !== FLAT) continue;
+      flat++;
+      if (rv.isSparseFlat(c.elevationZone)) sparse++;
+    }
+    expect(flat).toBeGreaterThan(500);
+    expect(sparse / flat).toBeGreaterThan(0.27);
+    expect(sparse / flat).toBeLessThan(0.39);
   });
 
   it('follows the drawn regions: an elevation zone merged into a neighbouring region belongs to that region', () => {
