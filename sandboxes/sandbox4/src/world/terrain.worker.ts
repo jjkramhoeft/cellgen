@@ -61,6 +61,6 @@ function step(): void {
   terrain.world.trim(WORLD_CACHE);
   posted.add(key);
   const msg: FromTerrainWorker = { kind: 'tile', gen, tile };
-  (self as unknown as Worker).postMessage(msg, [tile.h.buffer, tile.cls.buffer, tile.reg.buffer, tile.regKeys.buffer]);
+  (self as unknown as Worker).postMessage(msg, [tile.h.buffer, tile.cls.buffer, tile.reg.buffer, tile.regKeys.buffer, tile.subKeys.buffer, tile.subH.buffer]);
   schedule();
 }

@@ -11,8 +11,9 @@ import { keyI, keyJ } from '../world/level';
 import { ORIGIN, type Cell, type World } from '../world/world';
 import { sample, type Terrain } from '../world/terrain';
 import { ELEVATION_ZONE_TYPES, elevationZoneType, OCEAN_ZONE } from '../world/zones';
+import { BIOMES, type Biomes } from '../world/biomes';
 
-export type ViewMode = 'map' | 'landsea' | 'genesis' | 'merges' | 'regions' | 'elevationZones' | 'subbiomes' | 'hierarchy' | 'height';
+export type ViewMode = 'map' | 'biomes' | 'landsea' | 'genesis' | 'merges' | 'regions' | 'elevationZones' | 'subbiomes' | 'hierarchy' | 'height';
 
 export interface ViewOpts {
   mode: ViewMode;
@@ -59,6 +60,7 @@ export const GENESIS: { origin: number; name: string; rgb: RGB }[] = [
   { origin: ORIGIN.grow + 3, name: 'Growth pass 4', rgb: [190, 84, 150] },
 ];
 const GENESIS_PX = new Map(GENESIS.map((g) => [g.origin, packRGB(g.rgb)]));
+const BIOME_PX = BIOMES.map((b) => packRGB(b.rgb));
 
 const FLAT_LAND = packColor(150, 178, 112);
 const FLAT_OCEAN = packColor(38, 78, 128);
@@ -86,9 +88,16 @@ function cached(tag: string, key: number, f: () => number): number {
   return c;
 }
 
-/** Colour of one classified cell (no borders). */
-export function colorOf(c: Cell, mode: ViewMode): number {
+/** Colour of one classified cell (no borders). `biomes` is needed for the 'biomes' mode. */
+export function colorOf(c: Cell, mode: ViewMode, biomes: Biomes | null = null): number {
   switch (mode) {
+    case 'biomes': {
+      if (c.ocean) return colorOf(c, 'map');
+      if (!biomes) return FLAT_LAND;
+      // one colour per biome, a little lighter / darker per subbiome so the cells still read
+      const f = c.sub >= 0 ? jitterF(keyHash(c.sub, 9), 0.05) : 1;
+      return scale(BIOME_PX[biomes.indexOf(c.sub, c.elevationZoneRaw)], f);
+    }
     case 'landsea':
     case 'height': // until the height raster is ready
       return c.ocean ? FLAT_OCEAN : FLAT_LAND;
@@ -184,12 +193,16 @@ const LZ = Math.SQRT1_2;
 /** shading exaggeration so 1 km cells with gentle slopes still read */
 const SHADE_EXAG = 4;
 
-export function mapSource(world: World, genKey: string, v: ViewOpts, terrain: Terrain | null = null, terrainVer = 0): RasterSource {
+/**
+ * `biomes` colours the 'biomes' mode; `biomeKey` names its state (parameters and the
+ * terrain tiles its heights came from), so the map re-renders when either changes.
+ */
+export function mapSource(world: World, genKey: string, v: ViewOpts, terrain: Terrain | null = null, terrainVer = 0, biomes: Biomes | null = null, biomeKey = ''): RasterSource {
   const S = world.subLevel.size;
   const B = world.elevationZoneLevel.size;
   const R = world.regionLevel.size;
   return {
-    key: `${genKey}|${viewKey(v)}|t${terrain && (v.hillshade || v.mode === 'height') ? terrainVer : '-'}`,
+    key: `${genKey}|${viewKey(v)}|t${terrain && (v.hillshade || v.mode === 'height') ? terrainVer : '-'}|b${v.mode === 'biomes' ? biomeKey : '-'}`,
     create() {
       let cols = 0;
       let sub = new Float64Array(0);
@@ -234,7 +247,7 @@ export function mapSource(world: World, genKey: string, v: ViewOpts, terrain: Te
           zone[c] = cell.elevationZone;
           reg[c] = cell.region;
           oc[c] = cell.ocean ? 1 : 0;
-          let px = colorOf(cell, v.mode);
+          let px = colorOf(cell, v.mode, biomes);
           if (useH) {
             const t = terrain!.peek(cell.region);
             const h = t ? sample(t, wx0 + c * dwx, wy) : NaN;

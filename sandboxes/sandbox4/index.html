@@ -67,7 +67,7 @@
         <ul>
           <li><b>Regions</b> (128 km, straight borders) own the elevation zones whose site lies inside them. Each region picks <b>0–2 ocean seeds</b> and <b>2–4 elevation zone merges</b> among its elevation zones.</li>
           <li><b>Elevation zones</b> (32 km, warped borders) are the land/ocean unit. Each elevation zone is <b>ocean, flat, lowland, hills or mountains</b> (the map colours) and picks <b>2–4 subbiome merges</b> among the subbiomes it owns.</li>
-          <li><b>Subbiomes</b> (8 km, warped borders) carry detail: sub-biomes, towns, ore, factions.</li>
+          <li><b>Subbiomes</b> (8 km, warped borders) carry detail: each has a <b>biome</b>; later also towns, ore, factions.</li>
         </ul>
         <h3>Oceans</h3>
         <ul>
@@ -93,6 +93,13 @@
         <ul>
           <li>An <b>initial temperature map</b> (−10 to 30 °C by default) and an <b>initial precipitation map</b> (100 to 10 000 mm per year on a log scale, so the middle is 1 000), each an fBm of <b>Perlin noise</b> with its own feature size, octaves, lacunarity, gain and range (left panel, <b>Climate</b> sections).</li>
           <li>Turn on <b>Temperature overlay</b> or <b>Precipitation overlay</b> under Display to draw them <b>50 % transparent on top</b> of the map and rivers; the inspector shows both values under the cursor.</li>
+        </ul>
+        <h3>Biomes</h3>
+        <ul>
+          <li>Every land <b>subbiome</b> gets a biome from the initial climate at its site. The temperature is lowered by a <b>cooling curve</b> over the subbiome’s mean height from the terrain: a smooth curve through 5 points you set (height → °C cooler, 6.5 °C per km by default), plotted in the <b>Biomes</b> section; until its terrain is computed a typical height for the elevation zone type stands in.</li>
+          <li><b>River-poor flat elevation zones</b> are drier (precipitation × 0.2), so they favour <b>desert</b>.</li>
+          <li>The aridity P / (20·T + 140) and a thermal belt pick one of 15 biomes, from ice, tundra and taiga over temperate forests and grassland to hot desert, savanna and rainforest (left panel, <b>Biomes</b>).</li>
+          <li>Colour by <b>Biomes</b> (<b>2</b>) to see them; the inspector shows each subbiome’s biome and the values that picked it.</li>
         </ul>
         <h3>Navigation</h3>
         <ul>

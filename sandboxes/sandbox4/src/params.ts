@@ -1,5 +1,6 @@
 /** Sandbox 4 parameter schema (panels and URL state), presets, and its mapping to the World, Rivers and Terrain parameters. */
 import { bindDefaults, bool, defaultsOf, num, opt, str, type DefaultsFile, type ParamDef, type Params, type Section } from '@shared/params/schema';
+import type { BiomeParams } from './world/biomes';
 import type { ClimateParams, NoiseFieldParams } from './world/climate';
 import type { ConeAngle, PullPower, RiverParams } from './world/rivers';
 import { FLOOD_REF_FLOW, type TerrainParams, type Theta } from './world/terrain';
@@ -392,9 +393,58 @@ export function toClimateParams(p: Params, seed: number): ClimateParams {
   return { seed, temperature: toField(p, 't'), precipitation: toField(p, 'p') };
 }
 
+/**
+ * Biome parameters (left panel): every subbiome gets a biome from the initial climate at
+ * its site, its height and its elevation zone. Changing them only recolours the map.
+ */
+export const BIOME_SECTION: Section = withDefaults.section({
+  id: 'biomes',
+  title: 'Biomes · per subbiome',
+  open: false,
+  help: 'Each land subbiome gets a biome from the initial temperature and precipitation at its site. The temperature is lowered by the height cooling curve at the subbiome’s mean height (from the terrain; a typical height for its elevation zone type until the terrain is computed). The aridity P / (20·T + 140) and a thermal belt pick the biome. River-poor flat elevation zones are drier, so they favour desert. Colour by → Biomes.',
+  params: [
+    ...[0, 1, 2, 3, 4].flatMap((i) => [
+      {
+        key: `bio.cool.h${i + 1}`,
+        label: `Point ${i + 1} · height`,
+        type: 'number' as const,
+        min: 0,
+        max: 6000,
+        step: 10,
+        unit: ' m',
+        help:
+          i === 0
+            ? 'How much cooler it is at a height: a smooth monotone curve through these five points (sorted by height). Below the lowest point it keeps that point’s cooling; above the highest it continues along the last segment’s slope. The defaults are the standard atmosphere, 6.5 °C per km; real mountain slopes are often 4–5 °C per km. Steeper = more tundra and snow on hills and mountains.'
+            : undefined,
+      },
+      { key: `bio.cool.t${i + 1}`, label: `Point ${i + 1} · cooling`, type: 'number' as const, min: -20, max: 60, step: 0.1, unit: ' °C' },
+    ]),
+    {
+      key: 'bio.sparseDry',
+      label: 'Sparse flat: precipitation factor',
+      type: 'number',
+      min: 0,
+      max: 1,
+      step: 0.05,
+      help: 'In river-poor flat elevation zones (initial precipitation at the zone’s site below “Flat: sparse river precipitation cutoff”) the precipitation is multiplied by this before classifying, so they favour desert and steppe. 1 = no effect.',
+    },
+  ],
+});
+export const BIOME_KEYS = new Set(BIOME_SECTION.params.map((p) => p.key));
+
+/** Schema → model parameters for the biomes. */
+export function toBiomeParams(p: Params): BiomeParams {
+  return {
+    coolH: [1, 2, 3, 4, 5].map((i) => num(p, `bio.cool.h${i}`)),
+    coolT: [1, 2, 3, 4, 5].map((i) => num(p, `bio.cool.t${i}`)),
+    sparseDry: num(p, 'bio.sparseDry'),
+  };
+}
+
 /** Colour modes: [id, label]. */
 export const VIEW_MODES = [
   ['map', 'Map (elevation zone types)'],
+  ['biomes', 'Biomes (per subbiome)'],
   ['landsea', 'Land & ocean'],
   ['genesis', 'Ocean genesis'],
   ['merges', 'Merged cells'],
@@ -456,7 +506,7 @@ export const VIEW_SECTION: Section = withDefaults.section({
   ],
 });
 
-export const ALL_DEFS: ParamDef[] = [...SECTIONS.flatMap((s) => s.params), ...RIVER_SECTION.params, ...TERRAIN_SECTION.params, ...HILLSLOPE_SECTION.params, ...GRADIENT_SECTION.params, ...FLOODPLAIN_SECTION.params, ...CLIMATE_SECTIONS.flatMap((s) => s.params), ...VIEW_SECTION.params];
+export const ALL_DEFS: ParamDef[] = [...SECTIONS.flatMap((s) => s.params), ...RIVER_SECTION.params, ...TERRAIN_SECTION.params, ...HILLSLOPE_SECTION.params, ...GRADIENT_SECTION.params, ...FLOODPLAIN_SECTION.params, ...CLIMATE_SECTIONS.flatMap((s) => s.params), ...BIOME_SECTION.params, ...VIEW_SECTION.params];
 withDefaults.checkAllUsed();
 export const GEN_KEYS = new Set(SECTIONS.flatMap((s) => s.params.map((p) => p.key)).filter((k) => !RIVER_KEYS.has(k)));
 

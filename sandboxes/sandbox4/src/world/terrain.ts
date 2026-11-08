@@ -222,6 +222,12 @@ export interface TerrainTile {
   /** region of each cell, as an index into `regKeys` (see `regionAt`) */
   reg: Int32Array;
   regKeys: Float64Array;
+  /**
+   * Mean final height (metres) of each (merged) subbiome's land cells in the tile's owned
+   * regions: `subH[n]` belongs to subbiome `subKeys[n]`. Read through `Terrain.subHeight`.
+   */
+  subKeys: Float64Array;
+  subH: Float32Array;
   /** cells raised by the fill, and the largest raise (lakes / flats), metres */
   filled: number;
   maxFill: number;
@@ -357,6 +363,23 @@ export class Terrain {
   peek(rkey: number): TerrainTile | undefined {
     return this.tiles.get(this.tileOf(rkey));
   }
+
+  /**
+   * Mean land height (metres) of a merged subbiome of region `rkey`, from the tile that
+   * owns the region. NaN while that tile is not computed (or the subbiome has no land).
+   */
+  subHeight(skey: number, rkey: number): number {
+    const t = this.peek(rkey);
+    if (!t) return NaN;
+    let m = this.subMeans.get(t);
+    if (!m) {
+      m = new Map();
+      for (let n = 0; n < t.subKeys.length; n++) m.set(t.subKeys[n], t.subH[n]);
+      this.subMeans.set(t, m);
+    }
+    return m.get(skey) ?? NaN;
+  }
+  private subMeans = new WeakMap<TerrainTile, Map<number, number>>();
 
   /** The tile holding a region's heights, computed on demand. */
   get(rkey: number): TerrainTile {
@@ -909,11 +932,14 @@ export class Terrain {
     const regKeys: number[] = [];
     const regIndex = new Map<number, number>();
     const lt = new Int8Array(N).fill(-1);
+    /** (merged) subbiome of each cell, for the per-subbiome mean heights */
+    const subOf = new Float64Array(N);
     const cell = {} as ReturnType<World['cellAt']>;
     for (let j = 0; j < ny; j++) {
       for (let i = 0; i < nx; i++) {
         const c = w.cellAt(cx(i), cy(j), true, cell);
         const q = j * nx + i;
+        subOf[q] = c.sub;
         cls[q] = c.ocean ? OCEAN : LAND;
         let ri = regIndex.get(c.region);
         if (ri === undefined) {
@@ -1149,6 +1175,25 @@ export class Terrain {
       }
     }
 
+    // ---- mean height of every subbiome's land in the owned regions (raster order, so deterministic)
+    const subIndex = new Map<number, number>();
+    const subKeys: number[] = [];
+    const subSum: number[] = [];
+    const subCount: number[] = [];
+    for (let q = 0; q < N; q++) {
+      if (cls[q] !== LAND || !owned[reg[q]]) continue;
+      let si = subIndex.get(subOf[q]);
+      if (si === undefined) {
+        si = subKeys.length;
+        subIndex.set(subOf[q], si);
+        subKeys.push(subOf[q]);
+        subSum.push(0);
+        subCount.push(0);
+      }
+      subSum[si] += h[q];
+      subCount[si]++;
+    }
+
     // ---- crop to the owned regions' cells (+ a margin for bilinear sampling)
     let ci0 = nx;
     let cj0 = ny;
@@ -1197,6 +1242,8 @@ export class Terrain {
       cls: ccls,
       reg: creg,
       regKeys: Float64Array.from(regKeys),
+      subKeys: Float64Array.from(subKeys),
+      subH: Float32Array.from(subSum, (s, n) => s / subCount[n]),
       filled,
       maxFill,
       ms: performance.now() - t0,

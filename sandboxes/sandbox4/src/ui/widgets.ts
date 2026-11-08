@@ -10,6 +10,7 @@ import { ELEVATION_ZONE_TYPES, elevationZoneType } from '../world/zones';
 import type { Terrain } from '../world/terrain';
 import { fieldAt, type Climate, type NoiseFieldParams } from '../world/climate';
 import { rampRgb, STOPS, type ClimateField } from '../render/climate';
+import { BELTS, BIOMES, dryThreshold, MOISTURE, type BiomeInfo, type Biomes } from '../world/biomes';
 
 /** Packed ABGR pixel → CSS colour. */
 const cssHex = (c: number) => `rgb(${c & 255},${(c >>> 8) & 255},${(c >>> 16) & 255})`;
@@ -27,7 +28,11 @@ export function genesisName(o: number): string {
 // ------------------------------------------------------------------ legend
 
 const NOTES: Record<ViewMode, [string, string]> = {
-  map: ['Map', 'Each elevation zone is coloured by its type (ocean, flat, lowland, hills, mountains), lighter/darker per subbiome. Biomes come later, from temperature and precipitation. Turn on Hillshade to see the height map.'],
+  map: ['Map', 'Each elevation zone is coloured by its type (ocean, flat, lowland, hills, mountains), lighter/darker per subbiome. Colour by Biomes for the biome of each subbiome. Turn on Hillshade to see the height map.'],
+  biomes: [
+    'Biomes',
+    'One biome per subbiome, from the initial temperature (cooled with the subbiome’s height by the cooling curve) and precipitation at its site; river-poor flat zones are drier. Heights come from the terrain as it is computed, a typical height per elevation zone type until then. Zoomed far out, each elevation zone shows the biome at its site.',
+  ],
   landsea: ['Land & ocean', 'Land and ocean, from the ocean genesis.'],
   genesis: ['Ocean genesis', 'Why each ocean elevation zone is ocean. Turn on seeds & links and growth arrows to see the steps.'],
   merges: ['Merged cells', 'Orange: elevation zones in a merged group (one colour per group). Yellow: merged subbiome groups.'],
@@ -71,6 +76,10 @@ export function renderLegend(host: HTMLElement, mode: ViewMode, oceanShare: numb
     html += '<div class="lg-cats two">';
     for (const t of ELEVATION_ZONE_TYPES) html += sw(cssRgb(t.rgb), t.name);
     html += '</div>';
+  } else if (mode === 'biomes') {
+    html += '<div class="lg-cats two">';
+    for (const b of BIOMES) html += sw(cssRgb(b.rgb), b.name);
+    html += '</div>';
   } else if (mode === 'landsea') {
     html += '<div class="lg-cats">' + sw('#96b270', 'Land', oceanShare === null ? '' : pct(1 - oceanShare)) + sw('#264e80', 'Ocean', oceanShare === null ? '' : pct(oceanShare)) + '</div>';
   } else if (mode === 'height') {
@@ -107,7 +116,33 @@ export interface Probe {
   pinned: boolean;
 }
 
-export function renderInspector(host: HTMLElement, world: World | null, rivers: Rivers | null, pt: Probe | null, terrain: Terrain | null = null, climate: Climate | null = null): void {
+/** The inspector rows of a subbiome's biome: the biome and every input that picked it. */
+function biomeRows(b: BiomeInfo, sparseDry: number): string {
+  const biome = BIOMES[b.biome];
+  let html = `<div class="lvl"><h4><i style="background:${cssRgb(biome.rgb)}"></i>Biome</h4>`;
+  // light text on the dark forest greens and the ocean, dark text on the rest
+  const [r, g, bl] = biome.rgb;
+  const ink = 0.299 * r + 0.587 * g + 0.114 * bl < 120 ? '#f2f5f7' : '#0b0e13';
+  html += `<div class="kv"><span>Biome</span><b><span class="chip" style="background:${cssRgb(biome.rgb)};color:${ink}">${esc(biome.name)}</span></b></div>`;
+  if (b.ocean) return html + '</div>';
+  const pth = dryThreshold(b.t);
+  html += `<div class="kv" title="Thermal belt from the temperature after the height cooling · moisture class from the aridity"><span>Belt · moisture</span><b>${esc(BELTS[b.belt].name)} · ${esc(MOISTURE[b.moisture].toLowerCase())}</b></div>`;
+  html += `<div class="kv" title="Precipitation / Köppen dryness threshold 20·T + 140 mm. Below 0.5 desert, 0.5–1 steppe, 1–2 woodland / savanna, then forest and rainforest (≥ 6 temperate, ≥ 4 tropical)"><span>Aridity P / P_th</span><b>${b.aridity.toFixed(2)} · P_th ${pth.toFixed(0)} mm</b></div>`;
+  const hTxt = b.heightExact ? `${b.height.toFixed(0)} m · subbiome mean` : `≈ ${b.height.toFixed(0)} m · typical ${esc(ELEVATION_ZONE_TYPES[b.zoneType].name.toLowerCase())}`;
+  const hTitle = b.heightExact
+    ? 'Mean height of the subbiome’s land, from its terrain tile'
+    : 'The terrain tile is not computed yet (it is computed while colouring by Biomes or Height, zoomed in): a typical height for the elevation zone type stands in';
+  html += `<div class="kv" title="${hTitle}"><span>Height</span><b>${hTxt}</b></div>`;
+  const cool = b.cooling !== 0 ? ` − ${b.cooling.toFixed(1)} = ${b.t.toFixed(1)} °C` : '';
+  html += `<div class="kv" title="Initial temperature at the subbiome’s site, minus the cooling curve (Biomes section, points 1–5) at the subbiome’s height"><span>Site temperature</span><b>${b.t0.toFixed(1)} °C${cool}</b></div>`;
+  const pTxt = b.sparse ? `${b.p0.toFixed(0)} × ${sparseDry} = ${b.p.toFixed(0)} mm/yr` : `${b.p0.toFixed(0)} mm/yr`;
+  html += `<div class="kv" title="Initial precipitation at the subbiome’s site${b.sparse ? ', × the sparse-flat factor: this is a river-poor flat elevation zone, which favours desert' : ''}"><span>Site precipitation</span><b>${pTxt}</b></div>`;
+  if (b.sparse) html += `<div class="kv" title="The elevation zone is flat and its site gets less initial precipitation than the sparse river cutoff: few rivers, drier biomes"><span>Sparse flat zone</span><b>yes · drier</b></div>`;
+  if (b.seaLevel !== b.biome) html += `<div class="kv" title="The biome the sea-level temperature would give: the height changed it"><span>At sea level</span><b>${esc(BIOMES[b.seaLevel].name)}</b></div>`;
+  return html + '</div>';
+}
+
+export function renderInspector(host: HTMLElement, world: World | null, rivers: Rivers | null, pt: Probe | null, terrain: Terrain | null = null, climate: Climate | null = null, biomes: Biomes | null = null): void {
   if (!world || !pt) {
     host.innerHTML = '<p class="muted">Hover the map to inspect a point. Click to pin the elevation zone and subbiome under the cursor.</p>';
     return;
@@ -179,6 +214,7 @@ export function renderInspector(host: HTMLElement, world: World | null, rivers: 
   const st = world.subTarget(c.sub);
   html += `<div class="kv"><span>Merged</span><b>${c.subMerged ? (st >= 0 ? `joins ${ij(st)}` : 'yes (group root)') : 'no'}</b></div>`;
   html += `<div class="kv"><span>Neighbours</span><b>${world.subNbrs(world.sub(c.sub)).length}</b></div></div>`;
+  if (biomes) html += biomeRows(biomes.ofSub(c.sub), biomes.p.sparseDry);
   const nr = rivers?.nearestNode(pt.x, pt.y, rivers.p.step * 1.5);
   if (nr) {
     const { r, k } = nr;

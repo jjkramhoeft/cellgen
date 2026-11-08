@@ -67,8 +67,8 @@ The world is unbounded and measured in metres. Every level is a stateless lattic
 | Level | Default | Role |
 |---|---|---|
 | **Regions** | 128 km grid, no warp | Own the elevation zones whose site lies inside them. Pick **0–2 ocean seeds** and **2–4 elevation zone merges** among them |
-| **Elevation zones** | 32 km grid, border warp | The land/ocean unit (also meant for factions). Each is **ocean, flat, lowland, hills or mountains**; the land types are hashed per zone with weights 5 / 6 / 1 / 1 (biomes come later, from temperature and humidity). Own their subbiomes and pick **2–4 subbiome merges** |
-| **Subbiomes** | 8 km grid, border warp | Detail cells (sub-biomes, towns, ore, factions) |
+| **Elevation zones** | 32 km grid, border warp | The land/ocean unit (also meant for factions). Each is **ocean, flat, lowland, hills or mountains**; the land types are hashed per zone with weights 5 / 6 / 1 / 1 (biomes are per subbiome, see [Climate and biomes](#climate-and-biomes)). Own their subbiomes and pick **2–4 subbiome merges** |
+| **Subbiomes** | 8 km grid, border warp | Detail cells: each has a **biome**; also meant for towns, ore, factions |
 
 | Area | Methods and parameters |
 |---|---|
@@ -91,12 +91,25 @@ The height map is computed in **tiles** of about 256 km (2 × 2 regions at the d
 
 The result is **seamless**. Steps 1–4 are a pure function of position, and the fill keeps each region's border cells. The tests check that a tile is bit-identical to computing each region separately, and that neighbouring rasters agree exactly along shared borders.
 
+### Climate and biomes
+
+The **initial climate** is two fBm Perlin-noise maps, independent of the map: temperature (−10 to 30 °C by default) and precipitation (100 to 10 000 mm per year on a log scale). Every land **subbiome** gets one **biome** from them, read at its site ([docs/research/biomes-and-climate.md](docs/research/biomes-and-climate.md) §7):
+
+| Step | Method |
+|---|---|
+| **Height** | The mean height of the subbiome's land, recorded by its terrain tile. Until the tile is computed, a typical height for the elevation zone type stands in (flat 70 m, lowland 140 m, hills 270 m, mountains 470 m: the medians of the default terrain), and the inspector says so |
+| **Temperature** | The initial temperature minus a **cooling curve** over that height: T = T₀ − cooling(h). The curve is a monotone spline through 5 configurable points (height → °C cooler), drawn live in the panel; it continues along its last slope above the highest point. The default points give the standard atmosphere's 6.5 °C per km |
+| **Moisture** | The initial precipitation; in a **river-poor flat elevation zone** (site precipitation below *Flat: sparse river precipitation cutoff*) it is × 0.2 by default, so those zones favour **desert** (about two thirds of their subbiomes, against a few percent elsewhere) |
+| **Classify** | Aridity m = P / (20·T + 140), Köppen's dryness threshold for evenly spread rain. A thermal belt (ice below −10 °C, tundra to −3, boreal to 3, temperate to 18, then tropical) × a moisture class (m < 0.5 cold or hot desert, 0.5–1 steppe or scrub, 1–2 woodland or savanna, then forest and, from m ≥ 6 temperate or ≥ 4 tropical, rainforest) picks one of 15 land biomes, from ice and tundra over taiga, temperate forests and grassland to hot desert, savanna and tropical rainforest |
+
+**Colour by → Biomes** shows them in colours that look like the land (sand, dry grass, olive scrub, forest greens, grey tundra, white ice), slightly varied per subbiome. The biome view computes the terrain like the height view; zoomed far out each elevation zone shows the biome at its site. The inspector lists the biome with every input: belt, moisture class, aridity, height (exact or estimated), the temperature before and after the height cooling, the precipitation (and the dry-flat factor), and the biome the subbiome would have at sea level.
+
 ### Evaluating the map
 
-- **Colour by:** map (elevation zone types), land & ocean, **ocean genesis** (lone seed, linked seed, link chain, growth pass), **merged cells**, regions, elevation zones, subbiomes, the hierarchy (region hue × elevation zone lightness × subbiome shading), and **height** (hypsometric tint and hillshade). A **Hillshade** overlay works on any colour mode.
+- **Colour by:** map (elevation zone types), land & ocean, **ocean genesis** (lone seed, linked seed, link chain, growth pass), **merged cells**, regions, elevation zones, subbiomes, the hierarchy (region hue × elevation zone lightness × subbiome shading), **biomes** (one per subbiome), and **height** (hypsometric tint and hillshade). A **Hillshade** overlay works on any colour mode.
 - **3D landscape** (`T`): a WebGL2 height mesh over the current view, draped with the 2D map (rivers and borders included). Drag to orbit, scroll to zoom, Shift- or right-drag to pan. Vertical exaggeration is a setting.
 - **Overlays:** pixel-exact region, elevation zone and subbiome borders and the coastline; rivers (width from flow), attractor points (unreached in red) and river roots; ocean seeds and links, growth arrows, merge arrows, sites per level, and a kilometre grid with the origin marked.
-- **Inspector:** hover or click a point to see its region (owned elevation zones, seeds, links, merges), elevation zone (genesis, merged group, neighbours, owned subbiomes), subbiome and the river under the cursor (flow here, whole river, root, the ocean elevation zone it drains into). Click pins the elevation zone and subbiome.
+- **Inspector:** hover or click a point to see its region (owned elevation zones, seeds, links, merges), elevation zone (genesis, merged group, neighbours, owned subbiomes), subbiome, its **biome** (with the temperature, precipitation, height and aridity that picked it) and the river under the cursor (flow here, whole river, root, the ocean elevation zone it drains into). Click pins the elevation zone and subbiome.
 - **Ruler:** Shift+drag or `M` measures a straight-line distance, with travel days for a horse (32–48 km/day), a marching legion (24–32) and a long-distance hiker (16–24).
 - **In view:** ocean share, cell counts, elevation zones per region, subbiomes per elevation zone, seeds and links, ocean elevation zones by genesis, merged groups, rivers and attractors reached, render time, cache size, and a determinism fingerprint of a fixed window around the origin.
 - **Sharing:** the URL hash also holds the camera. 10 presets and PNG export. Subbiomes smaller than ~3 px are skipped automatically.
@@ -110,8 +123,10 @@ src/world/     level (stateless warped lattice Voronoi, Gabriel neighbours),
                world (regions, ocean seeds/links/growth, merges, nesting, caches),
                zones (elevation zone types: ocean, flat, lowland, hills, mountains),
                rivers (per-region space colonization: attractors, coastal roots, flow),
-               terrain (river profiles and the per-tile height pipeline),
-               terrain.worker (height tiles computed off the main thread)
+               terrain (river profiles and the per-tile height pipeline, mean height per subbiome),
+               terrain.worker (height tiles computed off the main thread),
+               climate (initial temperature and precipitation maps),
+               biomes (height cooling curve, dry flat zones, aridity × thermal belt → biome per subbiome)
 src/render/    per-pixel raster source with borders per level, vector overlays and ruler,
                view3d (WebGL2 mesh, draped texture, orbit camera)
 src/ui/        legend, level box, inspector, view statistics
@@ -119,7 +134,8 @@ src/params.ts  parameter schema and presets
 tests/         nearest-site and neighbour checks, determinism and order independence, ocean and merge rules,
                rivers (attractor placement, every attractor reached, roots at ocean elevation zone points, flow conservation),
                terrain (monotone beds, drainage of every cell, burnt-in rivers, seamless tiles, determinism),
-               zones (zone type picks and weights)
+               zones (zone type picks and weights), climate (ranges, independence),
+               biomes (belts and aridity classes, cooling curve, dry flat zones favour desert, tile heights)
 ```
 
 ## Research

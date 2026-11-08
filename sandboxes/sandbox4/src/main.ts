@@ -16,12 +16,13 @@ import { decodeState, encodeState } from '@shared/params/url';
 import { screenToWorld, zoomAt, type Camera, type Viewport } from '@shared/render/camera';
 import { RasterLayer } from '@shared/render/raster';
 import { buildPanel } from '@shared/ui/panel';
-import { ALL_DEFS, CLIMATE_KEYS, PRECIP_KEYS, CLIMATE_SECTIONS, DEFAULT_SEED, defaults, GEN_KEYS, PRESETS, RIVER_KEYS, RIVER_SECTION, FLOODPLAIN_SECTION, GRADIENT_SECTION, HILLSLOPE_SECTION, SECTIONS, TERRAIN_KEYS, TERRAIN_SECTION, toClimateParams, toRiverParams, toTerrainParams, toWorldParams, VIEW_MODES, VIEW_SECTION } from './params';
+import { ALL_DEFS, BIOME_KEYS, BIOME_SECTION, CLIMATE_KEYS, PRECIP_KEYS, CLIMATE_SECTIONS, DEFAULT_SEED, defaults, GEN_KEYS, PRESETS, RIVER_KEYS, RIVER_SECTION, FLOODPLAIN_SECTION, GRADIENT_SECTION, HILLSLOPE_SECTION, SECTIONS, TERRAIN_KEYS, TERRAIN_SECTION, toBiomeParams, toClimateParams, toRiverParams, toTerrainParams, toWorldParams, VIEW_MODES, VIEW_SECTION } from './params';
 import { drawGrid, drawGrowth, drawLinks, drawMerges, drawRivers, drawRuler, drawSites, fmtDist, niceStep, type Frame } from './render/overlays';
 import { climateSource, type ClimateField } from './render/climate';
 import { DETAIL_PX, mapSource, type ViewMode, type ViewOpts } from './render/source';
 import { computeViewStats, renderInspector, type ClimateLegend, renderLegend, renderLevels, renderRuler, renderStats, type ViewStats } from './ui/widgets';
 import { buildMesh, View3D, type HeightGrid, type Rect } from './render/view3d';
+import { Biomes, coolingCurve } from './world/biomes';
 import { Climate } from './world/climate';
 import { Rivers } from './world/rivers';
 import { FLOOD_REF_FLOW, monotoneSpline, Terrain } from './world/terrain';
@@ -58,6 +59,9 @@ let world!: World;
 let rivers!: Rivers;
 let terrain!: Terrain;
 let climate!: Climate;
+let biomes!: Biomes;
+/** bumped whenever the biomes are rebuilt (part of the raster key of the biome colours) */
+let biomeGen = 0;
 /** bumped when new terrain rasters are ready (part of the raster key, so the map re-renders) */
 let terrainVer = 0;
 /** terrain tiles around the view still being computed (-1 = view too large) */
@@ -123,49 +127,130 @@ if (urlCam) {
 
 // ------------------------------------------------------------------ panels
 
-const leftPanel = buildPanel($('left'), [...SECTIONS, RIVER_SECTION, TERRAIN_SECTION, HILLSLOPE_SECTION, GRADIENT_SECTION, FLOODPLAIN_SECTION, ...CLIMATE_SECTIONS], params, onParam, resetSection);
+const leftPanel = buildPanel($('left'), [...SECTIONS, RIVER_SECTION, TERRAIN_SECTION, HILLSLOPE_SECTION, GRADIENT_SECTION, FLOODPLAIN_SECTION, ...CLIMATE_SECTIONS, BIOME_SECTION], params, onParam, resetSection);
 
-/** Live plot of the floodplain curve (half-width over bed height) in its panel section. */
-function renderFloodPlot(): void {
-  const body = document.querySelector<HTMLElement>('#left section[data-id="floodplain"] .sec-body');
+/** A live plot of a control-point curve, placed under a panel section's help text. */
+interface CurvePlot {
+  /** panel section id, and the class of the plot element */
+  section: string;
+  cls: string;
+  label: string;
+  xs: number[];
+  ys: number[];
+  f: (x: number) => number;
+  /** right end of the x axis, and its label (after the number) */
+  xMax: number;
+  xLabel: string;
+  /** smallest top of the y axis, the y unit, and the title in the top-right corner */
+  yFloor: number;
+  yUnit: string;
+  title: string;
+  /** drawn dashed from this x on (an extrapolation beyond the last point) */
+  dashFrom?: number;
+  /** a faint straight reference line through the origin */
+  ref?: { slope: number; label: string };
+  pointTitle: (i: number) => string;
+}
+
+function renderCurvePlot(c: CurvePlot): void {
+  const body = document.querySelector<HTMLElement>(`#left section[data-id="${c.section}"] .sec-body`);
   if (!body) return;
-  let host = body.querySelector<HTMLElement>('.flood-plot');
+  let host = body.querySelector<HTMLElement>(`.${c.cls}`);
   if (!host) {
     host = document.createElement('div');
-    host.className = 'flood-plot';
+    host.className = `curve-plot ${c.cls}`;
     body.querySelector('.sec-help')?.after(host);
   }
-  const hs = [1, 2, 3, 4].map((i) => Number(params[`hgt.fp.h${i}`]));
-  const ws = [1, 2, 3, 4].map((i) => Number(params[`hgt.fp.w${i}`]));
-  const f = monotoneSpline(hs, ws);
   const W = 240;
   const H = 110;
   const pl = 34;
   const pb = 18;
-  const xMax = Math.max(500, ...hs) * 1.15;
-  const yMax = Math.max(50, ...ws) * 1.15;
-  const X = (h: number) => pl + (h / xMax) * (W - pl - 6);
-  const Y = (w: number) => H - pb - (w / yMax) * (H - pb - 6);
-  let d = '';
-  for (let k = 0; k <= 80; k++) {
-    const h = (xMax * k) / 80;
-    d += `${k ? 'L' : 'M'}${X(h).toFixed(1)},${Y(f(h)).toFixed(1)}`;
+  const N = 80;
+  const xMax = c.xMax;
+  const fx = Array.from({ length: N + 1 }, (_, k) => c.f((xMax * k) / N));
+  const yMax = Math.max(c.yFloor, ...c.ys, ...fx) * 1.15;
+  const lo = Math.min(0, ...c.ys, ...fx);
+  const yMin = lo < 0 ? lo * 1.15 : 0;
+  const X = (x: number) => pl + (x / xMax) * (W - pl - 6);
+  const Y = (y: number) => H - pb - ((y - yMin) / (yMax - yMin)) * (H - pb - 6);
+  const dash = c.dashFrom ?? Infinity;
+  let solid = '';
+  let dashed = '';
+  for (let k = 0; k <= N; k++) {
+    const x = (xMax * k) / N;
+    const pt = `${X(x).toFixed(1)},${Y(fx[k]).toFixed(1)}`;
+    if (x <= dash) solid += `${solid ? 'L' : 'M'}${pt}`;
+    else dashed += `L${pt}`;
   }
-  const dots = hs.map((h, i) => `<circle cx="${X(h).toFixed(1)}" cy="${Y(ws[i]).toFixed(1)}" r="3" fill="#fde725"><title>Point ${i + 1}: ${h} m → ${ws[i]} m</title></circle>`).join('');
-  const flow = params['hgt.fp.flow'] === true ? ` · flow ${FLOOD_REF_FLOW}` : '';
+  if (dashed) {
+    // both parts meet exactly at the last control point
+    const pt = `${X(dash).toFixed(1)},${Y(c.f(dash)).toFixed(1)}`;
+    solid += `L${pt}`;
+    dashed = `M${pt}${dashed}`;
+  }
+  const t = (x: number, y: number, s: string, anchor = 'start') => `<text x="${x}" y="${y}" font-size="9" fill="currentColor" opacity=".7" text-anchor="${anchor}">${s}</text>`;
+  let ref = '';
+  if (c.ref && c.ref.slope > 0) {
+    const xe = Math.min(xMax, yMax / c.ref.slope);
+    ref =
+      `<line x1="${X(0)}" y1="${Y(0)}" x2="${X(xe).toFixed(1)}" y2="${Y(c.ref.slope * xe).toFixed(1)}" stroke="currentColor" stroke-opacity=".3" stroke-dasharray="2 3"/>` +
+      `<text x="${(X(xe) - 2).toFixed(1)}" y="${(Y(c.ref.slope * xe) + 10).toFixed(1)}" font-size="8" fill="currentColor" opacity=".45" text-anchor="end">${c.ref.label}</text>`;
+  }
+  const dots = c.xs.map((x, i) => `<circle cx="${X(x).toFixed(1)}" cy="${Y(c.ys[i]).toFixed(1)}" r="3" fill="#fde725"><title>${c.pointTitle(i)}</title></circle>`).join('');
   host.innerHTML =
-    `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Floodplain half-width over river bed height">` +
-    `<line x1="${pl}" y1="${H - pb}" x2="${W - 4}" y2="${H - pb}" stroke="currentColor" stroke-opacity=".35"/>` +
+    `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="${c.label}">` +
+    `<line x1="${pl}" y1="${Y(0).toFixed(1)}" x2="${W - 4}" y2="${Y(0).toFixed(1)}" stroke="currentColor" stroke-opacity=".35"/>` +
     `<line x1="${pl}" y1="4" x2="${pl}" y2="${H - pb}" stroke="currentColor" stroke-opacity=".35"/>` +
-    `<path d="${d}" fill="none" stroke="#5aa0ff" stroke-width="2"/>${dots}` +
-    `<text x="${pl}" y="${H - 4}" font-size="9" fill="currentColor" opacity=".7">0</text>` +
-    `<text x="${W - 4}" y="${H - 4}" font-size="9" fill="currentColor" opacity=".7" text-anchor="end">${Math.round(xMax)} m bed height</text>` +
-    `<text x="${pl - 4}" y="10" font-size="9" fill="currentColor" opacity=".7" text-anchor="end">${Math.round(yMax)}</text>` +
-    `<text x="${pl - 4}" y="${H - pb}" font-size="9" fill="currentColor" opacity=".7" text-anchor="end">0 m</text>` +
-    `<text x="${W - 4}" y="12" font-size="9" fill="currentColor" opacity=".7" text-anchor="end">half-width${flow}</text>` +
+    ref +
+    `<path d="${solid}" fill="none" stroke="#5aa0ff" stroke-width="2"/>` +
+    (dashed ? `<path d="${dashed}" fill="none" stroke="#5aa0ff" stroke-width="2" stroke-dasharray="4 3" opacity=".7"/>` : '') +
+    dots +
+    t(pl, H - 4, '0') +
+    t(W - 4, H - 4, `${Math.round(xMax)} ${c.xLabel}`, 'end') +
+    t(pl - 4, 10, String(Math.round(yMax)), 'end') +
+    t(pl - 4, Y(0) + 3, `0 ${c.yUnit}`, 'end') +
+    (yMin < 0 ? t(pl - 4, H - pb, String(Math.round(yMin)), 'end') : '') +
+    t(W - 4, 12, c.title, 'end') +
     `</svg>`;
 }
-renderFloodPlot();
+
+/** Live plots of the floodplain curve (half-width over bed height) and the biomes' height cooling curve. */
+function renderPlots(): void {
+  const hs = [1, 2, 3, 4].map((i) => Number(params[`hgt.fp.h${i}`]));
+  const ws = [1, 2, 3, 4].map((i) => Number(params[`hgt.fp.w${i}`]));
+  renderCurvePlot({
+    section: 'floodplain',
+    cls: 'flood-plot',
+    label: 'Floodplain half-width over river bed height',
+    xs: hs,
+    ys: ws,
+    f: monotoneSpline(hs, ws),
+    xMax: Math.max(500, ...hs) * 1.15,
+    xLabel: 'm bed height',
+    yFloor: 50,
+    yUnit: 'm',
+    title: `half-width${params['hgt.fp.flow'] === true ? ` · flow ${FLOOD_REF_FLOW}` : ''}`,
+    pointTitle: (i) => `Point ${i + 1}: ${hs[i]} m → ${ws[i]} m`,
+  });
+  const bp = toBiomeParams(params);
+  renderCurvePlot({
+    section: 'biomes',
+    cls: 'cool-plot',
+    label: 'Cooling over height',
+    xs: bp.coolH,
+    ys: bp.coolT,
+    f: coolingCurve(bp.coolH, bp.coolT),
+    xMax: Math.max(2500, ...bp.coolH) * 1.25,
+    xLabel: 'm height',
+    yFloor: 5,
+    yUnit: '°C',
+    title: '°C cooler',
+    dashFrom: Math.max(...bp.coolH),
+    ref: { slope: 6.5 / 1000, label: '6.5 °C/km' },
+    pointTitle: (i) => `Cooling point ${i + 1}: ${bp.coolH[i]} m → ${bp.coolT[i]} °C cooler`,
+  });
+}
+renderPlots();
 const viewPanel = buildPanel($('viewPanel'), [VIEW_SECTION], params, onParam, resetSection);
 $('statsSec').querySelector('.sec-head')!.addEventListener('click', () => {
   $('statsSec').classList.toggle('collapsed');
@@ -188,7 +273,7 @@ function setParams(patch: Params): void {
   params = { ...params, ...patch };
   leftPanel.sync(params);
   viewPanel.sync(params);
-  renderFloodPlot();
+  renderPlots();
   const gen = Object.keys(patch).some((k) => GEN_KEYS.has(k) && before[k] !== params[k]);
   if (gen) regenerate();
   else {
@@ -199,6 +284,7 @@ function setParams(patch: Params): void {
     if (riv) rivers = new Rivers(world, toRiverParams(params, seedFromText(seedText)));
     if (riv || changed(TERRAIN_KEYS)) newTerrain();
     if (changed(CLIMATE_KEYS)) newClimate();
+    if (riv || changed(TERRAIN_KEYS) || changed(CLIMATE_KEYS) || changed(BIOME_KEYS)) newBiomes();
     viewChanged();
   }
 }
@@ -211,6 +297,7 @@ function regenerate(): void {
   rivers = new Rivers(world, toRiverParams(params, seedFromText(seedText)));
   newTerrain();
   newClimate();
+  newBiomes();
   genId++;
   timings.render = 0;
   fingerprint = '';
@@ -230,6 +317,12 @@ function regenerate(): void {
 
 function newClimate(): void {
   climate = new Climate(toClimateParams(params, seedFromText(seedText)));
+}
+
+/** Biomes on the current world, rivers, climate and terrain (rebuilt when any of them is). */
+function newBiomes(): void {
+  biomes = new Biomes(world, rivers, climate, terrain, toBiomeParams(params));
+  biomeGen++;
 }
 
 /** The climate overlays that are on, bottom first. */
@@ -281,9 +374,10 @@ function newTerrain(): void {
   meshDirty = texDirty = true;
 }
 
-/** Does the current display need the height map? */
+/** Does the current display need the height map? (The biomes need it for the height cooling.) */
 function needTerrain(): boolean {
-  return params['view.3d'] === true || params['view.hillshade'] === true || str(params, 'view.color') === 'height';
+  const mode = str(params, 'view.color');
+  return params['view.3d'] === true || params['view.hillshade'] === true || mode === 'height' || mode === 'biomes';
 }
 
 /** Ask the worker for exactly these tiles (nearest first), unless that is what it already has. */
@@ -454,7 +548,7 @@ function frame(): void {
   const useTerrain = needTerrain();
   terrainPending = 0;
   if (useTerrain) terrainPending = prepareTerrain(interacting ? 0 : now + 120);
-  const src = mapSource(world, `g${genId}`, viewOpts(), useTerrain ? terrain : null, terrainVer);
+  const src = mapSource(world, `g${genId}`, viewOpts(), useTerrain ? terrain : null, terrainVer, biomes, `${biomeGen}.${terrainVer}`);
   const fresh = !layer.hasContentFor(src.key);
   // while the 3D view covers the map and the user is moving it, the hidden 2D map is not
   // drawn (it is only needed as the 3D map image, which is re-draped once things settle)
@@ -558,7 +652,7 @@ function updateStatus(progress: number): void {
 
 function updateInspector(): void {
   const pt = pinned ?? hover;
-  renderInspector($('inspector'), world, params['riv.on'] === true ? rivers : null, pt ? { ...pt, pinned: !!pinned } : null, needTerrain() ? terrain : null, climate);
+  renderInspector($('inspector'), world, params['riv.on'] === true ? rivers : null, pt ? { ...pt, pinned: !!pinned } : null, needTerrain() ? terrain : null, climate, biomes);
 }
 
 let inspectTimer = 0;
@@ -822,7 +916,7 @@ presetSel.addEventListener('change', () => {
   for (const k of Object.keys(params)) if (!GEN_KEYS.has(k)) keep[k] = params[k];
   params = { ...d, ...keep, ...p.params };
   leftPanel.sync(params);
-  renderFloodPlot();
+  renderPlots();
   viewPanel.sync(params);
   regenerate();
   toast(p.label);
@@ -861,7 +955,7 @@ $('resetAll').addEventListener('click', () => {
   pinned = null;
   params = defaults();
   leftPanel.sync(params);
-  renderFloodPlot();
+  renderPlots();
   viewPanel.sync(params);
   regenerate();
   toast('Parameters reset');
@@ -993,7 +1087,7 @@ window.addEventListener('hashchange', () => {
   seedInput.value = seedText;
   params = s.params;
   leftPanel.sync(params);
-  renderFloodPlot();
+  renderPlots();
   viewPanel.sync(params);
   const c = camFromUrl();
   if (c) {
