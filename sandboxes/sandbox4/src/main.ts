@@ -60,8 +60,9 @@ let terrainBump = 0;
 let terrainGen = 0;
 /** tiles of the view received from the worker since the last frame */
 let tilesArrived = 0;
-/** terrain tiles the 2D view needs (the rest are the 3D mesh's margin) */
+/** terrain tiles the 2D view needs, and those of the 3D mesh's margin (the rest are look-ahead) */
 let viewTiles = new Set<number>();
+let marginTiles = new Set<number>();
 /** the missing tiles last asked of the worker (comma-joined) */
 let tilesWanted = '';
 /** the 3D mesh (heights, centred on the view) and the draped map image are stale */
@@ -224,9 +225,11 @@ const terrainWorker: Worker | null = (() => {
       const m = e.data;
       if (m.kind !== 'tile' || m.gen !== terrainGen) return;
       terrain.put(m.tile);
-      // a tile of the view re-renders the map; one of the 3D margin only the mesh
+      // a tile of the view re-renders the map, one of the 3D margin only the mesh; a
+      // look-ahead tile just waits in the cache until a pan reaches it
       if (viewTiles.has(m.tile.tile)) tilesArrived++;
-      else meshDirty = true;
+      else if (marginTiles.has(m.tile.tile)) meshDirty = true;
+      else return;
       invalidate();
     };
     wk.onerror = (e) => console.error('terrain worker', e.message);
@@ -280,9 +283,11 @@ function meshRect(): Rect {
 
 /**
  * Get the terrain tiles around the view: requested from the worker (or, without one,
- * computed here until `deadline`), and with the 3D view on also those of the mesh's
- * margin (after the view's own). Returns how many of the view's tiles are still
- * missing (-1 when the view spans too many regions).
+ * computed here until `deadline`), then, with the 3D view on, those of the mesh's
+ * margin, and last a look-ahead ring one tile wider all round, so the tiles a pan
+ * reaches are usually ready. All of them stay in the cache while they are needed.
+ * Returns how many of the view's tiles are still missing (-1 when the view spans too
+ * many regions).
  */
 function prepareTerrain(deadline: number): number {
   const { x0, y0, x1, y1 } = viewRect();
@@ -291,6 +296,7 @@ function prepareTerrain(deadline: number): number {
   if (World.countIn(R, x0, y0, x1, y1, 1) > budget) {
     terrain.setNeeded([]);
     viewTiles = new Set();
+    marginTiles = new Set();
     wantTiles([]);
     return -1;
   }
@@ -302,12 +308,17 @@ function prepareTerrain(deadline: number): number {
   const tiles = terrain.tilesIn(x0, y0, x1, y1).sort((a, b) => dist(a) - dist(b));
   viewTiles = new Set(tiles);
   let margin: number[] = [];
-  if (params['view.3d'] === true) {
-    const m = meshRect();
-    margin = terrain.tilesIn(m.x0, m.y0, m.x1, m.y1).filter((k) => !viewTiles.has(k)).sort((a, b) => dist(a) - dist(b));
-  }
-  terrain.setNeeded([...tiles, ...margin]);
-  if (terrainWorker) wantTiles([...tiles, ...margin].filter((k) => !terrain.hasTile(k)));
+  const near = params['view.3d'] === true ? meshRect() : { x0, y0, x1, y1 };
+  if (params['view.3d'] === true) margin = terrain.tilesIn(near.x0, near.y0, near.x1, near.y1).filter((k) => !viewTiles.has(k)).sort((a, b) => dist(a) - dist(b));
+  marginTiles = new Set(margin);
+  // look-ahead: one tile span further out on every side, computed last
+  const ring = terrain
+    .tilesIn(near.x0 - span, near.y0 - span, near.x1 + span, near.y1 + span)
+    .filter((k) => !viewTiles.has(k) && !marginTiles.has(k))
+    .sort((a, b) => dist(a) - dist(b));
+  const all = [...tiles, ...margin, ...ring];
+  terrain.setNeeded(all);
+  if (terrainWorker) wantTiles(all.filter((k) => !terrain.hasTile(k)));
   else {
     for (const k of tiles) {
       if (terrain.hasTile(k)) continue;

@@ -3,7 +3,7 @@
  * docs/research/heightmap-from-biomes-and-rivers.md), computed per tile on a raster.
  *
  * Tiles: tile (I, J) owns the k × k block of region lattice cells (i, j) with ⌊i/k⌋ = I,
- * ⌊j/k⌋ = J (k = 4, fewer for very large regions, see `tileSide`). Ownership is by the
+ * ⌊j/k⌋ = J (k = 2 for the default 128 km regions, see `tileSide`). Ownership is by the
  * region's lattice index, never by position: a region's land spills out of its lattice
  * cell, so a height is looked up as point → region → tile. One raster covers the whole
  * tile (steps 1–4 run once), and step 5 runs once per owned region on it. The result is
@@ -87,10 +87,15 @@ export interface TerrainParams {
   tile?: number;
 }
 
-/** World span a tile aims for at most, metres: 4 regions of the default 128 km. */
-const TILE_SPAN = 512_000;
+/**
+ * World span a tile aims for at most, metres: 2 regions of the default 128 km. Smaller
+ * tiles arrive sooner while panning (about 0.7 s instead of 2 s for 4 × 4 at 1 km cells)
+ * at about 1.5 × the cost per area, since each tile pays for its own halo and neighbours
+ * (docs/research/sandbox4-tiling.md).
+ */
+const TILE_SPAN = 256_000;
 
-/** Regions per tile side: 4, or fewer when regions are so large that 4 would make huge rasters. */
+/** Regions per tile side: 2 for 128 km regions, 1 from 256 km up, up to 4 for small regions (so tiles never get tiny). */
 export function tileSide(regionSize: number): number {
   return Math.max(1, Math.min(4, Math.floor(TILE_SPAN / regionSize)));
 }
@@ -188,8 +193,13 @@ export function monotoneSpline(xs: number[], ys: number[]): (x: number) => numbe
   };
 }
 
-/** Raster margin beyond the region, metres: sources this far out still shape the region. */
-export const HALO = 48_000;
+/**
+ * Raster margin beyond the region, metres: sources this far out still shape the region.
+ * Steps 1–4 only differ between overlapping rasters within ~20 km of a raster edge
+ * (measured: 0 beyond 20 km), so 24 km keeps every tile bit-identical to one raster per
+ * region (tested) with 20–25 % fewer cells than the earlier 48 km.
+ */
+export const HALO = 24_000;
 /** blend width of the per-land-type parameters across biome borders, metres */
 const BLEND = 4_000;
 /** ridge widths, metres */

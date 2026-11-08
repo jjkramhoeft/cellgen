@@ -2,7 +2,14 @@
 
 *Analysis date: 2026-11-07, commit `0591f46`. Question: what has to change so that Sandbox 4 generates the map in tiles four regions wide, and panning only computes the tiles that are newly needed?*
 
-**Status:** part 1 (terrain per tile, in a Web Worker) is implemented: `world/terrain.ts`, `world/terrain.worker.ts`, `main.ts`. A tile is `tileSide(regionSize)` regions per side: 4 up to 128 km regions, 2 at 256 km, 1 at 512 km. The bit-equality check is a test in `tests/terrain.test.ts`. Part 2 (2D render tiles) is not started.
+**Status:** part 1 (terrain per tile, in a Web Worker) is implemented: `world/terrain.ts`, `world/terrain.worker.ts`, `main.ts`. Since then:
+
+- Tiles aim for about 256 km: `tileSide(regionSize)` gives 2 × 2 for the default 128 km regions, 1 from 256 km up, and up to 4 × 4 for small regions.
+- `HALO` is 24 km, not 48 km.
+- The main thread also requests a look-ahead ring of tiles, one tile span beyond the view (and beyond the 3D mesh's margin).
+- The 3D view follows pans immediately.
+
+The bit-equality check is a test in `tests/terrain.test.ts`. Part 2 (2D render tiles) is not started. The note below describes the original 4 × 4 analysis.
 
 **Tile** in this note means a 4 × 4 block of region lattice cells. Tile `(I, J)` owns the regions `(i, j)` with `⌊i/4⌋ = I` and `⌊j/4⌋ = J`. With the default 128 km regions, a tile spans 512 km.
 

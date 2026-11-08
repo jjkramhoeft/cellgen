@@ -1,5 +1,5 @@
 /**
- * Terrain tiles off the main thread. A tile (4 × 4 regions) takes seconds to compute,
+ * Terrain tiles off the main thread. A tile (2 × 2 regions) takes about a second to compute,
  * which cannot be sliced between frames, so it runs here.
  *
  * The worker builds its own World / Rivers / Terrain from the parameters (all pure, no

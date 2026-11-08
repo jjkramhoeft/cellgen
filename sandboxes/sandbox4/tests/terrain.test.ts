@@ -27,7 +27,7 @@ function landRegions(w: World, n: number): number[] {
 /** Is cell q land of region r (whose final heights this tile computed)? */
 const own = (t: TerrainTile, q: number, r: number) => t.cls[q] === LAND && regionAt(t, q) === r;
 
-// whole tiles (4 × 4 regions, plus the rivers around them) take seconds each, more on CI runners
+// whole tiles (several regions, plus the rivers around them) take seconds each, more on CI runners
 describe('terrain', { timeout: 60_000 }, () => {
   it('A^−θ from √ only matches Math.pow', () => {
     for (const th of [0.375, 0.4375, 0.5] as const) for (const a of [1, 2, 7.5, 100, 4096]) expect(invPowTheta(a, th)).toBeCloseTo(Math.pow(a, -th), 12);
@@ -174,17 +174,18 @@ describe('terrain', { timeout: 60_000 }, () => {
     expect(maxDiff).toBe(0);
   });
 
-  it('tiles: 4 regions per side by default, fewer for huge regions; ownership by lattice index', () => {
-    expect(tileSide(128000)).toBe(4);
+  it('tiles: 2 regions per side by default (about 256 km), 1 for huge regions, up to 4 for small ones; ownership by lattice index', () => {
+    expect(tileSide(128000)).toBe(2);
+    expect(tileSide(64000)).toBe(4);
     expect(tileSide(32000)).toBe(4);
-    expect(tileSide(256000)).toBe(2);
+    expect(tileSide(256000)).toBe(1);
     expect(tileSide(512000)).toBe(1);
     const { t } = setup();
-    expect(t.k).toBe(4);
+    expect(t.k).toBe(2);
     expect(t.tileOf(packKey(-1, 0))).toBe(packKey(-1, 0));
-    expect(t.tileOf(packKey(3, 7))).toBe(packKey(0, 1));
-    expect(t.tileOf(packKey(4, -5))).toBe(packKey(1, -2));
-    expect(t.tileRegions(packKey(0, 1))).toContain(packKey(3, 7));
+    expect(t.tileOf(packKey(3, 7))).toBe(packKey(1, 3));
+    expect(t.tileOf(packKey(4, -5))).toBe(packKey(2, -3));
+    expect(t.tileRegions(packKey(1, 3))).toEqual([packKey(2, 6), packKey(3, 6), packKey(2, 7), packKey(3, 7)]);
   });
 
   it('is deterministic', () => {
@@ -330,7 +331,7 @@ describe('terrain', { timeout: 60_000 }, () => {
       }
     }
     // before: about half of all river nodes, by up to 1.3 km
-    expect(all).toBeGreaterThan(5000);
+    expect(all).toBeGreaterThan(2000);
     expect(perched / all).toBeLessThan(0.05);
     expect(deep / all).toBeLessThan(0.002);
   });

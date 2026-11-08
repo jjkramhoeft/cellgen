@@ -102,7 +102,7 @@ export function renderInspector(host: HTMLElement, world: World | null, rivers: 
     const h = terrain.heightAt(pt.x, pt.y);
     const t = terrain.peek(c.region);
     html += `<div class="kv" title="Height map (bilinear in the tile raster)"><span>Height</span><b>${h === h ? `${h.toFixed(0)} m` : 'not computed yet'}</b></div>`;
-    if (t) html += `<div class="kv" title="Tile raster (4 × 4 regions): cells · cells raised by the pit fill (largest raise) · compute time"><span>Terrain raster</span><b>${t.nx}×${t.ny} · ${t.filled} filled (≤ ${t.maxFill.toFixed(1)} m) · ${t.ms.toFixed(0)} ms</b></div>`;
+    if (t) html += `<div class="kv" title="Tile raster (a block of k × k regions, 2 × 2 by default): cells · cells raised by the pit fill (largest raise) · compute time"><span>Terrain raster</span><b>${t.nx}×${t.ny} · ${t.filled} filled (≤ ${t.maxFill.toFixed(1)} m) · ${t.ms.toFixed(0)} ms</b></div>`;
   }
 
   html += `<div class="lvl"><h4><i style="background:${regColor}"></i>Region ${ij(c.region)}</h4>`;
