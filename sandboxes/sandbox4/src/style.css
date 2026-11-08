@@ -383,6 +383,295 @@
   color: #b7c0cc;
 }
 
+/* Statistics section */
+.ms-status {
+  font: 11px var(--mono);
+  color: var(--warn);
+}
+
+.ms-scope {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.ms-scope select {
+  flex: 1;
+  min-width: 0;
+}
+
+#mapStats.stale {
+  opacity: 0.55;
+  transition: opacity 0.2s;
+}
+
+.ms-sub {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 14px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+
+.ms-seg {
+  display: inline-flex;
+  border: 1px solid var(--line-2);
+  border-radius: 5px;
+  overflow: hidden;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.ms-seg button {
+  background: transparent;
+  border: 0;
+  color: var(--muted);
+  font: 10.5px var(--sans);
+  padding: 1px 7px;
+  cursor: pointer;
+}
+
+.ms-seg button.on {
+  background: var(--line-2);
+  color: var(--text);
+}
+
+.ms-note {
+  margin: -1px 0 6px;
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.35;
+}
+
+.ms-hist {
+  display: grid;
+  gap: 5px;
+  margin-bottom: 6px;
+}
+
+.ms-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto 46px;
+  column-gap: 8px;
+  row-gap: 2px;
+  align-items: baseline;
+  font-size: 11.5px;
+}
+
+.ms-row .nm {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.ms-row .nm i {
+  flex: none;
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+}
+
+.ms-row b,
+.ms-row em {
+  font: 500 11px var(--mono);
+  font-style: normal;
+  text-align: right;
+}
+
+.ms-row em {
+  color: var(--muted);
+}
+
+.ms-row .tr {
+  grid-column: 1 / -1;
+  position: relative;
+  height: 5px;
+  border-radius: 2px;
+  background: var(--panel-2);
+}
+
+.ms-row .tr i {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+}
+
+.ms-row .tr u {
+  position: absolute;
+  top: -2px;
+  bottom: -2px;
+  width: 0;
+  border-left: 1px dashed rgba(215, 221, 230, 0.55);
+}
+
+.ms-row.rare .nm,
+.ms-row.rare em {
+  color: var(--warn);
+}
+
+.ms-row.none {
+  opacity: 0.55;
+}
+
+.ms-row.none .nm {
+  text-decoration: line-through;
+}
+
+.ms-flag {
+  margin: 2px 0 6px;
+  padding: 5px 8px;
+  border-radius: 5px;
+  font-size: 11px;
+  line-height: 1.4;
+  background: rgba(240, 180, 76, 0.1);
+  border: 1px solid rgba(240, 180, 76, 0.3);
+}
+
+.ms-flag b {
+  color: var(--warn);
+  margin-right: 4px;
+}
+
+.ms-flag.none {
+  background: rgba(240, 100, 90, 0.1);
+  border-color: rgba(240, 100, 90, 0.35);
+}
+
+.ms-flag.none b {
+  color: #f08a80;
+}
+
+.ms-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+  margin-bottom: 2px;
+}
+
+.ms-table th,
+.ms-table td {
+  padding: 2px 0;
+  text-align: right;
+  font-weight: 400;
+  white-space: nowrap;
+}
+
+.ms-table thead th {
+  color: var(--muted);
+  font-size: 10.5px;
+}
+
+.ms-table tbody th {
+  text-align: left;
+  color: var(--muted);
+}
+
+.ms-table small {
+  font-size: 10px;
+  opacity: 0.75;
+}
+
+.ms-table td {
+  font: 11px var(--mono);
+  width: 52px;
+}
+
+.ms-jump {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+  border-bottom: 1px dotted var(--muted);
+}
+
+.ms-jump:hover {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
+.ms-spark {
+  margin: 8px 0 4px;
+}
+
+.ms-spark-head,
+.ms-spark-ends {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.ms-spark-head em {
+  font-style: normal;
+  font-size: 10px;
+  opacity: 0.8;
+}
+
+.ms-spark-ends {
+  font: 10px var(--mono);
+}
+
+.ms-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 1px;
+  height: 30px;
+  margin: 3px 0 2px;
+  border-bottom: 1px solid var(--line-2);
+}
+
+.ms-bars i {
+  flex: 1;
+  border-radius: 1px 1px 0 0;
+}
+
+.ms-grid {
+  display: grid;
+  grid-template-columns: 58px repeat(5, 1fr);
+  gap: 2px;
+  margin-bottom: 4px;
+}
+
+.ms-grid .h {
+  font-size: 10px;
+  color: var(--muted);
+  text-align: center;
+  align-self: end;
+}
+
+.ms-grid .h.row {
+  text-align: left;
+  align-self: center;
+}
+
+.ms-grid i {
+  height: 20px;
+  border-radius: 3px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font: 500 10px var(--mono);
+  font-style: normal;
+}
+
+.ms-grid i.empty {
+  border: 1px dashed var(--line-2);
+}
+
+.ms-foot {
+  margin: 10px 0 0;
+}
+
 #toggleRight {
   display: none;
 }

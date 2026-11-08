@@ -21,6 +21,8 @@ import { drawGrid, drawGrowth, drawLinks, drawMerges, drawRivers, drawRuler, dra
 import { climateSource, type ClimateField } from './render/climate';
 import { DETAIL_PX, mapSource, type ViewMode, type ViewOpts } from './render/source';
 import { computeViewStats, renderInspector, type ClimateLegend, renderLegend, renderLevels, renderRuler, renderStats, type ViewStats } from './ui/widgets';
+import { renderMapStats, type BiomeSort } from './ui/mapstats';
+import { MapStatsJob, type MapStats } from './world/mapstats';
 import { buildMesh, View3D, type HeightGrid, type Rect } from './render/view3d';
 import { Biomes, coolingCurve } from './world/biomes';
 import { Climate } from './world/climate';
@@ -48,6 +50,12 @@ const CLIMATE_SCALE = 0.5;
 const CLIMATE_PREVIEW = 0.25;
 /** opacity of each climate overlay */
 const CLIMATE_ALPHA = 0.5;
+/** half the side of the Statistics section's fixed square around the origin, metres */
+const STATS_WORLD_HALF = 1_024_000;
+/** the Statistics wait this long after the last change before they are recomputed, ms */
+const STATS_DELAY = 450;
+/** time slice of the Statistics computation, ms */
+const STATS_SLICE = 12;
 
 // ------------------------------------------------------------------ state
 
@@ -86,6 +94,14 @@ let riverPending = 0;
 let genId = 0;
 let fingerprint = '';
 let stats: ViewStats | null = null;
+/** the Statistics section: last result, the job computing the next one, and the inputs it is (being) computed for */
+let mapStats: MapStats | null = null;
+let mapStatsJob: MapStatsJob | null = null;
+let mapStatsSig = '';
+/** inputs of the result on show */
+let shownSig = '';
+let mapStatsTimer = 0;
+let biomeSort: BiomeSort = 'legend';
 let hover: { x: number; y: number } | null = null;
 let pinned: { x: number; y: number } | null = null;
 let pinElevationZone = -1;
@@ -255,6 +271,22 @@ const viewPanel = buildPanel($('viewPanel'), [VIEW_SECTION], params, onParam, re
 $('statsSec').querySelector('.sec-head')!.addEventListener('click', () => {
   $('statsSec').classList.toggle('collapsed');
   scheduleStats();
+});
+$('mapStatsSec').querySelector('.sec-head')!.addEventListener('click', () => {
+  $('mapStatsSec').classList.toggle('collapsed');
+  if (statisticsOpen()) {
+    renderStatistics();
+    checkStatistics();
+  } else cancelStatistics();
+  // the open section asks for the view's terrain (exact heights for the biomes)
+  invalidate();
+});
+$('msScope').addEventListener('change', () => {
+  // a different area: start at once, without showing the old numbers meanwhile
+  mapStats = null;
+  shownSig = mapStatsSig = '';
+  renderStatistics();
+  checkStatistics();
 });
 
 function onParam(key: string, value: ParamValue): void {
@@ -526,6 +558,92 @@ function renderStatsPanel(): void {
   renderStats($('stats'), world, stats, { fingerprint, render: timings.render, cache: world.cacheStats });
 }
 
+// ------------------------------------------------------------------ statistics section
+
+function statisticsOpen(): boolean {
+  return !$('mapStatsSec').classList.contains('collapsed');
+}
+
+/** The rectangle the Statistics are taken over: the view, or a fixed square at the origin. */
+function statisticsRect(): Rect {
+  if ($<HTMLSelectElement>('msScope').value === 'world') return { x0: -STATS_WORLD_HALF, y0: -STATS_WORLD_HALF, x1: STATS_WORLD_HALF, y1: STATS_WORLD_HALF };
+  return viewRect();
+}
+
+/** Everything the Statistics depend on: the world, biomes, computed terrain and rectangle. */
+function statisticsSig(): string {
+  const r = statisticsRect();
+  return `${genId}|${biomeGen}|${terrainVer}|${Math.round(r.x0)},${Math.round(r.y0)},${Math.round(r.x1)},${Math.round(r.y1)}`;
+}
+
+/** Restart the Statistics (after a short pause) when anything they depend on has changed. */
+function checkStatistics(): void {
+  if (!statisticsOpen()) return;
+  const sig = statisticsSig();
+  if (sig === mapStatsSig) return;
+  mapStatsSig = sig;
+  mapStatsJob = null;
+  clearTimeout(mapStatsTimer);
+  if (sig !== shownSig) mapStatsTimer = window.setTimeout(startStatistics, mapStats ? STATS_DELAY : 0);
+  renderStatisticsStatus();
+}
+
+/** Stop computing (the section was closed); reopening recomputes only if something changed. */
+function cancelStatistics(): void {
+  clearTimeout(mapStatsTimer);
+  mapStatsJob = null;
+  mapStatsSig = shownSig;
+  renderStatisticsStatus();
+}
+
+function startStatistics(): void {
+  if (!statisticsOpen()) return;
+  const job = new MapStatsJob(world, biomes, terrain, statisticsRect());
+  mapStatsJob = job;
+  runStatistics(job, mapStatsSig);
+}
+
+/** One time slice of the job; it waits while the user is moving the map. */
+function runStatistics(job: MapStatsJob, sig: string): void {
+  if (job !== mapStatsJob) return;
+  if (performance.now() - lastInteract < 200) {
+    mapStatsTimer = window.setTimeout(() => runStatistics(job, sig), 200);
+    return;
+  }
+  if (job.step(performance.now() + STATS_SLICE)) {
+    mapStats = job.result;
+    mapStatsJob = null;
+    shownSig = sig;
+    renderStatistics();
+  } else {
+    renderStatisticsStatus();
+    mapStatsTimer = window.setTimeout(() => runStatistics(job, sig), 0);
+  }
+}
+
+/** "updating" in the section head (and the shown numbers dimmed) while they are out of date. */
+function renderStatisticsStatus(): void {
+  const busy = statisticsOpen() && shownSig !== mapStatsSig;
+  $('msStatus').textContent = busy ? (mapStatsJob ? `updating ${Math.round(mapStatsJob.progress * 100)} %` : 'updating…') : '';
+  $('mapStats').classList.toggle('stale', busy && mapStats !== null);
+}
+
+function renderStatistics(): void {
+  renderMapStats($('mapStats'), mapStats, biomeSort, jumpTo, (s) => {
+    biomeSort = s;
+    renderStatistics();
+  });
+  renderStatisticsStatus();
+}
+
+/** Centre the view on a point and pin it (the Statistics' min / max links). */
+function jumpTo(x: number, y: number): void {
+  setCam({ ...cam, cx: x, cy: y });
+  pinned = { x, y };
+  refreshPins();
+  viewChanged();
+}
+
 function detailOn(): boolean {
   return str(params, 'view.lod') === 'full' || world.subLevel.size * cam.zoom * (window.devicePixelRatio || 1) >= DETAIL_PX;
 }
@@ -547,7 +665,8 @@ function frame(): void {
   world.trim(CACHE_LIMIT);
   const useTerrain = needTerrain();
   terrainPending = 0;
-  if (useTerrain) terrainPending = prepareTerrain(interacting ? 0 : now + 120);
+  // the open Statistics section also wants the view's terrain (exact heights for the biomes)
+  if (useTerrain || statisticsOpen()) terrainPending = prepareTerrain(interacting ? 0 : now + 120);
   const src = mapSource(world, `g${genId}`, viewOpts(), useTerrain ? terrain : null, terrainVer, biomes, `${biomeGen}.${terrainVer}`);
   const fresh = !layer.hasContentFor(src.key);
   // while the 3D view covers the map and the user is moving it, the hidden 2D map is not
@@ -624,6 +743,7 @@ function frame(): void {
   const terrainBusy = terrainPending > 0;
   $('busy').hidden = !layer.busy && riverPending === 0 && !terrainBusy && !climateBusy;
   if (params['view.3d'] === true) update3d(interacting, !terrainBusy, !layer.busy && riverPending === 0 && !terrainBusy && !climateBusy && !interacting);
+  checkStatistics();
   // with a worker, arriving tiles wake the loop (no need to spin while it works)
   if (layer.busy || climateBusy || riverPending > 0 || (terrainBusy && !terrainWorker)) invalidate();
   else if (interacting || fresh) {
