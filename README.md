@@ -41,7 +41,7 @@ shared/params/              parameter schema types and helpers, URL hash state
 shared/ui/                  schema-driven parameter panel, HTML escaping, base theme (base.css)
 shared/tests/               tests for the shared core
 sandboxes/registry.ts       title, summary and status of every sandbox
-sandboxes/<id>/             one sandbox: index.html, src/, tests/  → served at /sandboxes/<id>/
+sandboxes/<id>/             one sandbox: index.html, defaults.json, src/, tests/  → served at /sandboxes/<id>/
 sandboxes/_template/        skeleton copied by the scaffold script (not built or listed)
 scripts/new-sandbox.mjs     scaffolder
 docs/research/              research notes behind the sandboxes
@@ -50,13 +50,17 @@ sandbox3.md                 the original spec of the three-level base map (used 
 
 Import shared code with the `@shared/…` alias, for example `import { fbm } from '@shared/core/noise'`. Keep sandbox-specific code inside its own folder, and move something into `shared/` once a second sandbox needs it.
 
+### Default settings
+
+Every sandbox keeps its default settings in `sandboxes/<id>/defaults.json`: the default `seed` and the default value of every parameter in `params`, by key. Edit that file to change what a sandbox starts with. The parameter schema (`src/params.ts`, or `src/params/schema.ts` in Sandbox 1) describes each parameter's label, range and options but holds no defaults. `bindDefaults` in `shared/params/schema.ts` attaches them when the page loads, and it throws if a parameter has no default, if a value has the wrong type, is out of range or is not one of the options, or if the file has a key that no parameter uses. Any of these makes the tests fail, so the file and the schema stay in step.
+
 ### Adding a sandbox
 
 ```bash
 npm run new-sandbox -- sandbox5 "Sandbox 5 · <topic>"
 ```
 
-This copies `sandboxes/_template` (parameter panel, seed and URL state, zoomable canvas) into `sandboxes/sandbox5/` and registers it as ready. Vite picks up any `sandboxes/<id>/index.html` automatically. `sandboxes/registry.test.ts` fails if the pages and the registry disagree.
+This copies `sandboxes/_template` (parameter panel, seed and URL state, zoomable canvas, `defaults.json`) into `sandboxes/sandbox5/` and registers it as ready. Add each new parameter to both the schema and `defaults.json`. Vite picks up any `sandboxes/<id>/index.html` automatically. `sandboxes/registry.test.ts` fails if the pages and the registry disagree.
 
 Old links of the form `/#seed=…`, from before the landing page existed, are forwarded to Sandbox 1.
 

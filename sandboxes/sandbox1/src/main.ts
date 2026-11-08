@@ -16,7 +16,7 @@ import { runPipeline, type World } from './gen/pipeline';
 import { buildGraph, graphKey } from './graph/build';
 import type { CellGraph } from './graph/types';
 import { PRESETS } from './params/presets';
-import { ALL_DEFS, DEF_BY_KEY, defaults, FIELD_OPTIONS, SECTIONS, VIEW_SECTION, type Params, type ParamValue, type Section } from './params/schema';
+import { ALL_DEFS, DEF_BY_KEY, DEFAULT_SEED, defaults, FIELD_OPTIONS, SECTIONS, VIEW_SECTION, type Params, type ParamValue, type Section } from './params/schema';
 import { decodeState, encodeState } from '@shared/params/url';
 import { fitCamera, screenToWorld, zoomAt, type Camera } from '@shared/render/camera';
 import { Renderer } from './render/renderer';
@@ -26,8 +26,8 @@ import { renderInspector, renderLegend, renderStats } from './ui/widgets';
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
 // ------------------------------------------------------------------ state
-const initial = decodeState(location.hash, ALL_DEFS, 'cellgen');
-let seedText = initial?.seed ?? 'cellgen';
+const initial = decodeState(location.hash, ALL_DEFS, DEFAULT_SEED);
+let seedText = initial?.seed ?? DEFAULT_SEED;
 let params: Params = initial?.params ?? defaults();
 let world: World | null = null;
 const graphCache = new Map<string, { g: CellGraph; ms: number }>();
@@ -93,7 +93,7 @@ presetSel.addEventListener('change', () => {
 const seedInput = $<HTMLInputElement>('seed');
 seedInput.value = seedText;
 seedInput.addEventListener('change', () => {
-  seedText = seedInput.value.trim() || 'cellgen';
+  seedText = seedInput.value.trim() || DEFAULT_SEED;
   scheduleGenerate(true);
 });
 seedInput.addEventListener('keydown', (e) => e.stopPropagation());
@@ -167,7 +167,7 @@ function updateUrl(): void {
 }
 
 window.addEventListener('hashchange', () => {
-  const s = decodeState(location.hash, ALL_DEFS, 'cellgen');
+  const s = decodeState(location.hash, ALL_DEFS, DEFAULT_SEED);
   if (!s) return;
   if (encodeState(s.seed, s.params, ALL_DEFS) === encodeState(seedText, params, ALL_DEFS)) return;
   seedText = s.seed;

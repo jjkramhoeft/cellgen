@@ -1,0 +1,8 @@
+{
+  "seed": "cellgen",
+  "params": {
+    "pts.method": "poisson",
+    "pts.n": 1500,
+    "pts.jitter": 0.9
+  }
+}

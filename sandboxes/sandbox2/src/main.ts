@@ -16,7 +16,7 @@ import { decodeState, encodeState } from '@shared/params/url';
 import { fitCamera, screenToWorld, zoomAt, type Camera, type Viewport } from '@shared/render/camera';
 import { RasterLayer } from '@shared/render/raster';
 import { buildPanel } from '@shared/ui/panel';
-import { ALL_DEFS, defaults, GEN_KEYS, MAP_H, MAP_W, SECTIONS, toFieldParams, VIEW_MODES, VIEW_SECTION } from './params';
+import { ALL_DEFS, DEFAULT_SEED, defaults, GEN_KEYS, MAP_H, MAP_W, SECTIONS, toFieldParams, VIEW_MODES, VIEW_SECTION } from './params';
 import { PRESETS } from './presets';
 import { drawLattice, drawMapBorder, drawOceanSeeds, drawProbe, drawSites } from './render/overlays';
 import { fieldSource, type EdgeMode, type ViewMode, type ViewOpts } from './render/source';
@@ -26,7 +26,6 @@ import { METRIC_IDS, metricInfo, type MetricId } from './voronoi/metrics';
 import { buildGallery, renderInspector, renderLegend, renderMetricCard, renderStats } from './ui/widgets';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
-const DEFAULT_SEED = 'voronoi';
 const CALIB_GRID = 256;
 const MIN_ZOOM = 0.02;
 const MAX_ZOOM = 2000;

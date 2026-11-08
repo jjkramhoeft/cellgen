@@ -54,7 +54,7 @@ export interface TerrainParams {
   theta: Theta;
   /** multiplier on the hillslope steepness of every land type */
   hill: number;
-  /** hillslope steepness per land type (index = LAND_TYPES order), m/m */
+  /** hillslope steepness per land type (index = LAND_TYPES order), m/m; defaults: hgt.hs.* in defaults.json */
   hillType: number[];
   /**
    * Levelling of low-gradient biomes, 0–1: a biome with river gradient factor c < 1 has
@@ -123,22 +123,6 @@ const TYPES: { amp: number; ridged: number }[] = [
   { amp: 180, ridged: 1 }, // Mountains
 ];
 
-/**
- * Default hillslope steepness per land type (m/m): how fast the land rises away from
- * its rivers and the coast. Plains (marsh, steppe, savanna, grassland) are near flat,
- * hills and mountains steep, so they read as different kinds of land.
- */
-export const DEFAULT_HILL = [0.008, 0.02, 0.025, 0.006, 0.01, 0.02, 0.002, 0.15, 0.006, 0.02, 0.03, 0.03, 0.3];
-
-/**
- * Default river gradient factor per land type (the report's §7.2 "Channel ×S₀"
- * column, plus Mountains): marshes rise slowly, hills and mountains steeply.
- */
-export const DEFAULT_CHAN = [0.7, 1.0, 1.0, 0.7, 0.8, 1.0, 0.3, 1.8, 0.7, 1.0, 1.0, 1.0, 3.0];
-
-/** Default floodplain curve: wide on the lowland plains, narrow in the mountains (half-widths for a flow of 100). */
-export const DEFAULT_FLOOD_H = [0, 100, 400, 1000];
-export const DEFAULT_FLOOD_W = [500, 400, 150, 40];
 /** flow whose floodplain is exactly the curve when "scale with river size" is on */
 export const FLOOD_REF_FLOW = 100;
 
@@ -361,13 +345,13 @@ export class Terrain {
     return t;
   }
 
-  /** River gradient factor of a land type (falls back to 1 for an unknown index). */
-  /** Hillslope steepness of a land type (falls back to the default for an unknown index). */
+  /** Hillslope steepness of a land type (0.03 for an unknown index). */
   hillOf(type: number): number {
-    const v = this.p.hillType?.[type];
-    return v === undefined ? (DEFAULT_HILL[type] ?? 0.03) : Math.max(0, v);
+    const v = this.p.hillType[type];
+    return v === undefined ? 0.03 : Math.max(0, v);
   }
 
+  /** River gradient factor of a land type (1 for an unknown index). */
   chanOf(type: number): number {
     const f = this.p.chanFactor[type];
     return f === undefined ? 1 : f;

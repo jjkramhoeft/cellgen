@@ -10,11 +10,10 @@ import { num, str, type Params, type ParamValue } from '@shared/params/schema';
 import { decodeState, encodeState } from '@shared/params/url';
 import { fitCamera, zoomAt, type Camera, type Viewport } from '@shared/render/camera';
 import { buildPanel } from '@shared/ui/panel';
-import { ALL_DEFS, defaults, SECTIONS } from './params';
+import { ALL_DEFS, DEFAULT_SEED, defaults, SECTIONS } from './params';
 
 const W = 1600;
 const H = 1000;
-const DEFAULT_SEED = 'cellgen';
 
 const initial = decodeState(location.hash, ALL_DEFS, DEFAULT_SEED);
 let seedText = initial?.seed ?? DEFAULT_SEED;
