@@ -4,10 +4,7 @@ import { WATER_LAKE, WATER_OCEAN } from '../gen/hydrology';
 import type { World } from '../gen/pipeline';
 import type { Legend } from '../render/colorize';
 import { cssRgb, type RGB } from '@shared/render/colormaps';
-
-function esc(s: string): string {
-  return s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
-}
+import { esc } from '@shared/ui/html';
 
 function gradientCanvas(cm: (t: number) => RGB, w = 220, h = 10): HTMLCanvasElement {
   const c = document.createElement('canvas');

@@ -1,3 +1,4 @@
+/** Sandbox 2 parameter schema (panels and URL state) and its mapping to FieldParams. */
 import { and, defaultsOf, is, num, opt, str, type ParamDef, type Params, type Section } from '@shared/params/schema';
 import type { FieldParams, Shape, ValueNoise } from './voronoi/field';
 import type { WeightMode } from './voronoi/lattice';
@@ -225,6 +226,7 @@ export const SECTIONS: Section[] = [
   },
 ];
 
+/** Colour modes: [id, label]. */
 export const VIEW_MODES = [
   ['terrain', 'Land & water (relief)'],
   ['flat', 'Land & water (flat)'],
@@ -290,10 +292,12 @@ export const VIEW_SECTION: Section = {
 export const ALL_DEFS: ParamDef[] = [...SECTIONS.flatMap((s) => s.params), ...VIEW_SECTION.params];
 export const GEN_KEYS = new Set(SECTIONS.flatMap((s) => s.params.map((d) => d.key)));
 
+/** Every parameter at its default value. */
 export function defaults(): Params {
   return defaultsOf(ALL_DEFS);
 }
 
+/** Schema → model parameters for Field. */
 export function toFieldParams(p: Params, seed: number): FieldParams {
   const metric = {
     id: str(p, 'metric.kind') as MetricId,

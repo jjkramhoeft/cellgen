@@ -1,3 +1,4 @@
+/** The cell graph shared by every builder and the field pipeline. */
 import type { SiteIndex, MetricSpec, WeightKind } from '@shared/core/spatial';
 
 export type GraphKind = 'square' | 'hex' | 'tri' | 'voronoi' | 'implicit';
@@ -59,6 +60,7 @@ export interface CellGraph {
   info: Record<string, string | number>;
 }
 
+/** Number of neighbours of cell i. */
 export function degree(g: CellGraph, i: number): number {
   return g.nbrOff[i + 1] - g.nbrOff[i];
 }

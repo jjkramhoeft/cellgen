@@ -1,3 +1,4 @@
+/** Shared last step of the explicit graph builders (grids and Voronoi): polygons → CellGraph. */
 import { SiteIndex } from '@shared/core/spatial';
 import { buildCSR, type CellGraph, type GraphKind } from './types';
 import { polyCentroid, polyPerimeter, dedupe, type LPoly } from './polygon';

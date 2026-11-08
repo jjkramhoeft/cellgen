@@ -140,16 +140,3 @@ export function dedupe(p: LPoly, eps: number): LPoly {
   }
   return { xs, ys, lbl };
 }
-
-/** Point-in-polygon by crossing number over a flat polygon slice. */
-export function pointInPoly(xy: Float64Array, o: number, m: number, x: number, y: number): boolean {
-  let inside = false;
-  for (let k = 0, j = m - 1; k < m; j = k++) {
-    const xi = xy[2 * (o + k)];
-    const yi = xy[2 * (o + k) + 1];
-    const xj = xy[2 * (o + j)];
-    const yj = xy[2 * (o + j) + 1];
-    if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
-  }
-  return inside;
-}

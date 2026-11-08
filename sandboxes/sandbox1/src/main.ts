@@ -1,3 +1,15 @@
+/**
+ * Sandbox 1 · Cell generation.
+ *
+ * Generation: build a cell graph (Voronoi, square/hex/triangle grid or implicit
+ * distance-function cells, src/graph), then run the field pipeline on it: elevation,
+ * plates, climate and biomes, hydrology, noise paths, space colonization and
+ * cellular automata (src/gen).
+ * The graph is cached by its own parameters, so field-only edits skip the rebuild.
+ *
+ * Display: Renderer (src/render) draws polygons, rasters and overlays with zoom and
+ * pan; the page adds a minimap, inspector, statistics and an A/B compare split.
+ */
 import './style.css';
 import { seedFromText } from '@shared/core/hash';
 import { runPipeline, type World } from './gen/pipeline';

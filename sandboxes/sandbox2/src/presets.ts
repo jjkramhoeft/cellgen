@@ -1,3 +1,4 @@
+/** Sandbox 2 presets (the Presets menu). */
 import type { Params } from '@shared/params/schema';
 
 export interface Preset {

@@ -4,7 +4,7 @@
  * zoom: a pixel is on an edge when its octave-k cell differs from its left or upper
  * neighbour's.
  */
-import { COLORMAPS, hashColor, type RGB } from '@shared/render/colormaps';
+import { COLORMAPS, hashColor, packColor, type RGB } from '@shared/render/colormaps';
 import type { RasterSource } from '@shared/render/raster';
 import { newSample, type Calibration, type Field } from '../voronoi/field';
 
@@ -22,19 +22,15 @@ export interface ViewOpts {
   pinned: { oct: number; id: number } | null;
 }
 
-export function pack(r: number, g: number, b: number): number {
-  return (0xff000000 | (Math.max(0, Math.min(255, b)) << 16) | (Math.max(0, Math.min(255, g)) << 8) | Math.max(0, Math.min(255, r))) >>> 0;
-}
-
 function scale(c: number, f: number): number {
-  return pack((c & 255) * f, ((c >>> 8) & 255) * f, ((c >>> 16) & 255) * f);
+  return packColor((c & 255) * f, ((c >>> 8) & 255) * f, ((c >>> 16) & 255) * f);
 }
 
 function mix(c: number, r: number, g: number, b: number, t: number): number {
   const cr = c & 255;
   const cg = (c >>> 8) & 255;
   const cb = (c >>> 16) & 255;
-  return pack(cr + (r - cr) * t, cg + (g - cg) * t, cb + (b - cb) * t);
+  return packColor(cr + (r - cr) * t, cg + (g - cg) * t, cb + (b - cb) * t);
 }
 
 /** A colour map baked into a 256-entry lookup table of packed pixels. */
@@ -42,7 +38,7 @@ function lut(fn: (t: number) => RGB): Uint32Array {
   const out = new Uint32Array(256);
   for (let i = 0; i < 256; i++) {
     const c = fn(i / 255);
-    out[i] = pack(c[0], c[1], c[2]);
+    out[i] = packColor(c[0], c[1], c[2]);
   }
   return out;
 }
@@ -76,9 +72,9 @@ const DIVERGING = lut(COLORMAPS.diverging);
 const GRAY = lut(COLORMAPS.gray);
 const FLUX = lut(COLORMAPS.flux);
 
-const FLAT_LAND = pack(150, 178, 112);
-const FLAT_WATER = pack(38, 78, 128);
-const COAST = pack(16, 22, 32);
+const FLAT_LAND = packColor(150, 178, 112);
+const FLAT_WATER = packColor(38, 78, 128);
+const COAST = packColor(16, 22, 32);
 
 const idColorCache = new Map<number, number>();
 function idColor(id: number, oct: number): number {
@@ -86,7 +82,7 @@ function idColor(id: number, oct: number): number {
   let c = idColorCache.get(key);
   if (c === undefined) {
     const rgb = hashColor(key);
-    c = pack(rgb[0], rgb[1], rgb[2]);
+    c = packColor(rgb[0], rgb[1], rgb[2]);
     if (idColorCache.size > 100000) idColorCache.clear();
     idColorCache.set(key, c);
   }
@@ -137,7 +133,7 @@ export function makeColorer(field: Field, cal: Calibration, v: ViewOpts): (s: Re
           g += amps[k] * ((ck >>> 8) & 255);
           b += amps[k] * ((ck >>> 16) & 255);
         }
-        c = pack(r, g, b);
+        c = packColor(r, g, b);
         break;
       }
       case 'f1':
@@ -227,7 +223,7 @@ export function fieldSource(field: Field, cal: Calibration, genKey: string, v: V
             const isIn = id === pinned.id;
             const leftIn = c > 0 ? curIds[base - K + pinned.oct] === pinned.id : isIn;
             const upIn = first ? isIn : prevIds[base + pinned.oct] === pinned.id;
-            if (isIn !== leftIn || isIn !== upIn) col = pack(253, 231, 37);
+            if (isIn !== leftIn || isIn !== upIn) col = packColor(253, 231, 37);
             else if (isIn) col = mix(col, 253, 231, 37, 0.28);
           }
           if (v.coast) {

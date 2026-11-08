@@ -11,10 +11,6 @@ export interface Viewport {
   h: number;
 }
 
-export function worldToScreen(c: Camera, v: Viewport, x: number, y: number): [number, number] {
-  return [(x - c.cx) * c.zoom + v.w / 2, (y - c.cy) * c.zoom + v.h / 2];
-}
-
 export function screenToWorld(c: Camera, v: Viewport, sx: number, sy: number): [number, number] {
   return [(sx - v.w / 2) / c.zoom + c.cx, (sy - v.h / 2) / c.zoom + c.cy];
 }

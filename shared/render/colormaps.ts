@@ -4,6 +4,11 @@ export type ColormapId = 'terrain' | 'viridis' | 'magma' | 'moisture' | 'tempera
 
 export type RGB = [number, number, number];
 
+/** Pack r, g, b (clamped to 0–255, fractions truncated) into an opaque ABGR pixel for an ImageData Uint32 view. */
+export function packColor(r: number, g: number, b: number): number {
+  return (0xff000000 | (Math.max(0, Math.min(255, b)) << 16) | (Math.max(0, Math.min(255, g)) << 8) | Math.max(0, Math.min(255, r))) >>> 0;
+}
+
 export function hex(h: string): RGB {
   const v = parseInt(h.slice(1), 16);
   return [(v >> 16) & 255, (v >> 8) & 255, v & 255];

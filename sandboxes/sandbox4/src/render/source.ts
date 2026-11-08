@@ -5,7 +5,7 @@
  * neighbour's.
  */
 import { hash4 } from '@shared/core/hash';
-import { hashColor, hsl, type RGB } from '@shared/render/colormaps';
+import { hashColor, packColor, hsl, type RGB } from '@shared/render/colormaps';
 import type { RasterSource } from '@shared/render/raster';
 import { keyI, keyJ } from '../world/level';
 import { ORIGIN, type Cell, type World } from '../world/world';
@@ -27,20 +27,17 @@ export interface ViewOpts {
   hillshade: boolean;
 }
 
-export function pack(r: number, g: number, b: number): number {
-  return (0xff000000 | (Math.max(0, Math.min(255, b)) << 16) | (Math.max(0, Math.min(255, g)) << 8) | Math.max(0, Math.min(255, r))) >>> 0;
-}
-const packRGB = (c: RGB) => pack(c[0], c[1], c[2]);
+const packRGB = (c: RGB) => packColor(c[0], c[1], c[2]);
 
 function scale(c: number, f: number): number {
-  return pack((c & 255) * f, ((c >>> 8) & 255) * f, ((c >>> 16) & 255) * f);
+  return packColor((c & 255) * f, ((c >>> 8) & 255) * f, ((c >>> 16) & 255) * f);
 }
 
 function mix(c: number, r: number, g: number, b: number, t: number): number {
   const cr = c & 255;
   const cg = (c >>> 8) & 255;
   const cb = (c >>> 16) & 255;
-  return pack(cr + (r - cr) * t, cg + (g - cg) * t, cb + (b - cb) * t);
+  return packColor(cr + (r - cr) * t, cg + (g - cg) * t, cb + (b - cb) * t);
 }
 
 /** Display hash of a cell key (salted per level). */
@@ -82,11 +79,11 @@ export const GENESIS: { origin: number; name: string; rgb: RGB }[] = [
 ];
 const GENESIS_PX = new Map(GENESIS.map((g) => [g.origin, packRGB(g.rgb)]));
 
-const FLAT_LAND = pack(150, 178, 112);
-const FLAT_OCEAN = pack(38, 78, 128);
-const COAST = pack(14, 20, 30);
+const FLAT_LAND = packColor(150, 178, 112);
+const FLAT_OCEAN = packColor(38, 78, 128);
+const COAST = packColor(14, 20, 30);
 /** Region borders: a 3 px red dashed line, drawn over land, ocean and the coastline. */
-const REGION_EDGE = pack(235, 28, 36);
+const REGION_EDGE = packColor(235, 28, 36);
 const REGION_THICK = 3;
 const REGION_DASH_ON = 4;
 const REGION_DASH_PERIOD = 7;
@@ -139,7 +136,7 @@ export function colorOf(c: Cell, mode: ViewMode): number {
       return c.ocean ? scale(px, 0.42) : px;
     }
     case 'merges': {
-      let px = c.ocean ? pack(40, 58, 84) : pack(118, 124, 112);
+      let px = c.ocean ? packColor(40, 58, 84) : packColor(118, 124, 112);
       if (c.biomeMerged) {
         const h = keyHash(c.biome, 6);
         px = packRGB(hsl((18 + (h % 34)) / 360, 0.75, c.ocean ? 0.38 : 0.55));
@@ -155,11 +152,11 @@ export function colorOf(c: Cell, mode: ViewMode): number {
       // cosmetic map
       if (c.ocean) {
         const f = jitterF(keyHash(c.biome, 8), 0.07) * (c.sub >= 0 ? jitterF(keyHash(c.sub, 9), 0.03) : 1);
-        return pack(OCEAN_RGB[0] * f, OCEAN_RGB[1] * f, OCEAN_RGB[2] * f);
+        return packColor(OCEAN_RGB[0] * f, OCEAN_RGB[1] * f, OCEAN_RGB[2] * f);
       }
       const t = LAND_TYPES[landType(c.biome)].rgb;
       const f = c.sub >= 0 ? jitterF(keyHash(c.sub, 9), 0.08) : 1;
-      return pack(t[0] * f, t[1] * f, t[2] * f);
+      return packColor(t[0] * f, t[1] * f, t[2] * f);
     }
   }
 }
@@ -185,18 +182,18 @@ const LAND_STOPS: [number, number, number, number][] = [
 export function heightColor(h: number): number {
   if (h < 0) {
     const t = Math.min(1, -h / 1200);
-    return pack(84 - 62 * t, 150 - 104 * t, 200 - 100 * t);
+    return packColor(84 - 62 * t, 150 - 104 * t, 200 - 100 * t);
   }
   for (let k = 1; k < LAND_STOPS.length; k++) {
     const [h1, r1, g1, b1] = LAND_STOPS[k];
     if (h <= h1) {
       const [h0, r0, g0, b0] = LAND_STOPS[k - 1];
       const t = (h - h0) / (h1 - h0);
-      return pack(r0 + (r1 - r0) * t, g0 + (g1 - g0) * t, b0 + (b1 - b0) * t);
+      return packColor(r0 + (r1 - r0) * t, g0 + (g1 - g0) * t, b0 + (b1 - b0) * t);
     }
   }
   const last = LAND_STOPS[LAND_STOPS.length - 1];
-  return pack(last[1], last[2], last[3]);
+  return packColor(last[1], last[2], last[3]);
 }
 
 /** Light from the north-west, 45° up (screen y grows southwards). */
@@ -301,11 +298,11 @@ export function mapSource(world: World, genKey: string, v: ViewOpts, terrain: Te
           // pinned outlines on top
           if (v.pinBiome >= 0) {
             const inB = bio[c] === v.pinBiome;
-            if ((l && (bio[c - 1] === v.pinBiome) !== inB) || (u && (pBio[c] === v.pinBiome) !== inB)) px = pack(253, 231, 37);
+            if ((l && (bio[c - 1] === v.pinBiome) !== inB) || (u && (pBio[c] === v.pinBiome) !== inB)) px = packColor(253, 231, 37);
           }
           if (v.pinSub >= 0 && detail) {
             const inS = sub[c] === v.pinSub;
-            if ((l && (sub[c - 1] === v.pinSub) !== inS) || (u && (pSub[c] === v.pinSub) !== inS)) px = pack(90, 230, 255);
+            if ((l && (sub[c - 1] === v.pinSub) !== inS) || (u && (pSub[c] === v.pinSub) !== inS)) px = packColor(90, 230, 255);
           }
           out[off + c] = px;
         }

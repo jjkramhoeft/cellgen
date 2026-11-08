@@ -1,4 +1,6 @@
+/** Landing page: one card per sandbox in sandboxes/registry.ts. */
 import './style.css';
+import { esc } from '@shared/ui/html';
 import { SANDBOXES } from '../sandboxes/registry';
 
 // Links made before the repo had a landing page pointed at the root with Sandbox 1's
@@ -8,7 +10,6 @@ if (/(^#|&)seed=/.test(location.hash)) {
 }
 
 const host = document.getElementById('sandboxes')!;
-const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
 
 host.innerHTML = SANDBOXES.map((s) => {
   const tags = s.tags.map((t) => `<span class="tag">${esc(t)}</span>`).join('');

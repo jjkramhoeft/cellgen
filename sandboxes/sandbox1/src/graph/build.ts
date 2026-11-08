@@ -1,3 +1,4 @@
+/** Entry point for cell graphs: picks the builder for the chosen graph type and its parameters. */
 import { generatePoints, type PointMethod, type DensityMode } from '@shared/core/sampling';
 import type { MetricKind, WeightKind } from '@shared/core/spatial';
 import { aspectHeight, MAP_W, num, str, type Params } from '../params/schema';
@@ -17,6 +18,7 @@ export function graphKey(p: Params, seed: number): string {
   return `${seed}|${parts.join('&')}`;
 }
 
+/** Build the cell graph the parameters describe (sites, relaxation and cell type). */
 export function buildGraph(p: Params, seed: number): CellGraph {
   const W = MAP_W;
   const H = aspectHeight(p);

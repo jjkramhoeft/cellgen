@@ -1,3 +1,4 @@
+/** Sandbox 4 parameter schema (panels and URL state), presets, and its mapping to the World, Rivers and Terrain parameters. */
 import { bool, defaultsOf, num, opt, str, type ParamDef, type Params, type Section } from '@shared/params/schema';
 import type { ConeAngle, PullPower, RiverParams } from './world/rivers';
 import { DEFAULT_CHAN, DEFAULT_FLOOD_H, DEFAULT_HILL, DEFAULT_FLOOD_W, FLOOD_REF_FLOW, type TerrainParams, type Theta } from './world/terrain';
@@ -179,6 +180,7 @@ export const RIVER_SECTION: Section = {
 };
 export const RIVER_KEYS = new Set(RIVER_SECTION.params.map((p) => p.key));
 
+/** Schema → model parameters for Rivers. */
 export function toRiverParams(p: Params): RiverParams {
   return {
     perSub: num(p, 'riv.points'),
@@ -316,6 +318,7 @@ export const FLOODPLAIN_SECTION: Section = {
 
 export const TERRAIN_KEYS = new Set([TERRAIN_SECTION, HILLSLOPE_SECTION, GRADIENT_SECTION, FLOODPLAIN_SECTION].flatMap((sec) => sec.params.map((p) => p.key)));
 
+/** Schema → model parameters for Terrain. */
 export function toTerrainParams(p: Params): TerrainParams {
   return {
     res: Number(str(p, 'hgt.res')),
@@ -337,6 +340,7 @@ export function toTerrainParams(p: Params): TerrainParams {
   };
 }
 
+/** Colour modes: [id, label]. */
 export const VIEW_MODES = [
   ['map', 'Map (cosmetic biomes)'],
   ['landsea', 'Land & ocean'],
@@ -404,6 +408,7 @@ export const VIEW_SECTION: Section = {
 export const ALL_DEFS: ParamDef[] = [...SECTIONS.flatMap((s) => s.params), ...RIVER_SECTION.params, ...TERRAIN_SECTION.params, ...HILLSLOPE_SECTION.params, ...GRADIENT_SECTION.params, ...FLOODPLAIN_SECTION.params, ...VIEW_SECTION.params];
 export const GEN_KEYS = new Set(SECTIONS.flatMap((s) => s.params.map((p) => p.key)));
 
+/** Every parameter at its default value. */
 export function defaults(): Params {
   return defaultsOf(ALL_DEFS);
 }

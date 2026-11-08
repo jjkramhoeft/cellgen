@@ -1,3 +1,4 @@
+/** Small helpers over a CellGraph: hop distances, smoothing, gradients, quantiles. */
 import type { CellGraph } from '../graph/types';
 
 /** Breadth-first hop distance from all cells with sources[i] = 1 (−1 where unreachable). */
@@ -92,6 +93,7 @@ export function areaQuantile(v: ArrayLike<number>, area: ArrayLike<number>, q: n
   return v[idx[n - 1]];
 }
 
+/** Smallest and largest value. */
 export function minMax(v: ArrayLike<number>): [number, number] {
   let lo = Infinity;
   let hi = -Infinity;
@@ -103,6 +105,7 @@ export function minMax(v: ArrayLike<number>): [number, number] {
   return [lo, hi];
 }
 
+/** Euclidean distance between the sites of cells a and b. */
 export function dist(g: CellGraph, a: number, b: number): number {
   const dx = g.x[a] - g.x[b];
   const dy = g.y[a] - g.y[b];

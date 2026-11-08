@@ -16,20 +16,6 @@ export function sdRoundBox(px: number, py: number, bx: number, by: number, r: nu
   return sdBox(px, py, bx - r, by - r) - r;
 }
 
-/** Distance from p to the segment ab (capsule core). Also writes the projection parameter t. */
-export function sdSegment(px: number, py: number, ax: number, ay: number, bx: number, by: number): number {
-  const pax = px - ax;
-  const pay = py - ay;
-  const bax = bx - ax;
-  const bay = by - ay;
-  const L = bax * bax + bay * bay;
-  let h = L > 0 ? (pax * bax + pay * bay) / L : 0;
-  h = h < 0 ? 0 : h > 1 ? 1 : h;
-  const dx = pax - bax * h;
-  const dy = pay - bay * h;
-  return Math.sqrt(dx * dx + dy * dy);
-}
-
 /** Quadratic polynomial smooth minimum; k is the blend width in distance units. */
 export function smin(a: number, b: number, k: number): number {
   if (k <= 0) return Math.min(a, b);

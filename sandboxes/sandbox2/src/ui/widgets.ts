@@ -1,14 +1,11 @@
 /** Legend, inspector, statistics, and the metric gallery. */
 import { COLORMAPS, cssRgb, type RGB } from '@shared/render/colormaps';
+import { esc } from '@shared/ui/html';
 import { Field, type Calibration, type FieldParams, type Sample } from '../voronoi/field';
 import type { MapStats } from '../voronoi/analysis';
 import { METRICS, metricInfo, Metric, type MetricId } from '../voronoi/metrics';
 import { fieldSource, type ViewMode, type ViewOpts } from '../render/source';
 import { drawBall, octColor } from '../render/overlays';
-
-export function esc(s: string): string {
-  return s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
-}
 
 const fmt = (v: number, d = 3) => (Number.isFinite(v) ? v.toFixed(d) : '—');
 const pct = (v: number, d = 1) => `${(v * 100).toFixed(d)}%`;

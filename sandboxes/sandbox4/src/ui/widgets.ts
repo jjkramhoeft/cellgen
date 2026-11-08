@@ -1,5 +1,6 @@
 /** Legend, level box, inspector, view statistics and the ruler readout. */
 import { cssRgb, hashColor } from '@shared/render/colormaps';
+import { esc } from '@shared/ui/html';
 import { keyI, keyJ } from '../world/level';
 import type { Rivers } from '../world/rivers';
 import { LINKED, ORIGIN, SEED, World } from '../world/world';
@@ -9,10 +10,6 @@ import type { Terrain } from '../world/terrain';
 
 /** Packed ABGR pixel → CSS colour. */
 const cssHex = (c: number) => `rgb(${c & 255},${(c >>> 8) & 255},${(c >>> 16) & 255})`;
-
-export function esc(s: string): string {
-  return s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
-}
 
 const pct = (v: number, d = 1) => (Number.isFinite(v) ? `${(v * 100).toFixed(d)}%` : '—');
 const ij = (k: number) => `${keyI(k)}, ${keyJ(k)}`;
