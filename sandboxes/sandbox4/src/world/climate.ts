@@ -1,6 +1,7 @@
 /**
- * Initial climate: a temperature map (°C) and a humidity map (%), each an fBm of
- * classic Perlin noise with its own parameters. Both are pure functions of the seed,
+ * Initial climate: a temperature map (°C) and a precipitation map (mm per year), each
+ * an fBm of classic Perlin noise with its own parameters. Precipitation is mapped on a
+ * log scale (like real rainfall: most land is dry or moderate, few places very wet). Both are pure functions of the seed,
  * the parameters and the point (metres); nothing depends on the map yet, so they
  * are the starting point for biomes, not the result of the terrain.
  */
@@ -12,19 +13,24 @@ export interface NoiseFieldParams extends FbmParams {
   /** value at the strongest lows and highs (the field is stretched to [min, max]) */
   min: number;
   max: number;
+  /** stretch the noise over [log min, log max] instead (min must be > 0): the middle value is √(min·max) */
+  log: boolean;
 }
+
+/** Smallest value of a log-scale field (a log scale cannot reach 0). */
+export const LOG_FLOOR = 1;
 
 export interface ClimateParams {
   seed: number;
   /** °C */
   temperature: NoiseFieldParams;
-  /** relative humidity, % */
-  humidity: NoiseFieldParams;
+  /** precipitation, mm per year */
+  precipitation: NoiseFieldParams;
 }
 
 /** Seed salts, so the two fields are independent of each other (and of every other noise). */
 const TEMP_SALT = 0x7e3a11c5;
-const HUMID_SALT = 0x2b9d40f3;
+const PRECIP_SALT = 0x2b9d40f3;
 
 /**
  * Perlin fBm with its spread made independent of the octave count and gain (divided by
@@ -34,6 +40,17 @@ const HUMID_SALT = 0x2b9d40f3;
  */
 export const NOISE_EXTREME = 0.8;
 
+/** The value at fraction t ∈ [0, 1] of a field's range (linear or log). */
+export function fieldAt(p: NoiseFieldParams, t: number): number {
+  if (!p.log) return p.min + t * (p.max - p.min);
+  const a = Math.log(Math.max(LOG_FLOOR, p.min));
+  const b = Math.log(Math.max(LOG_FLOOR, p.max));
+  // exp(log(x)) can overshoot x by an ulp: clamp, so the ends are exact
+  const lo = Math.max(LOG_FLOOR, p.min);
+  const hi = Math.max(LOG_FLOOR, p.max);
+  return Math.min(hi, Math.max(lo, Math.exp(a + t * (b - a))));
+}
+
 /** One climate field: noise → [min, max]. */
 export function fieldValue(seed: number, p: NoiseFieldParams, x: number, y: number): number {
   const f = 1 / p.scale;
@@ -41,7 +58,7 @@ export function fieldValue(seed: number, p: NoiseFieldParams, x: number, y: numb
   n /= NOISE_EXTREME;
   if (n < -1) n = -1;
   else if (n > 1) n = 1;
-  return p.min + ((n + 1) / 2) * (p.max - p.min);
+  return fieldAt(p, (n + 1) / 2);
 }
 
 /** Σa / √Σa² for the octave weights 1, gain, gain², … */
@@ -59,11 +76,11 @@ function spreadFix(p: FbmParams): number {
 
 export class Climate {
   private readonly tSeed: number;
-  private readonly hSeed: number;
+  private readonly pSeed: number;
 
   constructor(readonly p: ClimateParams) {
     this.tSeed = (p.seed ^ TEMP_SALT) | 0;
-    this.hSeed = (p.seed ^ HUMID_SALT) | 0;
+    this.pSeed = (p.seed ^ PRECIP_SALT) | 0;
   }
 
   /** Initial temperature at a point, °C. */
@@ -71,8 +88,8 @@ export class Climate {
     return fieldValue(this.tSeed, this.p.temperature, x, y);
   }
 
-  /** Initial relative humidity at a point, %. */
-  humidityAt(x: number, y: number): number {
-    return fieldValue(this.hSeed, this.p.humidity, x, y);
+  /** Initial precipitation at a point, mm per year. */
+  precipitationAt(x: number, y: number): number {
+    return fieldValue(this.pSeed, this.p.precipitation, x, y);
   }
 }

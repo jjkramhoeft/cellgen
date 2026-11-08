@@ -8,7 +8,7 @@ import { fmtDist, TRAVEL, travelDays } from '../render/overlays';
 import { GENESIS, heightColor, keyHash, type ViewMode } from '../render/source';
 import { ELEVATION_ZONE_TYPES, elevationZoneType } from '../world/zones';
 import type { Terrain } from '../world/terrain';
-import type { Climate } from '../world/climate';
+import { fieldAt, type Climate, type NoiseFieldParams } from '../world/climate';
 import { rampRgb, STOPS, type ClimateField } from '../render/climate';
 
 /** Packed ABGR pixel → CSS colour. */
@@ -27,7 +27,7 @@ export function genesisName(o: number): string {
 // ------------------------------------------------------------------ legend
 
 const NOTES: Record<ViewMode, [string, string]> = {
-  map: ['Map', 'Each elevation zone is coloured by its type (ocean, flat, lowland, hills, mountains), lighter/darker per subbiome. Biomes come later, from temperature and humidity. Turn on Hillshade to see the height map.'],
+  map: ['Map', 'Each elevation zone is coloured by its type (ocean, flat, lowland, hills, mountains), lighter/darker per subbiome. Biomes come later, from temperature and precipitation. Turn on Hillshade to see the height map.'],
   landsea: ['Land & ocean', 'Land and ocean, from the ocean genesis.'],
   genesis: ['Ocean genesis', 'Why each ocean elevation zone is ocean. Turn on seeds & links and growth arrows to see the steps.'],
   merges: ['Merged cells', 'Orange: elevation zones in a merged group (one colour per group). Yellow: merged subbiome groups.'],
@@ -38,24 +38,24 @@ const NOTES: Record<ViewMode, [string, string]> = {
   height: ['Height', 'Fitted height map, hillshaded from the north-west. Regions are computed as you look; flat colours mean “not ready yet”.'],
 };
 
-/** A climate overlay in the legend: its field and the range of its parameters. */
+/** A climate overlay in the legend: its field and parameters (for the range and scale). */
 export interface ClimateLegend {
   field: ClimateField;
-  min: number;
-  max: number;
+  p: NoiseFieldParams;
 }
 
-const CLIMATE_NAMES: Record<ClimateField, [string, string]> = { temperature: ['Initial temperature', '°C'], humidity: ['Initial humidity', '%'] };
+const CLIMATE_NAMES: Record<ClimateField, [string, string]> = { temperature: ['Initial temperature', '°C'], precipitation: ['Initial precipitation', 'mm/yr'] };
 
 /** A gradient bar over [min, max] for one climate overlay (drawn at 50 % on the map). */
 function climateBar(c: ClimateLegend): string {
   const [name, unit] = CLIMATE_NAMES[c.field];
-  const span = c.max - c.min;
-  const stops = [0, 0.25, 0.5, 0.75, 1].map((t) => `${cssRgb(rampRgb(STOPS[c.field], c.min + span * t))} ${t * 100}%`).join(',');
+  const at = (t: number) => fieldAt(c.p, t);
+  const stops = [0, 0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875, 1].map((t) => `${cssRgb(rampRgb(STOPS[c.field], at(t)))} ${t * 100}%`).join(',');
+  const fmt = (v: number) => `${+v.toPrecision(3)} ${unit}`;
   return (
     `<div class="lg-clim"><div class="lg-clim-name">${esc(name)} <em>overlay · 50 %</em></div>` +
     `<div class="lg-bar" style="background:linear-gradient(90deg,${stops})"></div>` +
-    `<div class="lg-clim-ends"><span>${c.min} ${unit}</span><span>${c.max} ${unit}</span></div></div>`
+    `<div class="lg-clim-ends"><span>${fmt(at(0))}</span><span>${fmt(at(0.5))}${c.p.log ? ' (log)' : ''}</span><span>${fmt(at(1))}</span></div></div>`
   );
 }
 
@@ -129,7 +129,7 @@ export function renderInspector(host: HTMLElement, world: World | null, rivers: 
 
   if (climate) {
     html += `<div class="kv" title="Initial temperature map (Perlin noise)"><span>Initial temperature</span><b>${climate.temperatureAt(pt.x, pt.y).toFixed(1)} °C</b></div>`;
-    html += `<div class="kv" title="Initial humidity map (Perlin noise)"><span>Initial humidity</span><b>${climate.humidityAt(pt.x, pt.y).toFixed(0)} %</b></div>`;
+    html += `<div class="kv" title="Initial precipitation map (Perlin noise)"><span>Initial precipitation</span><b>${climate.precipitationAt(pt.x, pt.y).toFixed(0)} mm/yr</b></div>`;
   }
 
   html += `<div class="lvl"><h4><i style="background:${regColor}"></i>Region ${ij(c.region)}</h4>`;

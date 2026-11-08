@@ -1,15 +1,15 @@
 /**
  * Raster sources and colour ramps for the climate overlays (initial temperature and
- * humidity). Each overlay is an opaque image drawn at 50 % opacity over the map; the
+ * precipitation). Each overlay is an opaque image drawn at 50 % opacity over the map; the
  * fields are smooth, so they are rendered below screen resolution and scaled up.
  */
 import { packColor } from '@shared/render/colormaps';
 import type { RasterSource } from '@shared/render/raster';
 import type { Climate, NoiseFieldParams } from '../world/climate';
 
-export type ClimateField = 'temperature' | 'humidity';
+export type ClimateField = 'temperature' | 'precipitation';
 
-/** Colour stops: [value, r, g, b], on absolute values so a colour always means the same °C or %. */
+/** Colour stops: [value, r, g, b], on absolute values so a colour always means the same °C or mm per year. */
 type Stops = [number, number, number, number][];
 
 /** °C: blue (cold) → pale yellow (≈ 10 °C) → red (hot). */
@@ -23,18 +23,20 @@ export const TEMP_STOPS: Stops = [
   [45, 120, 0, 30],
 ];
 
-/** %: brown (dry) → cream → teal (humid). */
-export const HUMID_STOPS: Stops = [
-  [0, 110, 60, 5],
-  [25, 191, 129, 45],
-  [45, 246, 232, 195],
-  [65, 128, 205, 193],
-  [80, 53, 151, 143],
-  [95, 1, 102, 94],
-  [100, 0, 60, 48],
+/** mm per year, spaced roughly evenly in log: brown (desert) → cream (≈ 1000) → teal → deep blue (rainforest). */
+export const PRECIP_STOPS: Stops = [
+  [0, 90, 48, 4],
+  [100, 125, 70, 10],
+  [250, 175, 115, 38],
+  [500, 223, 194, 125],
+  [1000, 246, 232, 195],
+  [2000, 128, 205, 193],
+  [4000, 53, 151, 143],
+  [7000, 1, 102, 94],
+  [10000, 8, 64, 110],
 ];
 
-export const STOPS: Record<ClimateField, Stops> = { temperature: TEMP_STOPS, humidity: HUMID_STOPS };
+export const STOPS: Record<ClimateField, Stops> = { temperature: TEMP_STOPS, precipitation: PRECIP_STOPS };
 
 /** Interpolated [r, g, b] for a value on a ramp (flat beyond the ends). */
 export function rampRgb(stops: Stops, v: number): [number, number, number] {
@@ -56,7 +58,7 @@ const fieldKey = (p: NoiseFieldParams) => `${p.scale},${p.octaves},${p.lacunarit
 /** One climate field as a raster: every pixel is the field's ramp colour at that point. */
 export function climateSource(climate: Climate, field: ClimateField): RasterSource {
   const stops = STOPS[field];
-  const at = field === 'temperature' ? (x: number, y: number) => climate.temperatureAt(x, y) : (x: number, y: number) => climate.humidityAt(x, y);
+  const at = field === 'temperature' ? (x: number, y: number) => climate.temperatureAt(x, y) : (x: number, y: number) => climate.precipitationAt(x, y);
   return {
     key: `clim|${field}|${climate.p.seed}|${fieldKey(climate.p[field])}`,
     create() {

@@ -29,25 +29,29 @@ describe('perlin2', () => {
 });
 
 describe('initial climate', () => {
-  it('defaults: temperature reaches about −10 to 30 °C, humidity about 25 to 95 %', () => {
+  it('defaults: temperature reaches about −10 to 30 °C, precipitation about 100 to 10 000 mm per year', () => {
     for (const seed of [1, 2024, 987654]) {
       const c = climate(seed);
       const t = sampleField((x, y) => c.temperatureAt(x, y), 30_000_000, 220);
-      const h = sampleField((x, y) => c.humidityAt(x, y), 10_000_000, 220);
+      const h = sampleField((x, y) => c.precipitationAt(x, y), 10_000_000, 220);
       expect(Math.min(...t)).toBeGreaterThanOrEqual(-10);
       expect(Math.max(...t)).toBeLessThanOrEqual(30);
       expect(Math.min(...t)).toBeLessThan(-8);
       expect(Math.max(...t)).toBeGreaterThan(28);
-      expect(Math.min(...h)).toBeGreaterThanOrEqual(25);
-      expect(Math.max(...h)).toBeLessThanOrEqual(95);
-      expect(Math.min(...h)).toBeLessThan(28.5);
-      expect(Math.max(...h)).toBeGreaterThan(91.5);
+      expect(Math.min(...h)).toBeGreaterThanOrEqual(100);
+      expect(Math.max(...h)).toBeLessThanOrEqual(10_000);
+      expect(Math.min(...h)).toBeLessThan(600);
+      expect(Math.max(...h)).toBeGreaterThan(9500);
       // centred on the middle of the range
       const mean = (v: number[]) => v.reduce((s, x) => s + x, 0) / v.length;
       expect(mean(t)).toBeGreaterThan(5);
       expect(mean(t)).toBeLessThan(15);
-      expect(mean(h)).toBeGreaterThan(52);
-      expect(mean(h)).toBeLessThan(68);
+      // precipitation is log-scaled: centred on √(100 · 10 000) = 1000 mm, most of it dry to moderate
+      const sorted = [...h].sort((x, y) => x - y);
+      const median = sorted[sorted.length >> 1];
+      expect(median).toBeGreaterThan(600);
+      expect(median).toBeLessThan(1700);
+      expect(h.filter((v) => v > 3000).length / h.length).toBeLessThan(0.2);
     }
   });
 
@@ -63,10 +67,10 @@ describe('initial climate', () => {
       const x = k * 53_000 - 9_000_000;
       const y = ((k * 7919) % 400) * 41_000;
       expect(a.temperatureAt(x, y)).toBe(b.temperatureAt(x, y));
-      expect(a.humidityAt(x, y)).toBe(b.humidityAt(x, y));
+      expect(a.precipitationAt(x, y)).toBe(b.precipitationAt(x, y));
       if (a.temperatureAt(x, y) !== c.temperatureAt(x, y)) diffSeed++;
       t.push(a.temperatureAt(x, y));
-      h.push(a.humidityAt(x, y));
+      h.push(a.precipitationAt(x, y));
     }
     expect(diffSeed).toBeGreaterThan(390);
     const mt = t.reduce((s, v) => s + v, 0) / t.length;

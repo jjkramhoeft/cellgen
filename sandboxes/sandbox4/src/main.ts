@@ -20,7 +20,7 @@ import { ALL_DEFS, CLIMATE_KEYS, CLIMATE_SECTIONS, DEFAULT_SEED, defaults, GEN_K
 import { drawGrid, drawGrowth, drawLinks, drawMerges, drawRivers, drawRuler, drawSites, fmtDist, niceStep, type Frame } from './render/overlays';
 import { climateSource, type ClimateField } from './render/climate';
 import { DETAIL_PX, mapSource, type ViewMode, type ViewOpts } from './render/source';
-import { computeViewStats, renderInspector, renderLegend, renderLevels, renderRuler, renderStats, type ViewStats } from './ui/widgets';
+import { computeViewStats, renderInspector, type ClimateLegend, renderLegend, renderLevels, renderRuler, renderStats, type ViewStats } from './ui/widgets';
 import { buildMesh, View3D, type HeightGrid, type Rect } from './render/view3d';
 import { Climate } from './world/climate';
 import { Rivers } from './world/rivers';
@@ -95,7 +95,7 @@ const timings = { render: 0 };
 const canvas = $<HTMLCanvasElement>('view');
 const ctx = canvas.getContext('2d', { alpha: false })!;
 const layer = new RasterLayer();
-const climateLayers: Record<ClimateField, RasterLayer> = { temperature: new RasterLayer(), humidity: new RasterLayer() };
+const climateLayers: Record<ClimateField, RasterLayer> = { temperature: new RasterLayer(), precipitation: new RasterLayer() };
 let vp: Viewport = { w: 1, h: 1 };
 let cam: Camera = { cx: 0, cy: 0, zoom: 1e-3 };
 let homed = true;
@@ -235,13 +235,13 @@ function newClimate(): void {
 function climateOn(): ClimateField[] {
   const on: ClimateField[] = [];
   if (params['view.temp'] === true) on.push('temperature');
-  if (params['view.humid'] === true) on.push('humidity');
+  if (params['view.precip'] === true) on.push('precipitation');
   return on;
 }
 
 /** Legend entries for the climate overlays that are on. */
-function climateLegend(): { field: ClimateField; min: number; max: number }[] {
-  return climateOn().map((field) => ({ field, min: climate.p[field].min, max: climate.p[field].max }));
+function climateLegend(): ClimateLegend[] {
+  return climateOn().map((field) => ({ field, p: climate.p[field] }));
 }
 
 /** Terrain tiles are computed in a worker; without one (very old browsers) on the main thread. */

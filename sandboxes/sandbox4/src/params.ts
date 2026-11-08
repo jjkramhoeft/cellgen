@@ -332,7 +332,7 @@ export function toTerrainParams(p: Params): TerrainParams {
 }
 
 /** Parameters of one Perlin-noise climate field (left panel), keys `clim.<id>.*`. */
-function climateSection(id: 't' | 'h', title: string, help: string, unit: string, lo: number, hi: number): Section {
+function climateSection(id: 't' | 'p', title: string, help: string, unit: string, lo: number, hi: number, step: number, log: boolean): Section {
   const k = (name: string) => `clim.${id}.${name}`;
   return withDefaults.section({
     id: `climate-${id}`,
@@ -344,20 +344,20 @@ function climateSection(id: 't' | 'h', title: string, help: string, unit: string
       { key: k('octaves'), label: 'Octaves', type: 'int', min: 1, max: 8, help: 'Layers of Perlin noise, each finer than the last. 1 = smooth blobs; more = rougher, more detailed.' },
       { key: k('lacunarity'), label: 'Lacunarity', type: 'number', min: 1.5, max: 4, step: 0.05, help: 'How much finer each octave is than the previous one.' },
       { key: k('gain'), label: 'Gain', type: 'number', min: 0.1, max: 0.9, step: 0.01, help: 'How much weaker each octave is than the previous one. Higher = rougher.' },
-      { key: k('min'), label: 'Minimum', type: 'number', min: lo, max: hi, step: 1, unit, help: 'Value at the strongest lows. The noise is stretched to [minimum, maximum]; only the strongest lows and highs (≈ 0.3 %) reach the ends.' },
-      { key: k('max'), label: 'Maximum', type: 'number', min: lo, max: hi, step: 1, unit, help: 'Value at the strongest highs.' },
+      { key: k('min'), label: 'Minimum', type: 'number', min: lo, max: hi, step, log, unit, help: `Value at the strongest lows. The noise is stretched to [minimum, maximum]${log ? ' on a log scale (the middle is √(min · max))' : ''}; only the strongest lows and highs (≈ 0.3 %) reach the ends.` },
+      { key: k('max'), label: 'Maximum', type: 'number', min: lo, max: hi, step, log, unit, help: 'Value at the strongest highs.' },
     ],
   });
 }
 
-/** Initial temperature and humidity maps: Perlin noise, independent of the map for now. */
+/** Initial temperature and precipitation maps: Perlin noise, independent of the map for now. */
 export const CLIMATE_SECTIONS: Section[] = [
-  climateSection('t', 'Climate · initial temperature', 'Initial temperature map (°C): fBm of Perlin noise. Shown with Display → Temperature overlay and in the inspector.', ' °C', -60, 60),
-  climateSection('h', 'Climate · initial humidity', 'Initial relative humidity map (%): fBm of Perlin noise with its own seed. Shown with Display → Humidity overlay and in the inspector.', ' %', 0, 100),
+  climateSection('t', 'Climate · initial temperature', 'Initial temperature map (°C): fBm of Perlin noise. Shown with Display → Temperature overlay and in the inspector.', ' °C', -60, 60, 1, false),
+  climateSection('p', 'Climate · initial precipitation', 'Initial precipitation map (mm per year): fBm of Perlin noise with its own seed, on a log scale, so most of the map is dry to moderate and only the strongest highs are very wet. Shown with Display → Precipitation overlay and in the inspector.', ' mm/yr', 10, 20000, 10, true),
 ];
 export const CLIMATE_KEYS = new Set(CLIMATE_SECTIONS.flatMap((sec) => sec.params.map((p) => p.key)));
 
-function toField(p: Params, id: 't' | 'h'): NoiseFieldParams {
+function toField(p: Params, id: 't' | 'p'): NoiseFieldParams {
   const a = num(p, `clim.${id}.min`);
   const b = num(p, `clim.${id}.max`);
   return {
@@ -367,12 +367,13 @@ function toField(p: Params, id: 't' | 'h'): NoiseFieldParams {
     gain: num(p, `clim.${id}.gain`),
     min: Math.min(a, b),
     max: Math.max(a, b),
+    log: id === 'p',
   };
 }
 
 /** Schema → model parameters for the climate maps. */
 export function toClimateParams(p: Params, seed: number): ClimateParams {
-  return { seed, temperature: toField(p, 't'), humidity: toField(p, 'h') };
+  return { seed, temperature: toField(p, 't'), precipitation: toField(p, 'p') };
 }
 
 /** Colour modes: [id, label]. */
@@ -405,7 +406,7 @@ export const VIEW_SECTION: Section = withDefaults.section({
     { key: 'view.exag', label: 'Vertical exaggeration', type: 'number', min: 1, max: 60, step: 0.5, log: true, view: true, help: '3D only: heights are this many times taller than true scale.' },
     { key: 'view.hillshade', label: 'Hillshade', type: 'bool', view: true, help: 'Shade any colour mode by the height map (lit from the north-west). Always on for “Height”.' },
     { key: 'view.temp', label: 'Temperature overlay', type: 'bool', view: true, help: 'The initial temperature map, 50 % transparent on top of the map and rivers (blue = cold, red = hot).' },
-    { key: 'view.humid', label: 'Humidity overlay', type: 'bool', view: true, help: 'The initial humidity map, 50 % transparent on top of the map and rivers (brown = dry, teal = humid). Drawn above the temperature overlay when both are on.' },
+    { key: 'view.precip', label: 'Precipitation overlay', type: 'bool', view: true, help: 'The initial precipitation map, 50 % transparent on top of the map and rivers (brown = dry, teal/blue = wet). Drawn above the temperature overlay when both are on.' },
     { key: 'view.regEdges', label: 'Region borders', type: 'bool', view: true },
     { key: 'view.zoneEdges', label: 'Elevation zone borders', type: 'bool', view: true },
     { key: 'view.subEdges', label: 'Subbiome borders', type: 'bool', view: true, help: 'Drawn when subbiomes are large enough on screen.' },
