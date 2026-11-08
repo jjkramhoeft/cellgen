@@ -20,7 +20,7 @@ function landRegions(w: World, n = 6): number[] {
 describe('space-colonization rivers', () => {
   it('places attractors only in inland land subbiomes drawn in the region, perSub per subbiome', () => {
     const w = world();
-    const rv = new Rivers(w, rp({ perSub: 10 }));
+    const rv = new Rivers(w, rp({ perSub: 10, flatSparseChance: 0 }));
     const r = landRegions(w, 1)[0];
     const { ax, ay } = rv.attractors(r);
     expect(ax.length).toBeGreaterThan(100);
@@ -39,6 +39,47 @@ describe('space-colonization rivers', () => {
       expect(c.ocean).toBe(false);
       expect(c.region).toBe(r);
     }
+  });
+
+  it('gives the subbiomes of a river-poor flat elevation zone only 0 or 1 attractor', () => {
+    const w = world();
+    const regions = landRegions(w, 12);
+    const count = (rv: Rivers) => regions.reduce((n, r) => n + rv.attractors(r).ax.length, 0);
+    const flatZones = new Set<number>();
+    for (const r of regions) for (const b of new Rivers(w, rp()).regionElevationZones(r)) if (!w.elevationZoneCell(b).ocean) flatZones.add(w.elevationZoneCell(b).elevationZone);
+    // chance 0: no zone is sparse; chance 1: every flat zone (and nothing else) is
+    const none = new Rivers(w, rp({ perSub: 10, flatSparseChance: 0 }));
+    const all = new Rivers(w, rp({ perSub: 10, flatSparseChance: 1 }));
+    let flat = 0;
+    for (const z of flatZones) {
+      expect(none.isSparseFlat(z)).toBe(false);
+      if (all.isSparseFlat(z)) flat++;
+    }
+    expect(flat).toBeGreaterThan(0);
+    expect(count(all)).toBeLessThan(count(none));
+    // per region: perSub for every eligible subbiome outside sparse zones, plus 0 or 1 for each inside one
+    for (const r of regions) {
+      let dense = 0;
+      let sparse = 0;
+      for (const b of all.regionElevationZones(r)) {
+        const bc = w.elevationZoneCell(b);
+        if (bc.ocean) continue;
+        for (const s of w.elevationZoneSubs(w.elevationZone(b))) {
+          const c = w.subCell(s);
+          if (c.ocean || c.region !== r || all.isCoastSub(s)) continue;
+          if (all.isSparseFlat(bc.elevationZone)) sparse++;
+          else dense++;
+        }
+      }
+      const n = all.attractors(r).ax.length;
+      expect(n).toBeGreaterThanOrEqual(dense * 10);
+      expect(n).toBeLessThanOrEqual(dense * 10 + sparse);
+    }
+    // about a third of the flat zones are sparse at the default chance
+    const def = new Rivers(w, rp());
+    expect(toRiverParams(defaults()).flatSparseChance).toBeCloseTo(0.33);
+    const hits = [...flatZones].filter((z) => all.isSparseFlat(z) && def.isSparseFlat(z)).length;
+    expect(hits).toBeLessThan(flat);
   });
 
   it('follows the drawn regions: an elevation zone merged into a neighbouring region belongs to that region', () => {

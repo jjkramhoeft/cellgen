@@ -23,6 +23,7 @@
     "ez.mergeMin": 2,
     "ez.mergeMax": 4,
     "ez.mergeCoast": false,
+    "ez.flatSparse": 33,
     "sub.size": 8,
     "sub.jitter": 1,
     "sub.warp": 0.35,

@@ -75,6 +75,15 @@ export const SECTIONS: Section[] = withDefaults.sections([
       { key: 'ez.mergeMin', label: 'Subbiome merges min', type: 'int', min: 0, max: 12, help: 'Subbiomes per elevation zone that join their nearest neighbour in the same elevation zone.' },
       { key: 'ez.mergeMax', label: 'Subbiome merges max', type: 'int', min: 0, max: 12 },
       { key: 'ez.mergeCoast', label: 'Merge across coast', type: 'bool', help: 'Allow a land elevation zone to merge into an ocean elevation zone (and vice versa). Off keeps coastlines intact.' },
+      {
+        key: 'ez.flatSparse',
+        label: 'Flat: sparse river chance',
+        type: 'int',
+        min: 0,
+        max: 100,
+        unit: '%',
+        help: 'Chance that a flat elevation zone is river-poor: every one of its subbiomes then gets only 0 or 1 river attractor (50/50) instead of "Attractors / subbiome". Rebuilds only the rivers.',
+      },
     ],
   },
   {
@@ -176,7 +185,9 @@ export const RIVER_SECTION: Section = withDefaults.section({
     { key: 'riv.coast', label: 'Skip coast subbiomes', type: 'bool', help: 'No attractors in subbiomes that touch the ocean (the spec).' },
   ],
 });
-export const RIVER_KEYS = new Set(RIVER_SECTION.params.map((p) => p.key));
+/** Keys shown in the map sections that only feed the rivers (changing them never regenerates the map). */
+const RIVER_ONLY_KEYS = ['ez.flatSparse'];
+export const RIVER_KEYS = new Set([...RIVER_SECTION.params.map((p) => p.key), ...RIVER_ONLY_KEYS]);
 
 /** Schema → model parameters for Rivers. */
 export function toRiverParams(p: Params): RiverParams {
@@ -192,6 +203,7 @@ export function toRiverParams(p: Params): RiverParams {
     wander: num(p, 'riv.wander'),
     apical: num(p, 'riv.apical'),
     skipCoast: bool(p, 'riv.coast'),
+    flatSparseChance: num(p, 'ez.flatSparse') / 100,
     maxHops: 4,
   };
 }
@@ -442,7 +454,7 @@ export const VIEW_SECTION: Section = withDefaults.section({
 
 export const ALL_DEFS: ParamDef[] = [...SECTIONS.flatMap((s) => s.params), ...RIVER_SECTION.params, ...TERRAIN_SECTION.params, ...HILLSLOPE_SECTION.params, ...GRADIENT_SECTION.params, ...FLOODPLAIN_SECTION.params, ...CLIMATE_SECTIONS.flatMap((s) => s.params), ...VIEW_SECTION.params];
 withDefaults.checkAllUsed();
-export const GEN_KEYS = new Set(SECTIONS.flatMap((s) => s.params.map((p) => p.key)));
+export const GEN_KEYS = new Set(SECTIONS.flatMap((s) => s.params.map((p) => p.key)).filter((k) => !RIVER_KEYS.has(k)));
 
 /** Every parameter at its default value. */
 export function defaults(): Params {

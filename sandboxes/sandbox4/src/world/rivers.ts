@@ -39,6 +39,7 @@
  */
 import { hash4, sfc32, type Rng } from '@shared/core/hash';
 import { keyI, keyJ, packKey } from './level';
+import { elevationZoneType, ELEVATION_ZONE_TYPES } from './zones';
 import type { World } from './world';
 
 export type PullPower = 'normal' | 'squared' | 'sqrt';
@@ -120,6 +121,11 @@ export interface RiverParams {
   apical: number;
   /** leave out subbiomes that touch the ocean */
   skipCoast: boolean;
+  /**
+   * Chance (0–1) that a flat elevation zone is river-poor: each of its subbiomes then
+   * gets 0 or 1 attractor (50/50) instead of `perSub`. Rolled per merged elevation zone.
+   */
+  flatSparseChance: number;
   /** how many elevation zone steps a landlocked region searches for an ocean */
   maxHops: number;
 }
@@ -160,6 +166,9 @@ export interface RegionRivers {
 
 const ST_ATTR = 0x7e01;
 const ST_GROW = 0x7e02;
+const ST_SPARSE = 0x7e03;
+const ST_SPARSE_SUB = 0x7e04;
+const FLAT_ZONE = ELEVATION_ZONE_TYPES.findIndex((t) => t.id === 'flat');
 const MAX_ITER = 6000;
 const MAX_NODES = 120000;
 /** an attractor that cannot see this many of its closest nodes is given up on by the bridge */
@@ -249,6 +258,16 @@ export class Rivers {
     return !c.ocean && c.region === rkey;
   }
 
+  /**
+   * Is this (merged) land elevation zone a river-poor flat zone? Rolled from the zone
+   * key alone, so a zone split across regions is sparse (or not) in all of them.
+   */
+  isSparseFlat(zkey: number): boolean {
+    const c = this.p.flatSparseChance;
+    if (c <= 0 || elevationZoneType(zkey, false) !== FLAT_ZONE) return false;
+    return hash4(this.world.p.seed, ST_SPARSE, keyI(zkey), keyJ(zkey)) / 4294967296 < c;
+  }
+
   /** Attractor points of a region (land, non-coastal subbiomes drawn in the region). */
   attractors(rkey: number): { ax: number[]; ay: number[] } {
     const w = this.world;
@@ -258,13 +277,17 @@ export class Rivers {
     const ax: number[] = [];
     const ay: number[] = [];
     for (const b of this.regionElevationZones(rkey)) {
-      if (w.elevationZoneCell(b).ocean) continue;
+      const bc = w.elevationZoneCell(b);
+      if (bc.ocean) continue;
+      const sparse = this.isSparseFlat(bc.elevationZone);
       for (const s of w.elevationZoneSubs(w.elevationZone(b))) {
         const sc = w.subCell(s);
         if (sc.ocean || sc.region !== rkey) continue;
         if (this.p.skipCoast && this.isCoastSub(s)) continue;
         const sd = w.sub(s);
-        for (let k = 0; k < this.p.perSub; k++) {
+        // a river-poor flat zone: 0 or 1 attractor per subbiome, from the subbiome's own hash
+        const count = sparse ? hash4(w.p.seed, ST_SPARSE_SUB, keyI(s), keyJ(s)) & 1 : this.p.perSub;
+        for (let k = 0; k < count; k++) {
           // a random point inside the (warped) subbiome cell, on the region's land;
           // fall back to the site, or drop the point when even that is outside
           let px = NaN;
