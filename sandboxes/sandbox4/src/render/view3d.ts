@@ -1,9 +1,17 @@
 /**
  * 3D landscape view (plain WebGL2, no dependencies): a height-field mesh over the
- * current 2D view, draped with the 2D map image (so rivers, borders and every colour
- * mode come along), lit from the north-west, with an orbit camera.
+ * current 2D view plus a margin around it, draped with the 2D map image (so rivers,
+ * borders and every colour mode come along), lit from the north-west, with an orbit
+ * camera.
  *
- * Coordinates: x east and z south in km relative to the view centre, y up in km
+ * Panning is immediate: the camera's look-at point follows the 2D camera in world
+ * coordinates (`follow`), so the existing mesh slides at once and the margin shows
+ * real terrain; the caller rebuilds the mesh around the new view when it can. The map
+ * image covers its own world rectangle (`setTexture`, normally the 2D view when it was
+ * drawn), independent of the mesh; outside it the surface is coloured by height (the
+ * same hypsometric tint as the 2D height mode).
+ *
+ * Coordinates: x east and z south in km relative to the mesh centre, y up in km
  * (height × vertical exaggeration). The sea is drawn as a flat surface at 0.
  */
 
@@ -16,6 +24,8 @@ export interface HeightGrid {
   y0: number;
   x1: number;
   y1: number;
+  /** width of the visible view the grid surrounds, metres (sets the camera distance) */
+  viewW: number;
   /** heights in metres, row-major (NaN = unknown, drawn at sea level) */
   h: Float32Array;
 }
@@ -24,39 +34,72 @@ export interface OrbitCam {
   /** rotation around the vertical axis and elevation angle, radians */
   yaw: number;
   pitch: number;
-  /** distance from the target, as a fraction of the grid's width */
+  /** distance from the target, as a fraction of the view's width */
   dist: number;
-  /** look-at point offset in the ground plane, km */
-  tx: number;
-  tz: number;
 }
+
+/** world rectangle in metres */
+export interface Rect {
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
+}
+
+/** height attribute of a vertex whose height is not known yet */
+const UNKNOWN_H = -1e6;
 
 const VS = `#version 300 es
 layout(location = 0) in vec3 aPos;
 layout(location = 1) in vec3 aNormal;
-layout(location = 2) in vec2 aUv;
+layout(location = 2) in float aH;
 uniform mat4 uMvp;
 out vec3 vNormal;
-out vec2 vUv;
+out vec2 vXZ;
 out float vH;
 void main() {
   vNormal = aNormal;
-  vUv = aUv;
-  vH = aPos.y;
+  vXZ = aPos.xz;
+  vH = aH;
   gl_Position = uMvp * vec4(aPos, 1.0);
 }`;
 
 const FS = `#version 300 es
 precision highp float;
 in vec3 vNormal;
-in vec2 vUv;
+in vec2 vXZ;
 in float vH;
 uniform sampler2D uTex;
 uniform vec3 uLight;
 uniform float uHasTex;
+/** the map image's rectangle in mesh coordinates: x0, z0, width, depth (km) */
+uniform vec4 uTexRect;
 out vec4 outColor;
+
+// hypsometric tint, as heightColor() in render/source.ts
+const float SH[8] = float[8](0.0, 60.0, 180.0, 400.0, 700.0, 1100.0, 1600.0, 2400.0);
+const vec3 SC[8] = vec3[8](
+  vec3(72.0, 128.0, 76.0), vec3(104.0, 152.0, 84.0), vec3(150.0, 176.0, 98.0), vec3(206.0, 194.0, 122.0),
+  vec3(182.0, 142.0, 94.0), vec3(150.0, 120.0, 98.0), vec3(168.0, 160.0, 156.0), vec3(246.0, 246.0, 246.0));
+vec3 hypso(float h) {
+  if (h < -1e5) return vec3(0.32, 0.34, 0.36); // not computed yet
+  if (h < 0.0) {
+    float t = min(1.0, -h / 1200.0);
+    return vec3(84.0 - 62.0 * t, 150.0 - 104.0 * t, 200.0 - 100.0 * t) / 255.0;
+  }
+  for (int k = 1; k < 8; k++) {
+    if (h <= SH[k]) return mix(SC[k - 1], SC[k], (h - SH[k - 1]) / (SH[k] - SH[k - 1])) / 255.0;
+  }
+  return SC[7] / 255.0;
+}
+
 void main() {
-  vec3 base = uHasTex > 0.5 ? texture(uTex, vUv).rgb : vec3(0.55, 0.6, 0.5);
+  vec2 uv = (vXZ - uTexRect.xy) / uTexRect.zw;
+  bool inTex = uHasTex > 0.5 && uv.x >= 0.0 && uv.y >= 0.0 && uv.x <= 1.0 && uv.y <= 1.0;
+  // always sample (derivatives must not sit in non-uniform control flow)
+  vec3 map = texture(uTex, clamp(uv, 0.0, 1.0)).rgb;
+  // outside the map image: height colours, a little dimmer so the map's edge reads
+  vec3 base = inTex ? map : hypso(vH) * 0.85;
   vec3 n = normalize(vNormal);
   float diff = max(dot(n, uLight), 0.0);
   float light = 0.42 + 0.78 * diff;
@@ -130,10 +173,16 @@ function mul(a: M4, b: M4): M4 {
 export interface Mesh {
   pos: Float32Array;
   normal: Float32Array;
-  uv: Float32Array;
+  /** height of each vertex in metres (UNKNOWN_H where not computed) */
+  hm: Float32Array;
   index: Uint32Array;
-  /** grid width in km (for camera distance) */
+  /** world position of the mesh centre (metres): mesh coordinates are km from here */
+  cx: number;
+  cy: number;
+  /** grid width in km */
   widthKm: number;
+  /** width of the visible view in km (for the camera distance) */
+  viewKm: number;
   /** highest vertex, km after exaggeration */
   topKm: number;
 }
@@ -144,7 +193,7 @@ export function buildMesh(g: HeightGrid, exag: number): Mesh {
   const n = cols * rows;
   const pos = new Float32Array(n * 3);
   const normal = new Float32Array(n * 3);
-  const uv = new Float32Array(n * 2);
+  const hm = new Float32Array(n);
   const cxm = (g.x0 + g.x1) / 2;
   const cym = (g.y0 + g.y1) / 2;
   const dx = (g.x1 - g.x0) / (cols - 1);
@@ -161,8 +210,7 @@ export function buildMesh(g: HeightGrid, exag: number): Mesh {
       pos[q * 3] = (g.x0 + i * dx - cxm) * 0.001;
       pos[q * 3 + 1] = y;
       pos[q * 3 + 2] = (g.y0 + j * dy - cym) * 0.001;
-      uv[q * 2] = i / (cols - 1);
-      uv[q * 2 + 1] = j / (rows - 1);
+      hm[q] = h === h ? h : UNKNOWN_H;
     }
   }
   const sx = dx * 0.001;
@@ -198,7 +246,7 @@ export function buildMesh(g: HeightGrid, exag: number): Mesh {
       index[k++] = d;
     }
   }
-  return { pos, normal, uv, index, widthKm: (g.x1 - g.x0) * 0.001, topKm: top };
+  return { pos, normal, hm, index, cx: cxm, cy: cym, widthKm: (g.x1 - g.x0) * 0.001, viewKm: g.viewW * 0.001, topKm: top };
 }
 
 // ------------------------------------------------------------------ view
@@ -213,8 +261,12 @@ export class View3D {
   private hasTex = false;
   private count = 0;
   private mesh: Mesh | null = null;
+  /** world rectangle the map image covers (metres) */
+  private texRect: Rect | null = null;
+  /** look-at point, world metres (follows the 2D camera) */
+  private target = { x: 0, y: 0 };
   private raf = 0;
-  cam: OrbitCam = { yaw: 0, pitch: 0.75, dist: 0.95, tx: 0, tz: 0 };
+  cam: OrbitCam = { yaw: 0, pitch: 0.75, dist: 0.95 };
   /** called when the user pans (km east, km south) */
   onPan: ((dxKm: number, dzKm: number) => void) | null = null;
 
@@ -239,8 +291,12 @@ export class View3D {
     return this.gl !== null;
   }
 
-  /** Replace the mesh (and, when given, the draped map image). */
-  setData(mesh: Mesh, image: TexImageSource | null): void {
+  get hasMesh(): boolean {
+    return this.mesh !== null;
+  }
+
+  /** Replace the mesh. The look-at point stays where it is in the world. */
+  setMesh(mesh: Mesh): void {
     const gl = this.gl;
     if (!gl) return;
     this.mesh = mesh;
@@ -253,26 +309,39 @@ export class View3D {
     };
     attr(0, this.bufs[0], mesh.pos, 3);
     attr(1, this.bufs[1], mesh.normal, 3);
-    attr(2, this.bufs[2], mesh.uv, 2);
+    attr(2, this.bufs[2], mesh.hm, 1);
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.bufs[3]);
     gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, mesh.index, gl.STATIC_DRAW);
     gl.bindVertexArray(null);
     this.count = mesh.index.length;
-    if (image) {
-      gl.bindTexture(gl.TEXTURE_2D, this.tex);
-      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
-      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
-      gl.generateMipmap(gl.TEXTURE_2D);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-      // keeps thin lines (rivers, borders) crisp on slopes seen at a grazing angle
-      const aniso = gl.getExtension('EXT_texture_filter_anisotropic');
-      if (aniso) gl.texParameterf(gl.TEXTURE_2D, aniso.TEXTURE_MAX_ANISOTROPY_EXT, Math.min(8, gl.getParameter(aniso.MAX_TEXTURE_MAX_ANISOTROPY_EXT)));
-      this.hasTex = true;
-    }
     this.requestDraw();
+  }
+
+  /** Drape a map image over the world rectangle it shows (metres). */
+  setTexture(image: TexImageSource, rect: Rect): void {
+    const gl = this.gl;
+    if (!gl) return;
+    gl.bindTexture(gl.TEXTURE_2D, this.tex);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
+    gl.generateMipmap(gl.TEXTURE_2D);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    // keeps thin lines (rivers, borders) crisp on slopes seen at a grazing angle
+    const aniso = gl.getExtension('EXT_texture_filter_anisotropic');
+    if (aniso) gl.texParameterf(gl.TEXTURE_2D, aniso.TEXTURE_MAX_ANISOTROPY_EXT, Math.min(8, gl.getParameter(aniso.MAX_TEXTURE_MAX_ANISOTROPY_EXT)));
+    this.hasTex = true;
+    this.texRect = { ...rect };
+    this.requestDraw();
+  }
+
+  /** Look at this world point (metres): called whenever the 2D camera moves, so panning slides the mesh at once. */
+  follow(x: number, y: number): void {
+    if (this.target.x === x && this.target.y === y) return;
+    this.target = { x, y };
+    if (this.mesh) this.requestDraw();
   }
 
   requestDraw(): void {
@@ -284,16 +353,19 @@ export class View3D {
     const w = this.canvas.width || 1;
     const h = this.canvas.height || 1;
     const m = this.mesh;
-    const span = m ? m.widthKm : 100;
+    const span = m ? m.viewKm : 100;
     const top = m ? m.topKm : 0;
     const c = this.cam;
+    // look-at point in mesh coordinates
+    const tx = m ? (this.target.x - m.cx) * 0.001 : 0;
+    const tz = m ? (this.target.y - m.cy) * 0.001 : 0;
     const d = span * c.dist;
     const ty = top * 0.25;
-    const ex = c.tx + d * Math.cos(c.pitch) * Math.sin(c.yaw);
-    const ez = c.tz + d * Math.cos(c.pitch) * Math.cos(c.yaw);
+    const ex = tx + d * Math.cos(c.pitch) * Math.sin(c.yaw);
+    const ez = tz + d * Math.cos(c.pitch) * Math.cos(c.yaw);
     const ey = ty + d * Math.sin(c.pitch);
-    const proj = perspective((45 * Math.PI) / 180, w / h, Math.max(0.01, d / 200), d * 6 + span * 2);
-    return mul(proj, lookAt(ex, ey, ez, c.tx, ty, c.tz));
+    const proj = perspective((45 * Math.PI) / 180, w / h, Math.max(0.01, d / 200), d * 6 + (m ? m.widthKm : span) * 2);
+    return mul(proj, lookAt(ex, ey, ez, tx, ty, tz));
   }
 
   draw(): void {
@@ -310,7 +382,11 @@ export class View3D {
     // light from the north-west (−x, −z), 45° up
     const l = Math.hypot(-1, 1.4, -1);
     gl.uniform3f(gl.getUniformLocation(this.prog, 'uLight'), -1 / l, 1.4 / l, -1 / l);
-    gl.uniform1f(gl.getUniformLocation(this.prog, 'uHasTex'), this.hasTex ? 1 : 0);
+    gl.uniform1f(gl.getUniformLocation(this.prog, 'uHasTex'), this.hasTex && this.texRect ? 1 : 0);
+    const r = this.texRect;
+    const m = this.mesh;
+    if (r) gl.uniform4f(gl.getUniformLocation(this.prog, 'uTexRect'), (r.x0 - m.cx) * 0.001, (r.y0 - m.cy) * 0.001, Math.max(1e-6, (r.x1 - r.x0) * 0.001), Math.max(1e-6, (r.y1 - r.y0) * 0.001));
+    else gl.uniform4f(gl.getUniformLocation(this.prog, 'uTexRect'), 0, 0, 1, 1);
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, this.tex);
     gl.uniform1i(gl.getUniformLocation(this.prog, 'uTex'), 0);
@@ -336,7 +412,7 @@ export class View3D {
       drag.y = e.clientY;
       if (drag.pan) {
         // drag the ground: screen motion → ground-plane km, rotated by the yaw
-        const span = this.mesh ? this.mesh.widthKm : 100;
+        const span = this.mesh ? this.mesh.viewKm : 100;
         const k = (span * this.cam.dist * 1.6) / Math.max(1, cv.clientHeight);
         const c = Math.cos(this.cam.yaw);
         const s = Math.sin(this.cam.yaw);

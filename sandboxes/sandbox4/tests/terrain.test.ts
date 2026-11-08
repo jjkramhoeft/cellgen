@@ -366,4 +366,30 @@ describe('terrain', { timeout: 60_000 }, () => {
     const steep = setup().t.p.hillType.map((v, i) => (plains.includes(i) ? 0.05 : v));
     expect(spreadOf({ hillType: steep }, plains)).toBeGreaterThan(p * 1.5);
   });
+  it('heightFast (3D mesh) agrees with heightAt where tiles are computed, and is NaN where none are', () => {
+    const { w, t } = setup();
+    const r = landRegions(w, 1)[0];
+    const T = t.get(r);
+    const span = (T.nx - 1) * T.res;
+    const pts: [number, number][] = [];
+    for (let j = 0; j < 60; j++) for (let i = 0; i < 60; i++) pts.push([T.x0 + 0.1 * span + (0.8 * span * i) / 59, T.y0 + 0.1 * (T.ny - 1) * T.res + (0.8 * (T.ny - 1) * T.res * j) / 59]);
+    let a = performance.now();
+    const fast = pts.map(([x, y]) => t.heightFast(x, y));
+    const fastMs = performance.now() - a;
+    a = performance.now();
+    const exact = pts.map(([x, y]) => t.heightAt(x, y));
+    const exactMs = performance.now() - a;
+    let n = 0;
+    let close = 0;
+    for (let q = 0; q < pts.length; q++) {
+      if (exact[q] !== exact[q]) continue; // a neighbouring tile that is not computed
+      n++;
+      if (Math.abs(fast[q] - exact[q]) < 1) close++;
+    }
+    expect(n).toBeGreaterThan(1000);
+    expect(close / n).toBeGreaterThan(0.99);
+    expect(fastMs).toBeLessThan(exactMs);
+    // far away, nothing is computed
+    expect(t.heightFast(T.x0 + 5e6, T.y0 + 5e6)).toBeNaN();
+  });
 });

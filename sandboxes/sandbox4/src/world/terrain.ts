@@ -587,6 +587,34 @@ export class Terrain {
     return t ? sample(t, x, y) : NaN;
   }
 
+  /**
+   * Height at a point from the computed tiles only, without classifying the point
+   * (for the 3D mesh: many points, fast). A point's region lies within two region
+   * lattice cells of the lattice cell under it (jitter and merges), so it is read from
+   * the first cached tile around whose nearest raster cell belongs to a region the tile
+   * owns; the rare point where none does falls back to `heightAt`. NaN when no tile
+   * around is computed yet.
+   */
+  heightFast(x: number, y: number): number {
+    const R = this.world.regionLevel.size;
+    const i = Math.floor(x / R);
+    const j = Math.floor(y / R);
+    const k = this.k;
+    let any = false;
+    for (let tj = Math.floor((j - 2) / k); tj <= Math.floor((j + 2) / k); tj++) {
+      for (let ti = Math.floor((i - 2) / k); ti <= Math.floor((i + 2) / k); ti++) {
+        const t = this.tiles.get(packKey(ti, tj));
+        if (!t) continue;
+        any = true;
+        const ci = Math.round((x - t.x0) / t.res);
+        const cj = Math.round((y - t.y0) / t.res);
+        if (ci < 0 || cj < 0 || ci >= t.nx || cj >= t.ny) continue;
+        if (ownsRegion(t, regionAt(t, cj * t.nx + ci))) return sample(t, x, y);
+      }
+    }
+    return any ? this.heightAt(x, y) : NaN;
+  }
+
   /** Raster bounding box of a tile: the union of its regions' boxes. */
   private bbox(tkey: number): [number, number, number, number] {
     let x0 = Infinity;

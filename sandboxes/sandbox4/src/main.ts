@@ -20,7 +20,7 @@ import { ALL_DEFS, defaults, GEN_KEYS, PRESETS, RIVER_KEYS, RIVER_SECTION, FLOOD
 import { drawGrid, drawGrowth, drawLinks, drawMerges, drawRivers, drawRuler, drawSites, fmtDist, niceStep, type Frame } from './render/overlays';
 import { DETAIL_PX, mapSource, type ViewMode, type ViewOpts } from './render/source';
 import { computeViewStats, renderInspector, renderLegend, renderLevels, renderRuler, renderStats, type ViewStats } from './ui/widgets';
-import { buildMesh, View3D, type HeightGrid } from './render/view3d';
+import { buildMesh, View3D, type HeightGrid, type Rect } from './render/view3d';
 import { Rivers } from './world/rivers';
 import { FLOOD_REF_FLOW, monotoneSpline, Terrain } from './world/terrain';
 import type { FromTerrainWorker, ToTerrainWorker } from './world/terrain.worker';
@@ -37,8 +37,10 @@ const HOME_SPAN = 1_000_000;
 const CACHE_LIMIT = 900_000;
 /** the terrain is skipped when the view touches more regions than this (at 1 km cells; scales with the cell area) */
 const TERRAIN_MAX_REGIONS = 64;
-/** 3D mesh resolution (vertices across) */
-const MESH_COLS = 320;
+/** 3D mesh resolution (vertices across the whole mesh, margin included) */
+const MESH_COLS = 480;
+/** the 3D mesh reaches this many view widths (heights) beyond each side of the view, so a pan slides real terrain into view */
+const MESH_MARGIN = 0.5;
 
 // ------------------------------------------------------------------ state
 
@@ -56,12 +58,17 @@ let terrainPending = 0;
 let terrainBump = 0;
 /** parameter generation of the terrain (tiles from an older one are dropped) */
 let terrainGen = 0;
-/** tiles received from the worker since the last frame */
+/** tiles of the view received from the worker since the last frame */
 let tilesArrived = 0;
+/** terrain tiles the 2D view needs (the rest are the 3D mesh's margin) */
+let viewTiles = new Set<number>();
 /** the missing tiles last asked of the worker (comma-joined) */
 let tilesWanted = '';
-/** the 3D mesh/texture are stale */
-let dirty3d = true;
+/** the 3D mesh (heights, centred on the view) and the draped map image are stale */
+let meshDirty = true;
+let texDirty = true;
+/** the view (centre and size, metres) the current 3D mesh was built around */
+let meshAt: { cx: number; cy: number; w: number; h: number } | null = null;
 /** regions around the view whose rivers are still being computed */
 let riverPending = 0;
 let genId = 0;
@@ -217,7 +224,9 @@ const terrainWorker: Worker | null = (() => {
       const m = e.data;
       if (m.kind !== 'tile' || m.gen !== terrainGen) return;
       terrain.put(m.tile);
-      tilesArrived++;
+      // a tile of the view re-renders the map; one of the 3D margin only the mesh
+      if (viewTiles.has(m.tile.tile)) tilesArrived++;
+      else meshDirty = true;
       invalidate();
     };
     wk.onerror = (e) => console.error('terrain worker', e.message);
@@ -238,7 +247,7 @@ function newTerrain(): void {
   tilesArrived = 0;
   toWorker({ kind: 'gen', gen: terrainGen, world: world.p, rivers: rivers.p, terrain: terrain.p });
   terrainVer++;
-  dirty3d = true;
+  meshDirty = texDirty = true;
 }
 
 /** Does the current display need the height map? */
@@ -254,18 +263,34 @@ function wantTiles(keys: number[]): void {
   toWorker({ kind: 'want', gen: terrainGen, tiles: keys });
 }
 
-/**
- * Get the terrain tiles around the view: requested from the worker (or, without one,
- * computed here until `deadline`). Returns how many are still missing (-1 when the
- * view spans too many regions).
- */
-function prepareTerrain(deadline: number): number {
+/** World rectangle of the 2D view (metres). */
+function viewRect(): Rect {
   const [x0, y0] = screenToWorld(cam, vp, 0, 0);
   const [x1, y1] = screenToWorld(cam, vp, vp.w, vp.h);
+  return { x0, y0, x1, y1 };
+}
+
+/** World rectangle of the 3D mesh: the view plus MESH_MARGIN of it on every side. */
+function meshRect(): Rect {
+  const v = viewRect();
+  const mx = (v.x1 - v.x0) * MESH_MARGIN;
+  const my = (v.y1 - v.y0) * MESH_MARGIN;
+  return { x0: v.x0 - mx, y0: v.y0 - my, x1: v.x1 + mx, y1: v.y1 + my };
+}
+
+/**
+ * Get the terrain tiles around the view: requested from the worker (or, without one,
+ * computed here until `deadline`), and with the 3D view on also those of the mesh's
+ * margin (after the view's own). Returns how many of the view's tiles are still
+ * missing (-1 when the view spans too many regions).
+ */
+function prepareTerrain(deadline: number): number {
+  const { x0, y0, x1, y1 } = viewRect();
   const R = world.regionLevel;
   const budget = TERRAIN_MAX_REGIONS * (terrain.p.res / 1000) ** 2;
   if (World.countIn(R, x0, y0, x1, y1, 1) > budget) {
     terrain.setNeeded([]);
+    viewTiles = new Set();
     wantTiles([]);
     return -1;
   }
@@ -275,8 +300,14 @@ function prepareTerrain(deadline: number): number {
     return ((keyI(t) + 0.5) * span - cam.cx) ** 2 + ((keyJ(t) + 0.5) * span - cam.cy) ** 2;
   };
   const tiles = terrain.tilesIn(x0, y0, x1, y1).sort((a, b) => dist(a) - dist(b));
-  terrain.setNeeded(tiles);
-  if (terrainWorker) wantTiles(tiles.filter((k) => !terrain.hasTile(k)));
+  viewTiles = new Set(tiles);
+  let margin: number[] = [];
+  if (params['view.3d'] === true) {
+    const m = meshRect();
+    margin = terrain.tilesIn(m.x0, m.y0, m.x1, m.y1).filter((k) => !viewTiles.has(k)).sort((a, b) => dist(a) - dist(b));
+  }
+  terrain.setNeeded([...tiles, ...margin]);
+  if (terrainWorker) wantTiles([...tiles, ...margin].filter((k) => !terrain.hasTile(k)));
   else {
     for (const k of tiles) {
       if (terrain.hasTile(k)) continue;
@@ -293,7 +324,7 @@ function prepareTerrain(deadline: number): number {
       tilesArrived = 0;
       terrainVer++;
       terrainBump = now;
-      dirty3d = true;
+      meshDirty = texDirty = true;
     } else window.setTimeout(invalidate, 1500 - (now - terrainBump) + 10);
   }
   return pending;
@@ -325,7 +356,7 @@ function viewOpts(): ViewOpts {
 
 /** Anything that changes the picture but not the world. */
 function viewChanged(): void {
-  dirty3d = true;
+  meshDirty = texDirty = true;
   show3d();
   renderLegend($('legend'), viewOpts().mode, stats ? stats.oceanShare : null, world.p.growPasses);
   updateInspector();
@@ -386,6 +417,14 @@ function frame(): void {
   if (useTerrain) terrainPending = prepareTerrain(interacting ? 0 : now + 120);
   const src = mapSource(world, `g${genId}`, viewOpts(), useTerrain ? terrain : null, terrainVer);
   const fresh = !layer.hasContentFor(src.key);
+  // while the 3D view covers the map and the user is moving it, the hidden 2D map is not
+  // drawn (it is only needed as the 3D map image, which is re-draped once things settle)
+  if (params['view.3d'] === true && has3d && interacting) {
+    update3d(true, terrainPending <= 0, false);
+    clearTimeout(idleTimer);
+    idleTimer = window.setTimeout(invalidate, 170);
+    return;
+  }
   // coarse first while moving or when the content is new, then full resolution
   const preview = Math.max(0.25, dpr * 0.3);
   let scale = interacting || fresh ? preview : dpr;
@@ -439,7 +478,7 @@ function frame(): void {
   renderLevels($('levels'), world, cam.zoom, detailOn());
   const terrainBusy = terrainPending > 0;
   $('busy').hidden = !layer.busy && riverPending === 0 && !terrainBusy;
-  if (params['view.3d'] === true) update3d(!layer.busy && riverPending === 0 && !terrainBusy && !interacting);
+  if (params['view.3d'] === true) update3d(interacting, !terrainBusy, !layer.busy && riverPending === 0 && !terrainBusy && !interacting);
   // with a worker, arriving tiles wake the loop (no need to spin while it works)
   if (layer.busy || riverPending > 0 || (terrainBusy && !terrainWorker)) invalidate();
   else if (interacting || fresh) {
@@ -499,30 +538,51 @@ function show3d(): void {
   if (on) view3d.requestDraw();
 }
 
-/** Rebuild the mesh and re-drape the map once the 2D picture is settled (map, rivers and terrain all done). */
-function update3d(settled: boolean): void {
-  if (!view3d.supported || !dirty3d || !settled) return;
-  const [x0, y0] = screenToWorld(cam, vp, 0, 0);
-  const [x1, y1] = screenToWorld(cam, vp, vp.w, vp.h);
-  const cols = MESH_COLS;
-  const rows = Math.max(2, Math.round((cols * vp.h) / vp.w));
-  const h = new Float32Array(cols * rows);
-  for (let j = 0; j < rows; j++) {
-    const y = y0 + ((y1 - y0) * j) / (rows - 1);
-    for (let i = 0; i < cols; i++) h[j * cols + i] = terrain.heightAt(x0 + ((x1 - x0) * i) / (cols - 1), y);
+/**
+ * Keep the 3D view up to date, in two independent parts (panning itself never waits:
+ * `setCam` slides the existing mesh at once):
+ *   mesh     rebuilt around the view (plus its margin) as soon as the user stops moving;
+ *            tiles that arrive later (view or margin) rebuild it again
+ *   texture  the 2D map image, re-draped once the 2D picture is settled (map, rivers and
+ *            terrain all done); it stays anchored to the world rectangle it shows
+ */
+function update3d(interacting: boolean, terrainReady: boolean, pictureSettled: boolean): void {
+  if (!view3d.supported) return;
+  // during a long drag, rebuild before the camera runs off the mesh's margin
+  const nearEdge =
+    meshAt !== null && Math.max(Math.abs(cam.cx - meshAt.cx) / meshAt.w, Math.abs(cam.cy - meshAt.cy) / meshAt.h) > MESH_MARGIN * 0.6;
+  // the first picture waits for the view's terrain (the 2D map stays up meanwhile); later
+  // rebuilds do not: unknown heights show flat and grey and fill in as their tiles arrive
+  if (meshDirty && (!interacting || nearEdge) && (has3d || terrainReady)) {
+    const { x0, y0, x1, y1 } = meshRect();
+    const cols = MESH_COLS;
+    const rows = Math.max(2, Math.round((cols * (y1 - y0)) / (x1 - x0)));
+    const h = new Float32Array(cols * rows);
+    for (let j = 0; j < rows; j++) {
+      const y = y0 + ((y1 - y0) * j) / (rows - 1);
+      for (let i = 0; i < cols; i++) h[j * cols + i] = terrain.heightFast(x0 + ((x1 - x0) * i) / (cols - 1), y);
+    }
+    const grid: HeightGrid = { cols, rows, x0, y0, x1, y1, viewW: vp.w / cam.zoom, h };
+    view3d.follow(cam.cx, cam.cy);
+    view3d.setMesh(buildMesh(grid, Number(params['view.exag'])));
+    meshAt = { cx: cam.cx, cy: cam.cy, w: vp.w / cam.zoom, h: vp.h / cam.zoom };
+    meshDirty = false;
+    has3d = true;
+    canvas3d.hidden = false;
   }
-  const grid: HeightGrid = { cols, rows, x0, y0, x1, y1, h };
-  view3d.setData(buildMesh(grid, Number(params['view.exag'])), canvas);
-  has3d = true;
-  dirty3d = false;
-  canvas3d.hidden = false;
+  if (texDirty && has3d && pictureSettled) {
+    view3d.setTexture(canvas, viewRect());
+    texDirty = false;
+  }
 }
 
 // ------------------------------------------------------------------ interaction
 
 function setCam(c: Camera): void {
   cam = c;
-  dirty3d = true;
+  meshDirty = texDirty = true;
+  // the 3D view slides with the camera right away; the mesh is rebuilt around the new view later
+  view3d.follow(cam.cx, cam.cy);
   homed = false;
   lastInteract = performance.now();
   writeUrl();
@@ -548,7 +608,7 @@ new ResizeObserver(() => {
   if (homed) cam = homeCamera();
   canvas3d.width = canvas.width;
   canvas3d.height = canvas.height;
-  dirty3d = true;
+  meshDirty = texDirty = true;
   view3d.requestDraw();
   scheduleStats();
   invalidate();
