@@ -430,6 +430,12 @@ function viewRect(): Rect {
   return { x0, y0, x1, y1 };
 }
 
+/** Is this world rectangle small enough for the height map to be computed for it? */
+function terrainFits(r: Rect): boolean {
+  const budget = TERRAIN_MAX_REGIONS * (terrain.p.res / 1000) ** 2;
+  return World.countIn(world.regionLevel, r.x0, r.y0, r.x1, r.y1, 1) <= budget;
+}
+
 /** World rectangle of the 3D mesh: the view plus MESH_MARGIN of it on every side. */
 function meshRect(): Rect {
   const v = viewRect();
@@ -449,8 +455,7 @@ function meshRect(): Rect {
 function prepareTerrain(deadline: number): number {
   const { x0, y0, x1, y1 } = viewRect();
   const R = world.regionLevel;
-  const budget = TERRAIN_MAX_REGIONS * (terrain.p.res / 1000) ** 2;
-  if (World.countIn(R, x0, y0, x1, y1, 1) > budget) {
+  if (!terrainFits(viewRect())) {
     terrain.setNeeded([]);
     viewTiles = new Set();
     marginTiles = new Set();
@@ -677,7 +682,7 @@ function frame(): void {
   // while the 3D view covers the map and the user is moving it, the hidden 2D map is not
   // drawn (it is only needed as the 3D map image, which is re-draped once things settle)
   if (params['view.3d'] === true && has3d && interacting) {
-    update3d(true, terrainPending <= 0, false);
+    update3d(true, terrainPending === 0, false);
     clearTimeout(idleTimer);
     idleTimer = window.setTimeout(invalidate, 170);
     return;
@@ -747,7 +752,7 @@ function frame(): void {
   renderLevels($('levels'), world, cam.zoom, detailOn());
   const terrainBusy = terrainPending > 0;
   $('busy').hidden = !layer.busy && riverPending === 0 && !terrainBusy && !climateBusy;
-  if (params['view.3d'] === true) update3d(interacting, !terrainBusy, !layer.busy && riverPending === 0 && !terrainBusy && !climateBusy && !interacting);
+  if (params['view.3d'] === true) update3d(interacting, terrainPending === 0,!layer.busy && riverPending === 0 && !terrainBusy && !climateBusy && !interacting);
   checkStatistics();
   // with a worker, arriving tiles wake the loop (no need to spin while it works)
   if (layer.busy || climateBusy || riverPending > 0 || (terrainBusy && !terrainWorker)) invalidate();
@@ -797,6 +802,10 @@ const canvas3d = $<HTMLCanvasElement>('view3d');
 const view3d = new View3D(canvas3d);
 view3d.onPan = (dxKm, dzKm) => setCam({ ...cam, cx: cam.cx + dxKm * 1000, cy: cam.cy + dzKm * 1000 });
 let has3d = false;
+/** the 3D view is on but the view is too wide for the height map (the user was told to zoom in) */
+let tooWide3d = false;
+/** the 3D view was on at the last show3d() (a link opened with it on does not auto-zoom) */
+let was3d = params['view.3d'] === true;
 
 function show3d(): void {
   const on = params['view.3d'] === true;
@@ -804,6 +813,22 @@ function show3d(): void {
     toast('WebGL2 is not available in this browser');
     return;
   }
+  if (!on) tooWide3d = false;
+  // switched on at a view too wide for the height map: zoom in (about the centre) until
+  // it fits, so the 3D view has relief rather than a flat sheet
+  if (on && !was3d && !terrainFits(viewRect())) {
+    let c = cam;
+    for (let k = 0; k < 60 && c.zoom < MAX_ZOOM; k++) {
+      c = zoomAt(c, vp, vp.w / 2, vp.h / 2, 1.2, MIN_ZOOM, MAX_ZOOM);
+      const [x0, y0] = screenToWorld(c, vp, 0, 0);
+      const [x1, y1] = screenToWorld(c, vp, vp.w, vp.h);
+      if (terrainFits({ x0, y0, x1, y1 })) break;
+    }
+    setCam(c);
+    tooWide3d = true; // the zoom says it all: no "zoom in" toast on the way
+    toast(`Zoomed in to a ${fmtDist(vp.w / c.zoom)} view: 3D needs the height map, which is only computed for smaller views`);
+  }
+  was3d = on;
   // the 2D map (with its progress) stays visible until the first 3D picture is built
   canvas3d.hidden = !(on && has3d);
   if (on) view3d.requestDraw();
@@ -819,6 +844,18 @@ function show3d(): void {
  */
 function update3d(interacting: boolean, terrainReady: boolean, pictureSettled: boolean): void {
   if (!view3d.supported) return;
+  // the view is too wide for the height map: a mesh would be flat (all heights unknown),
+  // so show the 2D map (its status says "terrain: zoom in") until the user zooms in
+  if (terrainPending < 0) {
+    if (!tooWide3d) toast('3D needs the height map, which is only computed for smaller views: zoom in');
+    tooWide3d = true;
+    has3d = false;
+    meshAt = null;
+    meshDirty = texDirty = true;
+    canvas3d.hidden = true;
+    return;
+  }
+  tooWide3d = false;
   // during a long drag, rebuild before the camera runs off the mesh's margin
   const nearEdge =
     meshAt !== null && Math.max(Math.abs(cam.cx - meshAt.cx) / meshAt.w, Math.abs(cam.cy - meshAt.cy) / meshAt.h) > MESH_MARGIN * 0.6;
