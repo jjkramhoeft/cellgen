@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { defaults, toBiomeParams, toClimateParams, toRiverParams, toTerrainParams, toWorldParams } from '../src/params';
+import { testParams } from './fixture';
+import { toBiomeParams, toClimateParams, toRiverParams, toTerrainParams, toWorldParams } from '../src/params';
 import { Biomes, BIOMES, classify, coolingCurve, dryThreshold, OCEAN_BIOME, TYPICAL_HEIGHT, type BiomeId, type BiomeParams } from '../src/world/biomes';
 import { Climate } from '../src/world/climate';
 import { packKey } from '../src/world/level';
@@ -14,7 +15,7 @@ const id = (k: number) => BIOMES[k].id;
 const perKm = (r: number): Pick<BiomeParams, 'coolH' | 'coolT'> => ({ coolH: [0, 500, 1000, 1500, 2000], coolT: [0, 500, 1000, 1500, 2000].map((h) => (r * h) / 1000) });
 
 const setup = (over: Partial<BiomeParams> = {}, withTerrain = false) => {
-  const d = defaults();
+  const d = testParams();
   const w = new World(toWorldParams(d, SEED));
   const rv = new Rivers(w, toRiverParams(d, SEED));
   const cl = new Climate(toClimateParams(d, SEED));
@@ -104,8 +105,8 @@ describe('cooling curve', () => {
     expect(f(3600)).toBeCloseTo(19, 12);
   });
 
-  it('defaults to the standard atmosphere, 6.5 °C per km', () => {
-    const p = toBiomeParams(defaults());
+  it('the test baseline is the standard atmosphere, 6.5 °C per km', () => {
+    const p = toBiomeParams(testParams());
     const f = coolingCurve(p.coolH, p.coolT);
     for (const h of [0, 50, 137, 470, 999, 1500, 2000, 2500, 4000]) expect(f(h)).toBeCloseTo((6.5 * h) / 1000, 9);
   });
@@ -169,8 +170,8 @@ describe('biomes of the subbiomes', { timeout: 60_000 }, () => {
   it('river-poor (sparse) flat zones are drier and favour desert', () => {
     const { w, rv, cl } = setup();
     const subs = subsAround(w, 1_200_000, 6000);
-    const wet = new Biomes(w, rv, cl, null, { ...toBiomeParams(defaults()), sparseDry: 1 });
-    const dry = new Biomes(w, rv, cl, null, toBiomeParams(defaults()));
+    const wet = new Biomes(w, rv, cl, null, { ...toBiomeParams(testParams()), sparseDry: 1 });
+    const dry = new Biomes(w, rv, cl, null, toBiomeParams(testParams()));
     const desert = (k: number) => id(k) === 'hotDesert' || id(k) === 'coldDesert';
     let sparse = 0;
     let desertWet = 0;

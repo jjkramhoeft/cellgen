@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { defaults, toBiomeParams, toClimateParams, toRiverParams, toTerrainParams, toWorldParams } from '../src/params';
+import { testParams } from './fixture';
+import { toBiomeParams, toClimateParams, toRiverParams, toTerrainParams, toWorldParams } from '../src/params';
 import { Biomes, OCEAN_BIOME } from '../src/world/biomes';
 import { Climate } from '../src/world/climate';
 import { computeMapStats, HIST_BINS, MAX_SAMPLES, MapStatsJob, type Rect } from '../src/world/mapstats';
@@ -11,7 +12,7 @@ import { OCEAN_ZONE } from '../src/world/zones';
 const SEED = 4242;
 
 const setup = (withTerrain = false) => {
-  const d = defaults();
+  const d = testParams();
   const w = new World(toWorldParams(d, SEED));
   const rv = new Rivers(w, toRiverParams(d, SEED));
   const cl = new Climate(toClimateParams(d, SEED));

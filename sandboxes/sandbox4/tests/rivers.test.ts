@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { defaults, toRiverParams, toWorldParams } from '../src/params';
+import { testParams } from './fixture';
+import { toRiverParams, toWorldParams } from '../src/params';
 import { coneCos, Rivers, type RiverParams } from '../src/world/rivers';
 import { RIVER_REF_FLOW, riverPx } from '../src/render/overlays';
 import { World } from '../src/world/world';
@@ -7,8 +8,8 @@ import { elevationZoneType, ELEVATION_ZONE_TYPES } from '../src/world/zones';
 
 const FLAT = ELEVATION_ZONE_TYPES.findIndex((t) => t.id === 'flat');
 
-const world = (seed = 12345) => new World(toWorldParams(defaults(), seed));
-const rp = (over: Partial<RiverParams> = {}): RiverParams => ({ ...toRiverParams(defaults(), 12345), ...over });
+const world = (seed = 12345) => new World(toWorldParams(testParams(), seed));
+const rp = (over: Partial<RiverParams> = {}): RiverParams => ({ ...toRiverParams(testParams(), 12345), ...over });
 
 /** Regions around the origin that have land. */
 function landRegions(w: World, n = 6): number[] {
@@ -311,7 +312,7 @@ describe('branch-look settings', () => {
     });
   }
 
-  it('all off is the plain algorithm (defaults)', () => {
+  it('all off is the plain algorithm (test baseline)', () => {
     const d = rp();
     expect([d.inertia, d.cone, d.wander, d.apical]).toEqual([0, 0, 0, 0]);
   });

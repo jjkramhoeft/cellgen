@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { defaults, toRiverParams, toTerrainParams, toWorldParams } from '../src/params';
+import { testParams } from './fixture';
+import { toRiverParams, toTerrainParams, toWorldParams } from '../src/params';
 import { Rivers } from '../src/world/rivers';
 import { invPowTheta, LAND, monotoneSpline, OCEAN, ownsRegion, regionAt, Terrain, tileSide, type TerrainParams, type TerrainTile } from '../src/world/terrain';
 import { keyI, keyJ, packKey } from '../src/world/level';
@@ -15,10 +16,10 @@ const typeAt = (w: World, x: number, y: number) => {
 const typeIndex = (id: string) => ELEVATION_ZONE_TYPES.findIndex((t) => t.id === id);
 
 const setup = (over: Partial<TerrainParams> = {}) => {
-  const w = new World(toWorldParams(defaults(), 12345));
-  const rv = new Rivers(w, toRiverParams(defaults(), 12345));
+  const w = new World(toWorldParams(testParams(), 12345));
+  const rv = new Rivers(w, toRiverParams(testParams(), 12345));
   // 2 km cells keep the tests quick; the pipeline is the same at every resolution
-  const t = new Terrain(w, rv, { ...toTerrainParams(defaults()), res: 2000, ...over });
+  const t = new Terrain(w, rv, { ...toTerrainParams(testParams()), res: 2000, ...over });
   return { w, rv, t };
 };
 

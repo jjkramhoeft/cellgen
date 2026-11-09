@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
+import { testParams } from './fixture';
 import { perlin2 } from '@shared/core/noise';
-import { defaults, toClimateParams } from '../src/params';
+import { toClimateParams } from '../src/params';
 import { Climate } from '../src/world/climate';
 
 /** Values of a field on a grid over a large area (far more than one feature size). */
@@ -10,7 +11,7 @@ function sampleField(at: (x: number, y: number) => number, span: number, n: numb
   return v;
 }
 
-const climate = (seed: number) => new Climate(toClimateParams(defaults(), seed));
+const climate = (seed: number) => new Climate(toClimateParams(testParams(), seed));
 
 describe('perlin2', () => {
   it('is deterministic, zero on the lattice and within [-1, 1]', () => {
@@ -86,7 +87,7 @@ describe('initial climate', () => {
   });
 
   it('follows the min / max parameters (swapped values are sorted)', () => {
-    const p = toClimateParams({ ...defaults(), 'clim.t.min': 40, 'clim.t.max': 0 }, 3);
+    const p = toClimateParams({ ...testParams(), 'clim.t.min': 40, 'clim.t.max': 0 }, 3);
     expect(p.temperature.min).toBe(0);
     expect(p.temperature.max).toBe(40);
     const c = new Climate(p);
@@ -96,7 +97,7 @@ describe('initial climate', () => {
   });
 
   it('prosperity: defaults to about 1 to 100, its own seed, and follows its min / max', () => {
-    const d = defaults();
+    const d = testParams();
     expect(d['clim.pros.min']).toBe(1);
     expect(d['clim.pros.max']).toBe(100);
     const c = climate(11);

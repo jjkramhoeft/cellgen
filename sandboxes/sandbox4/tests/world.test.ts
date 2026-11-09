@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest';
+import { testParams } from './fixture';
 import { decodeState, encodeState } from '@shared/params/url';
-import { ALL_DEFS, defaults, PRESETS, toWorldParams } from '../src/params';
+import { ALL_DEFS, PRESETS, toWorldParams } from '../src/params';
 import { keyI, keyJ, Level, packKey } from '../src/world/level';
 import { LINKED, ORIGIN, resolveRoot, SEED, World, type WorldParams } from '../src/world/world';
 
-const base = (over: Partial<WorldParams> = {}): WorldParams => ({ ...toWorldParams(defaults(), 12345), ...over });
+const base = (over: Partial<WorldParams> = {}): WorldParams => ({ ...toWorldParams(testParams(), 12345), ...over });
 
 /** Raw elevation zone keys whose site lies in a square around the origin. */
 function elevationZonesNear(w: World, half: number): number[] {
@@ -251,7 +252,7 @@ describe('world', () => {
 
 describe('params', () => {
   it('round-trips through the URL', () => {
-    const p = { ...defaults(), 'ez.warp': 0.5, 'oc.passes': 3, 'sub.nest': false };
+    const p = { ...testParams(), 'ez.warp': 0.5, 'oc.passes': 3, 'sub.nest': false };
     const back = decodeState(`#${encodeState('abc', p, ALL_DEFS)}`, ALL_DEFS, 'x');
     expect(back?.seed).toBe('abc');
     expect(back?.params).toEqual(p);
@@ -259,12 +260,12 @@ describe('params', () => {
 
   it('keeps levels nested and every preset valid', () => {
     for (const pr of PRESETS) {
-      const wp = toWorldParams({ ...defaults(), ...pr.params }, 1);
+      const wp = toWorldParams({ ...testParams(), ...pr.params }, 1);
       expect(wp.elevationZoneSize).toBeLessThan(wp.regionSize);
       expect(wp.subSize).toBeLessThan(wp.elevationZoneSize);
       for (const k of Object.keys(pr.params)) expect(ALL_DEFS.some((d) => d.key === k), k).toBe(true);
     }
-    const wp = toWorldParams({ ...defaults(), 'reg.size': 32, 'ez.size': 128, 'sub.size': 32 }, 1);
+    const wp = toWorldParams({ ...testParams(), 'reg.size': 32, 'ez.size': 128, 'sub.size': 32 }, 1);
     expect(wp.elevationZoneSize).toBeLessThan(wp.regionSize);
     expect(wp.subSize).toBeLessThan(wp.elevationZoneSize);
   });
