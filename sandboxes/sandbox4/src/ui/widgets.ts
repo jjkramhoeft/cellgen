@@ -49,14 +49,14 @@ export interface ClimateLegend {
   p: NoiseFieldParams;
 }
 
-const CLIMATE_NAMES: Record<ClimateField, [string, string]> = { temperature: ['Initial temperature', '°C'], precipitation: ['Initial precipitation', 'mm/yr'] };
+const CLIMATE_NAMES: Record<ClimateField, [string, string]> = { temperature: ['Initial temperature', '°C'], precipitation: ['Initial precipitation', 'mm/yr'], prosperity: ['Prosperity', ''] };
 
 /** A gradient bar over [min, max] for one climate overlay (drawn at 50 % on the map). */
 function climateBar(c: ClimateLegend): string {
   const [name, unit] = CLIMATE_NAMES[c.field];
   const at = (t: number) => fieldAt(c.p, t);
   const stops = [0, 0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875, 1].map((t) => `${cssRgb(rampRgb(STOPS[c.field], at(t)))} ${t * 100}%`).join(',');
-  const fmt = (v: number) => `${+v.toPrecision(3)} ${unit}`;
+  const fmt = (v: number) => (unit ? `${+v.toPrecision(3)} ${unit}` : `${+v.toPrecision(3)}`);
   return (
     `<div class="lg-clim"><div class="lg-clim-name">${esc(name)} <em>overlay · 50 %</em></div>` +
     `<div class="lg-bar" style="background:linear-gradient(90deg,${stops})"></div>` +
@@ -165,6 +165,7 @@ export function renderInspector(host: HTMLElement, world: World | null, rivers: 
   if (climate) {
     html += `<div class="kv" title="Initial temperature map (Perlin noise)"><span>Initial temperature</span><b>${climate.temperatureAt(pt.x, pt.y).toFixed(1)} °C</b></div>`;
     html += `<div class="kv" title="Initial precipitation map (Perlin noise)"><span>Initial precipitation</span><b>${climate.precipitationAt(pt.x, pt.y).toFixed(0)} mm/yr</b></div>`;
+    html += `<div class="kv" title="Prosperity map (Perlin noise, unitless index)"><span>Prosperity</span><b>${climate.prosperityAt(pt.x, pt.y).toFixed(1)}</b></div>`;
   }
 
   html += `<div class="lvl"><h4><i style="background:${regColor}"></i>Region ${ij(c.region)}</h4>`;

@@ -94,4 +94,28 @@ describe('initial climate', () => {
     expect(Math.min(...t)).toBeGreaterThanOrEqual(0);
     expect(Math.max(...t)).toBeLessThanOrEqual(40);
   });
+
+  it('prosperity: defaults to about 1 to 100, its own seed, and follows its min / max', () => {
+    const d = defaults();
+    expect(d['clim.pros.min']).toBe(1);
+    expect(d['clim.pros.max']).toBe(100);
+    const c = climate(11);
+    const w = sampleField((x, y) => c.prosperityAt(x, y), 30_000_000, 200);
+    expect(Math.min(...w)).toBeGreaterThanOrEqual(1);
+    expect(Math.max(...w)).toBeLessThanOrEqual(100);
+    // spreads over most of the range, centred near the middle
+    expect(Math.min(...w)).toBeLessThan(20);
+    expect(Math.max(...w)).toBeGreaterThan(80);
+    const mean = w.reduce((a, b) => a + b, 0) / w.length;
+    expect(Math.abs(mean - 50.5)).toBeLessThan(10);
+    // independent of temperature and precipitation (own seed salt)
+    const t = sampleField((x, y) => c.temperatureAt(x, y), 30_000_000, 200);
+    let same = 0;
+    for (let k = 0; k < w.length; k++) if (Math.abs((w[k] - 1) / 99 - (t[k] + 10) / 40) < 1e-9) same++;
+    expect(same).toBeLessThan(w.length / 100);
+    const q = new Climate(toClimateParams({ ...d, 'clim.pros.min': 500, 'clim.pros.max': 200 }, 11));
+    const v = sampleField((x, y) => q.prosperityAt(x, y), 20_000_000, 100);
+    expect(Math.min(...v)).toBeGreaterThanOrEqual(200);
+    expect(Math.max(...v)).toBeLessThanOrEqual(500);
+  });
 });

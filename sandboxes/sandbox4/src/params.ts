@@ -347,7 +347,7 @@ export function toTerrainParams(p: Params): TerrainParams {
 }
 
 /** Parameters of one Perlin-noise climate field (left panel), keys `clim.<id>.*`. */
-function climateSection(id: 't' | 'p', title: string, help: string, unit: string, lo: number, hi: number, step: number, log: boolean): Section {
+function climateSection(id: FieldId, title: string, help: string, unit: string, lo: number, hi: number, step: number, log: boolean): Section {
   const k = (name: string) => `clim.${id}.${name}`;
   return withDefaults.section({
     id: `climate-${id}`,
@@ -365,6 +365,9 @@ function climateSection(id: 't' | 'p', title: string, help: string, unit: string
   });
 }
 
+/** Ids of the Perlin-noise fields: temperature, precipitation, prosperity. */
+type FieldId = 't' | 'p' | 'pros';
+
 /** Initial temperature and precipitation maps: Perlin noise, independent of the map for now. */
 export const CLIMATE_SECTIONS: Section[] = [
   climateSection('t', 'Climate · initial temperature', 'Initial temperature map (°C): fBm of Perlin noise. Shown with Display → Temperature overlay and in the inspector.', ' °C', -60, 60, 1, false),
@@ -374,7 +377,20 @@ export const CLIMATE_KEYS = new Set(CLIMATE_SECTIONS.flatMap((sec) => sec.params
 /** Precipitation keys: they also feed the rivers (river-poor dry flat zones). */
 export const PRECIP_KEYS = new Set([...CLIMATE_KEYS].filter((k) => k.startsWith('clim.p.')));
 
-function toField(p: Params, id: 't' | 'p'): NoiseFieldParams {
+/** Prosperity map: Perlin noise like the climate, but it feeds nothing yet (no biome or river rebuild). */
+export const PROSPERITY_SECTION: Section = climateSection(
+  'pros',
+  'Prosperity',
+  'Prosperity map (unitless index, 1 to 100 by default): fBm of Perlin noise with its own seed, independent of the climate and the map for now. Shown with Display → Prosperity overlay and in the inspector.',
+  '',
+  0,
+  1000,
+  1,
+  false,
+);
+export const PROSPERITY_KEYS = new Set(PROSPERITY_SECTION.params.map((p) => p.key));
+
+function toField(p: Params, id: FieldId): NoiseFieldParams {
   const a = num(p, `clim.${id}.min`);
   const b = num(p, `clim.${id}.max`);
   return {
@@ -390,7 +406,7 @@ function toField(p: Params, id: 't' | 'p'): NoiseFieldParams {
 
 /** Schema → model parameters for the climate maps. */
 export function toClimateParams(p: Params, seed: number): ClimateParams {
-  return { seed, temperature: toField(p, 't'), precipitation: toField(p, 'p') };
+  return { seed, temperature: toField(p, 't'), precipitation: toField(p, 'p'), prosperity: toField(p, 'pros') };
 }
 
 /**
@@ -473,6 +489,7 @@ export const VIEW_SECTION: Section = withDefaults.section({
     { key: 'view.hillshade', label: 'Hillshade', type: 'bool', view: true, help: 'Shade any colour mode by the height map (lit from the north-west). Always on for “Height”.' },
     { key: 'view.temp', label: 'Temperature overlay', type: 'bool', view: true, help: 'The initial temperature map, 50 % transparent on top of the map and rivers (blue = cold, red = hot).' },
     { key: 'view.precip', label: 'Precipitation overlay', type: 'bool', view: true, help: 'The initial precipitation map, 50 % transparent on top of the map and rivers (brown = dry, teal/blue = wet). Drawn above the temperature overlay when both are on.' },
+    { key: 'view.prosperity', label: 'Prosperity overlay', type: 'bool', view: true, help: 'The prosperity map, 50 % transparent on top of the map and rivers (dark purple = poor, gold = prosperous). Drawn above the climate overlays.' },
     { key: 'view.regEdges', label: 'Region borders', type: 'bool', view: true },
     { key: 'view.zoneEdges', label: 'Elevation zone borders', type: 'bool', view: true },
     { key: 'view.subEdges', label: 'Subbiome borders', type: 'bool', view: true, help: 'Drawn when subbiomes are large enough on screen.' },
@@ -506,7 +523,7 @@ export const VIEW_SECTION: Section = withDefaults.section({
   ],
 });
 
-export const ALL_DEFS: ParamDef[] = [...SECTIONS.flatMap((s) => s.params), ...RIVER_SECTION.params, ...TERRAIN_SECTION.params, ...HILLSLOPE_SECTION.params, ...GRADIENT_SECTION.params, ...FLOODPLAIN_SECTION.params, ...CLIMATE_SECTIONS.flatMap((s) => s.params), ...BIOME_SECTION.params, ...VIEW_SECTION.params];
+export const ALL_DEFS: ParamDef[] = [...SECTIONS.flatMap((s) => s.params), ...RIVER_SECTION.params, ...TERRAIN_SECTION.params, ...HILLSLOPE_SECTION.params, ...GRADIENT_SECTION.params, ...FLOODPLAIN_SECTION.params, ...CLIMATE_SECTIONS.flatMap((s) => s.params), ...PROSPERITY_SECTION.params, ...BIOME_SECTION.params, ...VIEW_SECTION.params];
 withDefaults.checkAllUsed();
 export const GEN_KEYS = new Set(SECTIONS.flatMap((s) => s.params.map((p) => p.key)).filter((k) => !RIVER_KEYS.has(k)));
 
