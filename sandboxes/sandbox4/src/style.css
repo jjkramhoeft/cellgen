@@ -591,12 +591,10 @@
   color: var(--text);
   font: inherit;
   cursor: pointer;
-  border-bottom: 1px dotted var(--muted);
 }
 
 .ms-jump:hover {
   color: var(--accent);
-  border-bottom-color: var(--accent);
 }
 
 .ms-spark {

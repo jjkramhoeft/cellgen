@@ -236,8 +236,6 @@ select {
 }
 
 .row-label.has-help {
-  text-decoration: underline dotted #4a5568;
-  text-underline-offset: 3px;
   cursor: help;
 }
 
