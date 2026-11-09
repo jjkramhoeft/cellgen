@@ -134,10 +134,10 @@ function biomeRows(b: BiomeInfo, sparseDry: number): string {
     : 'The terrain tile is not computed yet (it is computed while colouring by Biomes or Height, zoomed in): a typical height for the elevation zone type stands in';
   html += `<div class="kv" title="${hTitle}"><span>Height</span><b>${hTxt}</b></div>`;
   const cool = b.cooling !== 0 ? ` − ${b.cooling.toFixed(1)} = ${b.t.toFixed(1)} °C` : '';
-  html += `<div class="kv" title="Initial temperature at the subbiome’s site, minus the cooling curve (Biomes section, points 1–5) at the subbiome’s height"><span>Site temperature</span><b>${b.t0.toFixed(1)} °C${cool}</b></div>`;
+  html += `<div class="kv" title="Initial temperature at the subbiome’s site, minus the cooling curve (Biomes section, points 1–5) at the subbiome’s height [clim.t.*, bio.cool.*]"><span>Site temperature</span><b>${b.t0.toFixed(1)} °C${cool}</b></div>`;
   const pTxt = b.sparse ? `${b.p0.toFixed(0)} × ${sparseDry} = ${b.p.toFixed(0)} mm/yr` : `${b.p0.toFixed(0)} mm/yr`;
-  html += `<div class="kv" title="Initial precipitation at the subbiome’s site${b.sparse ? ', × the sparse-flat factor: this is a river-poor flat elevation zone, which favours desert' : ''}"><span>Site precipitation</span><b>${pTxt}</b></div>`;
-  if (b.sparse) html += `<div class="kv" title="The elevation zone is flat and its site gets less initial precipitation than the sparse river cutoff: few rivers, drier biomes"><span>Sparse flat zone</span><b>yes · drier</b></div>`;
+  html += `<div class="kv" title="Initial precipitation at the subbiome’s site${b.sparse ? ', × the sparse-flat factor: this is a river-poor flat elevation zone, which favours desert' : ''} [clim.p.*, bio.sparseDry]"><span>Site precipitation</span><b>${pTxt}</b></div>`;
+  if (b.sparse) html += `<div class="kv" title="The elevation zone is flat and its site gets less initial precipitation than the sparse river cutoff: few rivers, drier biomes [ez.flatSparseP, bio.sparseDry]"><span>Sparse flat zone</span><b>yes · drier</b></div>`;
   if (b.seaLevel !== b.biome) html += `<div class="kv" title="The biome the sea-level temperature would give: the height changed it"><span>At sea level</span><b>${esc(BIOMES[b.seaLevel].name)}</b></div>`;
   return html + '</div>';
 }
@@ -159,13 +159,13 @@ export function renderInspector(host: HTMLElement, world: World | null, rivers: 
     const h = terrain.heightAt(pt.x, pt.y);
     const t = terrain.peek(c.region);
     html += `<div class="kv" title="Height map (bilinear in the tile raster)"><span>Height</span><b>${h === h ? `${h.toFixed(0)} m` : 'not computed yet'}</b></div>`;
-    if (t) html += `<div class="kv" title="Tile raster (a block of k × k regions, 2 × 2 by default): cells · cells raised by the pit fill (largest raise) · compute time"><span>Terrain raster</span><b>${t.nx}×${t.ny} · ${t.filled} filled (≤ ${t.maxFill.toFixed(1)} m) · ${t.ms.toFixed(0)} ms</b></div>`;
+    if (t) html += `<div class="kv" title="Tile raster (a block of k × k regions, 2 × 2 by default): cells · cells raised by the pit fill (largest raise) · compute time [hgt.res]"><span>Terrain raster</span><b>${t.nx}×${t.ny} · ${t.filled} filled (≤ ${t.maxFill.toFixed(1)} m) · ${t.ms.toFixed(0)} ms</b></div>`;
   }
 
   if (climate) {
-    html += `<div class="kv" title="Initial temperature map (Perlin noise)"><span>Initial temperature</span><b>${climate.temperatureAt(pt.x, pt.y).toFixed(1)} °C</b></div>`;
-    html += `<div class="kv" title="Initial precipitation map (Perlin noise)"><span>Initial precipitation</span><b>${climate.precipitationAt(pt.x, pt.y).toFixed(0)} mm/yr</b></div>`;
-    html += `<div class="kv" title="Prosperity map (Perlin noise, unitless index)"><span>Prosperity</span><b>${climate.prosperityAt(pt.x, pt.y).toFixed(1)}</b></div>`;
+    html += `<div class="kv" title="Initial temperature map (Perlin noise) [clim.t.*]"><span>Initial temperature</span><b>${climate.temperatureAt(pt.x, pt.y).toFixed(1)} °C</b></div>`;
+    html += `<div class="kv" title="Initial precipitation map (Perlin noise) [clim.p.*]"><span>Initial precipitation</span><b>${climate.precipitationAt(pt.x, pt.y).toFixed(0)} mm/yr</b></div>`;
+    html += `<div class="kv" title="Prosperity map (Perlin noise, unitless index) [clim.pros.*]"><span>Prosperity</span><b>${climate.prosperityAt(pt.x, pt.y).toFixed(1)}</b></div>`;
   }
 
   html += `<div class="lvl"><h4><i style="background:${regColor}"></i>Region ${ij(c.region)}</h4>`;
@@ -177,7 +177,7 @@ export function renderInspector(host: HTMLElement, world: World | null, rivers: 
     const trees = rr.roots.filter((k) => rr.flow[k] > 0).length;
     html += `<div class="kv" title="River mouths with at least one attractor upstream / roots placed"><span>Rivers</span><b>${trees} of ${rr.roots.length} roots${rr.landlocked ? ' · landlocked' : ''}</b></div>`;
     html += `<div class="kv"><span>Attractors reached</span><b>${rr.reached} / ${rr.ax.length}</b></div>`;
-    html += `<div class="kv" title="Growth iterations · nodes · straight bridges over gaps wider than dᵢ · compute time"><span>Growth</span><b>${rr.iterations} it · ${rr.n} nodes · ${rr.bridges} br · ${rr.ms.toFixed(0)} ms</b></div>`;
+    html += `<div class="kv" title="Growth iterations · nodes · straight bridges over gaps wider than dᵢ · compute time [riv.influence]"><span>Growth</span><b>${rr.iterations} it · ${rr.n} nodes · ${rr.bridges} br · ${rr.ms.toFixed(0)} ms</b></div>`;
   }
   html += '</div>';
 
@@ -192,7 +192,7 @@ export function renderInspector(host: HTMLElement, world: World | null, rivers: 
     const precip = rivers.climate.precipitationAt(broot.x, broot.y);
     const sparse = rivers.isSparseFlat(c.elevationZone);
     const why = cut > 0 ? `${precip.toFixed(0)} ${sparse ? '<' : '≥'} ${cut.toFixed(0)} mm/yr` : 'cutoff off';
-    html += `<div class="kv" title="A flat elevation zone whose site gets less initial precipitation than “Flat: sparse river precipitation cutoff” is river-poor: each of its subbiomes gets only 0 or 1 river attractor"><span>Sparse rivers</span><b>${sparse ? 'yes' : 'no'} · ${why}</b></div>`;
+    html += `<div class="kv" title="A flat elevation zone whose site gets less initial precipitation than “Flat: sparse river precipitation cutoff” is river-poor: each of its subbiomes gets only 0 or 1 river attractor [ez.flatSparseP]"><span>Sparse rivers</span><b>${sparse ? 'yes' : 'no'} · ${why}</b></div>`;
   }
   if (c.elevationZoneMerged) {
     const members = World.cellsIn(world.elevationZoneLevel, broot.x - 3 * world.elevationZoneLevel.size, broot.y - 3 * world.elevationZoneLevel.size, broot.x + 3 * world.elevationZoneLevel.size, broot.y + 3 * world.elevationZoneLevel.size, 0).filter(
@@ -416,11 +416,11 @@ export function renderStats(
   }
   add('Ocean / land', `${pct(s.oceanShare)} / ${pct(1 - s.oceanShare)}`, `Share of ${s.samples} sample points in the view`);
   add('Regions · elevation zones · subbiomes', `${s.regions} · ${s.elevationZones} · ${s.detail ? s.subs : '—'}`, 'Distinct merged cells under the sample grid');
-  add('Elevation zones per region', s.elevationZonesPerRegion.toFixed(1), `Owned elevation zones; nominal (${fmtDist(world.regionLevel.size)}/${fmtDist(world.elevationZoneLevel.size)})² = ${((world.regionLevel.size / world.elevationZoneLevel.size) ** 2).toFixed(1)}`);
-  add('Subbiomes per elevation zone', s.subsPerElevationZone.toFixed(1), `Owned subbiomes; nominal ${((world.elevationZoneLevel.size / world.subLevel.size) ** 2).toFixed(1)}`);
+  add('Elevation zones per region', s.elevationZonesPerRegion.toFixed(1), `Owned elevation zones; nominal (${fmtDist(world.regionLevel.size)}/${fmtDist(world.elevationZoneLevel.size)})² = ${((world.regionLevel.size / world.elevationZoneLevel.size) ** 2).toFixed(1)} [reg.size, ez.size]`);
+  add('Subbiomes per elevation zone', s.subsPerElevationZone.toFixed(1), `Owned subbiomes; nominal ${((world.elevationZoneLevel.size / world.subLevel.size) ** 2).toFixed(1)} [ez.size, sub.size]`);
 
   sub('Oceans');
-  add('Seeds (linked)', `${s.seeds} (${s.linkedSeeds})`, 'Ocean seeds in the regions under the view, and how many take part in a link');
+  add('Seeds (linked)', `${s.seeds} (${s.linkedSeeds})`, 'Ocean seeds in the regions under the view, and how many take part in a link [reg.oceanMin, reg.oceanMax, oc.connect, oc.double]');
   add('Links', String(s.links));
   add('Ocean elevation zones', String(s.oceanElevationZones));
   const bars = document.createElement('div');

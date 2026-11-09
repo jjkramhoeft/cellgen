@@ -22,6 +22,15 @@ function fmtNum(d: NumberDef, v: number): string {
   return v.toFixed(dec);
 }
 
+/** The config keys of a section as one pattern: the shared dotted prefix + `*` (e.g. `reg.*`), or the keys listed. */
+function keyPattern(keys: string[]): string {
+  if (keys.length === 1) return keys[0];
+  const parts = keys.map((k) => k.split('.'));
+  const common: string[] = [];
+  for (let i = 0; parts.every((p) => i < p.length - 1 && p[i] === parts[0][i]); i++) common.push(parts[0][i]);
+  return common.length ? `${common.join('.')}.*` : keys.join(', ');
+}
+
 const LOG_STEPS = 1000;
 function toSlider(d: NumberDef, v: number): number {
   if (!d.log) return v;
@@ -64,7 +73,7 @@ export function buildPanel(
     let enable: HTMLInputElement | undefined;
     if (s.enableKey) {
       const sw = el('label', 'switch small');
-      sw.title = 'Enable this stage';
+      sw.title = `Enable this stage [${s.enableKey}]`;
       enable = el('input');
       enable.type = 'checkbox';
       enable.checked = !!params[s.enableKey];
@@ -79,7 +88,7 @@ export function buildPanel(
     }
     if (onResetSection) {
       const reset = el('button', 'icon-btn reset', '↺');
-      reset.title = 'Reset this section to defaults';
+      reset.title = `Reset this section to defaults [${keyPattern(s.params.map((d) => d.key))}]`;
       reset.addEventListener('click', (e) => {
         e.stopPropagation();
         onResetSection(s);
@@ -122,10 +131,11 @@ export function buildPanel(
 function buildRow(def: ParamDef, value: ParamValue, onChange: OnChange): Row {
   const row = el('div', `row row-${def.type}`);
   const label = el('label', 'row-label', def.label);
-  if (def.help) {
-    label.title = def.help;
-    label.classList.add('has-help');
-  }
+  // every tooltip ends with the config key, to make editing the defaults JSON easy
+  const tip = def.help ? `${def.help} [${def.key}]` : `[${def.key}]`;
+  row.title = tip;
+  label.title = tip;
+  if (def.help) label.classList.add('has-help');
   row.append(label);
   if (def.type === 'bool') {
     const sw = el('label', 'switch');
@@ -187,7 +197,7 @@ function buildRow(def: ParamDef, value: ParamValue, onChange: OnChange): Row {
     setUI(def.default);
     onChange(def.key, def.default, true);
   });
-  range.title = 'Double-click to reset';
+  range.title = `Double-click to reset [${def.key}]`;
   wrap.append(range, box);
   row.append(wrap);
   return { def, row, set: (v) => setUI(Number(v)) };

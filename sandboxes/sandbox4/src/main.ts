@@ -16,6 +16,7 @@ import { decodeState, encodeState } from '@shared/params/url';
 import { screenToWorld, zoomAt, type Camera, type Viewport } from '@shared/render/camera';
 import { RasterLayer } from '@shared/render/raster';
 import { buildPanel } from '@shared/ui/panel';
+import { tagTooltips } from '@shared/ui/html';
 import { ALL_DEFS, BIOME_KEYS, BIOME_SECTION, CLIMATE_KEYS, PRECIP_KEYS, CLIMATE_SECTIONS, PROSPERITY_KEYS, PROSPERITY_SECTION, DEFAULT_SEED, defaults, GEN_KEYS, PRESETS, RIVER_KEYS, RIVER_SECTION, FLOODPLAIN_SECTION, GRADIENT_SECTION, HILLSLOPE_SECTION, SECTIONS, TERRAIN_KEYS, TERRAIN_SECTION, toBiomeParams, toClimateParams, toRiverParams, toTerrainParams, toWorldParams, VIEW_MODES, VIEW_SECTION } from './params';
 import { drawGrid, drawGrowth, drawLinks, drawMerges, drawRivers, drawRuler, drawSites, fmtDist, niceStep, type Frame } from './render/overlays';
 import { climateSource, type ClimateField } from './render/climate';
@@ -246,7 +247,7 @@ function renderPlots(): void {
     yFloor: 50,
     yUnit: 'm',
     title: `half-width${params['hgt.fp.flow'] === true ? ` · flow ${FLOOD_REF_FLOW}` : ''}`,
-    pointTitle: (i) => `Point ${i + 1}: ${hs[i]} m → ${ws[i]} m`,
+    pointTitle: (i) => `Point ${i + 1}: ${hs[i]} m → ${ws[i]} m [hgt.fp.h${i + 1}, hgt.fp.w${i + 1}]`,
   });
   const bp = toBiomeParams(params);
   renderCurvePlot({
@@ -263,7 +264,7 @@ function renderPlots(): void {
     title: '°C cooler',
     dashFrom: Math.max(...bp.coolH),
     ref: { slope: 6.5 / 1000, label: '6.5 °C/km' },
-    pointTitle: (i) => `Cooling point ${i + 1}: ${bp.coolH[i]} m → ${bp.coolT[i]} °C cooler`,
+    pointTitle: (i) => `Cooling point ${i + 1}: ${bp.coolH[i]} m → ${bp.coolT[i]} °C cooler [bio.cool.h${i + 1}, bio.cool.t${i + 1}]`,
   });
 }
 renderPlots();
@@ -558,6 +559,7 @@ function scheduleStats(): void {
 
 function renderStatsPanel(): void {
   renderStats($('stats'), world, stats, { fingerprint, render: timings.render, cache: world.cacheStats });
+  tagTooltips($('stats'));
 }
 
 // ------------------------------------------------------------------ statistics section
@@ -635,6 +637,7 @@ function renderStatistics(): void {
     biomeSort = s;
     renderStatistics();
   });
+  tagTooltips($('mapStats'));
   renderStatisticsStatus();
 }
 
@@ -775,6 +778,7 @@ function updateStatus(progress: number): void {
 function updateInspector(): void {
   const pt = pinned ?? hover;
   renderInspector($('inspector'), world, params['riv.on'] === true ? rivers : null, pt ? { ...pt, pinned: !!pinned } : null, needTerrain() ? terrain : null, climate, biomes);
+  tagTooltips($('inspector'));
 }
 
 let inspectTimer = 0;
