@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { testParams } from './fixture';
 import { toBiomeParams, toClimateParams, toRiverParams, toTerrainParams, toWorldParams } from '../src/params';
-import { Biomes, BIOMES, classify, coolingCurve, dryThreshold, OCEAN_BIOME, TYPICAL_HEIGHT, type BiomeId, type BiomeParams } from '../src/world/biomes';
+import { BELTS, Biomes, BIOMES, classify, coolingCurve, dryThreshold, MANGROVE_BIOME, MANGROVE_ZONES, OCEAN_BIOME, TYPICAL_HEIGHT, type BiomeId, type BiomeParams } from '../src/world/biomes';
 import { Climate } from '../src/world/climate';
 import { packKey } from '../src/world/level';
 import { Rivers } from '../src/world/rivers';
 import { LAND, ownsRegion, regionAt, Terrain } from '../src/world/terrain';
 import { World } from '../src/world/world';
-import { elevationZoneType } from '../src/world/zones';
+import { ELEVATION_ZONE_TYPES, elevationZoneType } from '../src/world/zones';
 
 const SEED = 12345;
 const id = (k: number) => BIOMES[k].id;
@@ -153,7 +153,7 @@ describe('biomes of the subbiomes', { timeout: 60_000 }, () => {
       expect(info.height).toBe(TYPICAL_HEIGHT[elevationZoneType(w.subCell(s).elevationZone, false)]);
       expect(info.cooling).toBeCloseTo((5 * info.height) / 1000, 9);
       expect(info.t).toBe(info.t0 - info.cooling);
-      expect(info.seaLevel).toBe(classify(info.t0, info.p).biome);
+      if (info.seaLevel !== MANGROVE_BIOME) expect(info.seaLevel).toBe(classify(info.t0, info.p).biome);
     }
   });
 
@@ -161,8 +161,9 @@ describe('biomes of the subbiomes', { timeout: 60_000 }, () => {
     const cold = (b: Biomes, subs: number[]) => subs.filter((s) => ['ice', 'tundra', 'taiga'].includes(id(b.ofSub(s).biome))).length;
     const { w, rv, cl } = setup();
     const subs = subsAround(w, 800_000, 8000);
-    const flat = new Biomes(w, rv, cl, null, { ...perKm(0), sparseDry: 1 });
-    const steep = new Biomes(w, rv, cl, null, { ...perKm(12), sparseDry: 1 });
+    const base = toBiomeParams(testParams());
+    const flat = new Biomes(w, rv, cl, null, { ...base, ...perKm(0), sparseDry: 1 });
+    const steep = new Biomes(w, rv, cl, null, { ...base, ...perKm(12), sparseDry: 1 });
     expect(cold(steep, subs)).toBeGreaterThan(cold(flat, subs));
     for (const s of subs) expect(steep.ofSub(s).belt).toBeLessThanOrEqual(flat.ofSub(s).belt);
   });
@@ -241,5 +242,63 @@ describe('biomes of the subbiomes', { timeout: 60_000 }, () => {
     expect(b.ofSub(land).heightExact).toBe(false);
     t!.getTile(t!.tileOf(rk));
     expect(b.ofSub(land).heightExact).toBe(true);
+  });
+});
+
+describe('mangrove', { timeout: 60_000 }, () => {
+  /** Brute force: does a raw subbiome of the merged root border an ocean subbiome? */
+  const coastal = (w: World, root: number) => {
+    const members = new Set<number>([root]);
+    const stack = [root];
+    while (stack.length) {
+      const s = stack.pop()!;
+      for (const n of w.subNbrs(w.sub(s))) if (!members.has(n) && w.subRoot(n) === root) members.add(n), stack.push(n);
+    }
+    for (const m of members) for (const n of w.subNbrs(w.sub(m))) if (w.subCell(n).ocean) return true;
+    return false;
+  };
+
+  it('a coastal subbiome is one whose cells border an ocean subbiome', () => {
+    const { w, b } = setup();
+    let coast = 0;
+    for (const s of subsAround(w, 400_000, 4000)) {
+      const info = b.ofSub(s);
+      expect(info.coastal).toBe(!info.ocean && coastal(w, w.subCell(s).sub));
+      if (info.coastal) coast++;
+    }
+    expect(coast).toBeGreaterThan(100);
+  });
+
+  it('grows exactly on warm, not-desert coasts of flat and lowland elevation zones', () => {
+    const { w, b } = setup();
+    const p = b.p;
+    const zonesSeen = new Set<string>();
+    let mangrove = 0;
+    for (const s of subsAround(w, 1_200_000, 6000)) {
+      const info = b.ofSub(s);
+      const eligible = info.coastal && MANGROVE_ZONES.has(info.zoneType) && info.t >= p.mangroveT && info.aridity >= p.mangroveM;
+      expect(info.biome === MANGROVE_BIOME, `sub ${s}`).toBe(eligible);
+      if (info.biome !== MANGROVE_BIOME) continue;
+      mangrove++;
+      zonesSeen.add(ELEVATION_ZONE_TYPES[info.zoneType].id);
+      // never inland, never in hills or mountains, never in the ocean
+      expect(info.ocean).toBe(false);
+      expect(info.coastal).toBe(true);
+      expect(['flat', 'lowland']).toContain(ELEVATION_ZONE_TYPES[info.zoneType].id);
+      expect(BELTS[info.belt].id).toBe('tropical');
+    }
+    expect(mangrove).toBeGreaterThan(20);
+    expect(zonesSeen).toEqual(new Set(['flat', 'lowland']));
+  });
+
+  it('is absent when too cold, appears on more coasts when allowed drier, and never zoomed out', () => {
+    const { w, rv, cl } = setup();
+    const subs = subsAround(w, 800_000, 8000);
+    const base = toBiomeParams(testParams());
+    const count = (b: Biomes) => subs.filter((s) => b.ofSub(s).biome === MANGROVE_BIOME).length;
+    expect(count(new Biomes(w, rv, cl, null, { ...base, mangroveT: 60 }))).toBe(0);
+    expect(count(new Biomes(w, rv, cl, null, { ...base, mangroveM: 0 }))).toBeGreaterThanOrEqual(count(new Biomes(w, rv, cl, null, base)));
+    const b = new Biomes(w, rv, cl, null, { ...base, mangroveT: -100, mangroveM: 0 });
+    for (const s of subs) expect(b.ofZone(w.subCell(s).elevationZoneRaw).biome).not.toBe(MANGROVE_BIOME);
   });
 });

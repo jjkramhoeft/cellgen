@@ -11,7 +11,7 @@ import { ELEVATION_ZONE_TYPES, elevationZoneType } from '../world/zones';
 import type { Terrain } from '../world/terrain';
 import { fieldAt, type Climate, type NoiseFieldParams } from '../world/climate';
 import { rampRgb, STOPS, type ClimateField } from '../render/climate';
-import { BELTS, BIOMES, dryThreshold, MOISTURE, type BiomeInfo, type Biomes } from '../world/biomes';
+import { BELTS, BIOMES, dryThreshold, MANGROVE_BIOME, MANGROVE_ZONES, MOISTURE, type BiomeInfo, type BiomeParams, type Biomes } from '../world/biomes';
 
 /** Packed ABGR pixel → CSS colour. */
 const cssHex = (c: number) => `rgb(${c & 255},${(c >>> 8) & 255},${(c >>> 16) & 255})`;
@@ -118,7 +118,8 @@ export interface Probe {
 }
 
 /** The inspector rows of a subbiome's biome: the biome and every input that picked it. */
-function biomeRows(b: BiomeInfo, sparseDry: number): string {
+function biomeRows(b: BiomeInfo, bp: BiomeParams): string {
+  const sparseDry = bp.sparseDry;
   const biome = BIOMES[b.biome];
   let html = `<div class="lvl"><h4><i style="background:${cssRgb(biome.rgb)}"></i>Biome</h4>`;
   // light text on the dark forest greens and the ocean, dark text on the rest
@@ -139,6 +140,17 @@ function biomeRows(b: BiomeInfo, sparseDry: number): string {
   const pTxt = b.sparse ? `${b.p0.toFixed(0)} × ${sparseDry} = ${b.p.toFixed(0)} mm/yr` : `${b.p0.toFixed(0)} mm/yr`;
   html += `<div class="kv" title="Initial precipitation at the subbiome’s site${b.sparse ? ', × the sparse-flat factor: this is a river-poor flat elevation zone, which favours desert' : ''} [clim.p.*, bio.sparseDry]"><span>Site precipitation</span><b>${pTxt}</b></div>`;
   if (b.sparse) html += `<div class="kv" title="The elevation zone is flat and its site gets less initial precipitation than the sparse river cutoff: few rivers, drier biomes [ez.flatSparseP, bio.sparseDry]"><span>Sparse flat zone</span><b>yes · drier</b></div>`;
+  if (b.coastal) {
+    const why =
+      b.biome === MANGROVE_BIOME
+        ? 'mangrove'
+        : !MANGROVE_ZONES.has(b.zoneType)
+          ? `no mangrove · ${ELEVATION_ZONE_TYPES[b.zoneType].name.toLowerCase()}`
+          : b.t < bp.mangroveT
+            ? `no mangrove · < ${bp.mangroveT} °C`
+            : `no mangrove · aridity < ${bp.mangroveM}`;
+    html += `<div class="kv" title="The subbiome borders an ocean subbiome. Coastal subbiomes of flat and lowland elevation zones become mangrove when the temperature and the aridity reach the mangrove minimums [bio.mangroveT, bio.mangroveM]"><span>Ocean coast</span><b>yes · ${why}</b></div>`;
+  }
   if (b.seaLevel !== b.biome) html += `<div class="kv" title="The biome the sea-level temperature would give: the height changed it"><span>At sea level</span><b>${esc(BIOMES[b.seaLevel].name)}</b></div>`;
   return html + '</div>';
 }
@@ -221,7 +233,7 @@ export function renderInspector(host: HTMLElement, world: World | null, rivers: 
     html += `<div class="kv" title="${LAKE_RULES} [lake.*]"><span>Lakes</span><b>${why ? `none · ${LAKE_BLOCK[why]}` : 'allowed'}</b></div>`;
   }
   html += '</div>';
-  if (biomes) html += biomeRows(biomes.ofSub(c.sub), biomes.p.sparseDry);
+  if (biomes) html += biomeRows(biomes.ofSub(c.sub), biomes.p);
   const nr = rivers?.nearestNode(pt.x, pt.y, rivers.p.step * 1.5);
   if (nr) {
     const { r, k } = nr;

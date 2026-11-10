@@ -20,6 +20,12 @@
  *                    Whittaker / Holdridge names. See docs/research/biomes-and-climate.md
  *                    §7.3 ("aridity × thermal belt"); the thresholds are this file's own
  *                    calibration against the Whittaker grid (§2.1), not sourced values.
+ *   5. Mangrove      an azonal override (§7.2, step 6): a coastal subbiome (one of its
+ *                    cells borders an ocean subbiome) in a flat or lowland elevation zone
+ *                    becomes mangrove when it is warm enough (T ≥ `mangroveT`) and not
+ *                    desert (m ≥ `mangroveM`). Never in hills or mountains, never inland.
+ *                    Zoomed far out (elevation zones only) there is no mangrove: the
+ *                    coastal strip is a subbiome feature.
  *
  * Pure functions of the seed, the parameters and the subbiome (comparisons and + − × ÷
  * only on top of the climate maps), apart from the height: exact once the subbiome's
@@ -30,7 +36,7 @@ import type { Climate } from './climate';
 import type { Rivers } from './rivers';
 import { monotoneSpline, type Terrain } from './terrain';
 import type { World } from './world';
-import { elevationZoneType } from './zones';
+import { ELEVATION_ZONE_TYPES, elevationZoneType } from './zones';
 
 export type BiomeId =
   | 'ocean'
@@ -48,7 +54,8 @@ export type BiomeId =
   | 'thornScrub'
   | 'savanna'
   | 'dryForest'
-  | 'rainforest';
+  | 'rainforest'
+  | 'mangrove';
 
 export interface BiomeType {
   id: BiomeId;
@@ -57,7 +64,7 @@ export interface BiomeType {
   rgb: RGB;
 }
 
-/** Every biome, in legend order (cold → hot, dry → wet within a belt). */
+/** Every biome, in legend order (cold → hot, dry → wet within a belt; the azonal mangrove last). */
 export const BIOMES: BiomeType[] = [
   { id: 'ocean', name: 'Ocean', rgb: [38, 84, 132] },
   { id: 'ice', name: 'Ice & snow', rgb: [234, 239, 243] },
@@ -75,10 +82,17 @@ export const BIOMES: BiomeType[] = [
   { id: 'savanna', name: 'Savanna', rgb: [190, 176, 80] },
   { id: 'dryForest', name: 'Tropical dry forest', rgb: [122, 144, 58] },
   { id: 'rainforest', name: 'Tropical rainforest', rgb: [28, 94, 44] },
+  { id: 'mangrove', name: 'Mangrove', rgb: [66, 132, 118] },
 ];
 
 const B = (id: BiomeId) => BIOMES.findIndex((b) => b.id === id);
 export const OCEAN_BIOME = B('ocean');
+export const MANGROVE_BIOME = B('mangrove');
+
+/** Elevation zone types (ELEVATION_ZONE_TYPES indices) where mangroves may grow: flat and lowland. */
+export const MANGROVE_ZONES: ReadonlySet<number> = new Set(
+  ELEVATION_ZONE_TYPES.flatMap((z, i) => (z.id === 'flat' || z.id === 'lowland' ? [i] : [])),
+);
 
 /**
  * Thermal belts by temperature after the height cooling (°C, lower bounds). Ice below −10,
@@ -184,6 +198,9 @@ export interface BiomeParams {
   coolT: number[];
   /** precipitation factor in river-poor (sparse) flat elevation zones (1 = no effect) */
   sparseDry: number;
+  /** mangrove: least temperature (°C, after the height cooling) and least aridity P / P_th */
+  mangroveT: number;
+  mangroveM: number;
 }
 
 /**
@@ -217,6 +234,8 @@ export interface BiomeInfo extends Classified {
   p: number;
   /** in a river-poor flat elevation zone (precipitation × sparseDry) */
   sparse: boolean;
+  /** a land subbiome bordering the ocean (always false zoomed out, at elevation zone level) */
+  coastal: boolean;
   /** the biome the sea-level temperature alone would give (differs on high ground) */
   seaLevel: number;
 }
@@ -227,6 +246,7 @@ const CACHE = 400_000;
 export class Biomes {
   private cache = new Map<number, BiomeInfo>();
   private zoneCache = new Map<number, BiomeInfo>();
+  private coastCache = new Map<number, boolean>();
   /** °C cooler at a height (m): the cooling curve of the parameters */
   readonly cooling: (h: number) => number;
 
@@ -270,6 +290,36 @@ export class Biomes {
     return info;
   }
 
+  /**
+   * Does a (merged) land subbiome border the ocean: is a cell next to one of its raw
+   * subbiomes an ocean subbiome? Merges go to neighbours, so the raw members are found
+   * by walking neighbours that share the root.
+   */
+  isCoastal(root: number): boolean {
+    const hit = this.coastCache.get(root);
+    if (hit !== undefined) return hit;
+    const w = this.world;
+    let coast = false;
+    const seen = new Set<number>([root]);
+    const stack = [root];
+    while (stack.length && !coast) {
+      const s = stack.pop()!;
+      for (const n of w.subNbrs(w.sub(s))) {
+        if (w.subCell(n).ocean) {
+          coast = true;
+          break;
+        }
+        if (!seen.has(n) && w.subRoot(n) === root) {
+          seen.add(n);
+          stack.push(n);
+        }
+      }
+    }
+    if (this.coastCache.size >= CACHE) this.coastCache.clear();
+    this.coastCache.set(root, coast);
+    return coast;
+  }
+
   /** Biome index of a classified map cell (subbiome, or elevation zone when sub < 0). */
   indexOf(sub: number, zoneRaw: number): number {
     return sub >= 0 ? this.ofSub(sub).biome : this.ofZone(zoneRaw).biome;
@@ -286,8 +336,11 @@ export class Biomes {
     const t = t0 - cooling;
     const p = sparse ? p0 * this.p.sparseDry : p0;
     const k = classify(t, p);
-    const base = { key, level, ocean, zoneType, x, y, t0, p0, height, heightExact: exact, cooling, t, p, sparse };
+    const coastal = !ocean && level === 'sub' && this.isCoastal(key);
+    const base = { key, level, ocean, zoneType, x, y, t0, p0, height, heightExact: exact, cooling, t, p, sparse, coastal };
     if (ocean) return { ...base, ...k, biome: OCEAN_BIOME, seaLevel: OCEAN_BIOME };
-    return { ...base, ...k, seaLevel: classify(t0, p).biome };
+    // the mangrove override, for the actual and the sea-level temperature alike
+    const pick = (c: Classified, tt: number) => (coastal && MANGROVE_ZONES.has(zoneType) && tt >= this.p.mangroveT && c.aridity >= this.p.mangroveM ? MANGROVE_BIOME : c.biome);
+    return { ...base, ...k, biome: pick(k, t), seaLevel: pick(classify(t0, p), t0) };
   }
 }

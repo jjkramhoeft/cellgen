@@ -102,8 +102,9 @@ The **initial climate** is two fBm Perlin-noise maps, independent of the map: te
 | **Temperature** | The initial temperature minus a **cooling curve** over that height: T = T₀ − cooling(h). The curve is a monotone spline through 5 configurable points (height → °C cooler), drawn live in the panel; it continues along its last slope above the highest point. The default points give the standard atmosphere's 6.5 °C per km |
 | **Moisture** | The initial precipitation; in a **river-poor flat elevation zone** (site precipitation below *Flat: sparse river precipitation cutoff*) it is × 0.2 by default, so those zones favour **desert** (about two thirds of their subbiomes, against a few percent elsewhere) |
 | **Classify** | Aridity m = P / (20·T + 140), Köppen's dryness threshold for evenly spread rain. A thermal belt (ice below −10 °C, tundra to −3, boreal to 3, temperate to 18, then tropical) × a moisture class (m < 0.5 cold or hot desert, 0.5–1 steppe or scrub, 1–2 woodland or savanna, then forest and, from m ≥ 6 temperate or ≥ 4 tropical, rainforest) picks one of 15 land biomes, from ice and tundra over taiga, temperate forests and grassland to hot desert, savanna and tropical rainforest |
+| **Mangrove** | An azonal override: a **coastal** subbiome (one of its cells borders an ocean subbiome) in a **flat or lowland** elevation zone becomes **mangrove** when its temperature after the height cooling is at least *Mangrove: min temperature* (20 °C) and its aridity at least *Mangrove: min aridity* (0.5, so desert coasts stay bare). Never inland and never in hills or mountains; about 5 % of coastal subbiomes at the defaults. Zoomed far out (elevation zones only) there is no mangrove |
 
-**Colour by → Biomes** shows them in colours that look like the land (sand, dry grass, olive scrub, forest greens, grey tundra, white ice), slightly varied per subbiome. The biome view computes the terrain like the height view; zoomed far out each elevation zone shows the biome at its site. The inspector lists the biome with every input: belt, moisture class, aridity, height (exact or estimated), the temperature before and after the height cooling, the precipitation (and the dry-flat factor), and the biome the subbiome would have at sea level.
+**Colour by → Biomes** shows them in colours that look like the land (sand, dry grass, olive scrub, forest greens, grey tundra, white ice), slightly varied per subbiome. The biome view computes the terrain like the height view; zoomed far out each elevation zone shows the biome at its site. The inspector lists the biome with every input: belt, moisture class, aridity, height (exact or estimated), the temperature before and after the height cooling, the precipitation (and the dry-flat factor), whether it borders the ocean (and why it is or is not mangrove), and the biome the subbiome would have at sea level.
 
 ### Resources
 
@@ -146,7 +147,7 @@ src/world/     level (stateless warped lattice Voronoi, Gabriel neighbours),
                terrain (river profiles and the per-tile height pipeline, mean height per subbiome),
                terrain.worker (height tiles computed off the main thread),
                climate (initial temperature and precipitation maps),
-               biomes (height cooling curve, dry flat zones, aridity × thermal belt → biome per subbiome)
+               biomes (height cooling curve, dry flat zones, aridity × thermal belt → biome per subbiome, coastal mangrove)
 src/render/    per-pixel raster source with borders per level, vector overlays and ruler,
                view3d (WebGL2 mesh, draped texture, orbit camera)
 src/ui/        legend, level box, inspector, view statistics

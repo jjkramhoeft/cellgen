@@ -458,7 +458,7 @@ export const BIOME_SECTION: Section = withDefaults.section({
   id: 'biomes',
   title: 'Biomes · per subbiome',
   open: false,
-  help: 'Each land subbiome gets a biome from the initial temperature and precipitation at its site. The temperature is lowered by the height cooling curve at the subbiome’s mean height (from the terrain; a typical height for its elevation zone type until the terrain is computed). The aridity P / (20·T + 140) and a thermal belt pick the biome. River-poor flat elevation zones are drier, so they favour desert. Colour by → Biomes.',
+  help: 'Each land subbiome gets a biome from the initial temperature and precipitation at its site. The temperature is lowered by the height cooling curve at the subbiome’s mean height (from the terrain; a typical height for its elevation zone type until the terrain is computed). The aridity P / (20·T + 140) and a thermal belt pick the biome. River-poor flat elevation zones are drier, so they favour desert. Coastal subbiomes (bordering the ocean) of flat and lowland elevation zones become mangrove where it is warm and wet enough. Colour by → Biomes.',
   params: [
     ...[0, 1, 2, 3, 4].flatMap((i) => [
       {
@@ -485,6 +485,25 @@ export const BIOME_SECTION: Section = withDefaults.section({
       step: 0.05,
       help: 'In river-poor flat elevation zones (initial precipitation at the zone’s site below “Flat: sparse river precipitation cutoff”) the precipitation is multiplied by this before classifying, so they favour desert and steppe. 1 = no effect.',
     },
+    {
+      key: 'bio.mangroveT',
+      label: 'Mangrove: min temperature',
+      type: 'number',
+      min: -10,
+      max: 50,
+      step: 0.5,
+      unit: ' °C',
+      help: 'Mangrove grows only in coastal subbiomes (a cell borders an ocean subbiome) of flat and lowland elevation zones, never in hills or mountains or inland. There it replaces the climate biome when the temperature after the height cooling is at least this (real mangroves stop near the frost line, about the 20 °C isotherm). Above the warmest coast = no mangrove.',
+    },
+    {
+      key: 'bio.mangroveM',
+      label: 'Mangrove: min aridity',
+      type: 'number',
+      min: 0,
+      max: 10,
+      step: 0.1,
+      help: 'Least aridity P / P_th for mangrove on an eligible coast. 0.5 keeps desert coasts bare; 0 allows mangrove on arid coasts too (as on the Red Sea).',
+    },
   ],
 });
 export const BIOME_KEYS = new Set(BIOME_SECTION.params.map((p) => p.key));
@@ -495,6 +514,8 @@ export function toBiomeParams(p: Params): BiomeParams {
     coolH: [1, 2, 3, 4, 5].map((i) => num(p, `bio.cool.h${i}`)),
     coolT: [1, 2, 3, 4, 5].map((i) => num(p, `bio.cool.t${i}`)),
     sparseDry: num(p, 'bio.sparseDry'),
+    mangroveT: num(p, 'bio.mangroveT'),
+    mangroveM: num(p, 'bio.mangroveM'),
   };
 }
 
