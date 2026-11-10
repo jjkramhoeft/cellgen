@@ -8,6 +8,7 @@
  * A prosperity map (a unitless index, 1 to 100 by default) is built the same way. It does
  * not feed the biomes or rivers; it is there for later use (settlements, roads).
  */
+import { dexp, dlog } from '@shared/core/dmath';
 import { perlinFbm, type FbmParams } from '@shared/core/noise';
 
 export interface NoiseFieldParams extends FbmParams {
@@ -49,12 +50,13 @@ export const NOISE_EXTREME = 0.8;
 /** The value at fraction t ∈ [0, 1] of a field's range (linear or log). */
 export function fieldAt(p: NoiseFieldParams, t: number): number {
   if (!p.log) return p.min + t * (p.max - p.min);
-  const a = Math.log(Math.max(LOG_FLOOR, p.min));
-  const b = Math.log(Math.max(LOG_FLOOR, p.max));
+  // dlog / dexp, not Math.log / Math.exp: those are implementation-approximated (bit-exactness)
+  const a = dlog(Math.max(LOG_FLOOR, p.min));
+  const b = dlog(Math.max(LOG_FLOOR, p.max));
   // exp(log(x)) can overshoot x by an ulp: clamp, so the ends are exact
   const lo = Math.max(LOG_FLOOR, p.min);
   const hi = Math.max(LOG_FLOOR, p.max);
-  return Math.min(hi, Math.max(lo, Math.exp(a + t * (b - a))));
+  return Math.min(hi, Math.max(lo, dexp(a + t * (b - a))));
 }
 
 /** One climate field: noise → [min, max]. */

@@ -37,6 +37,7 @@
  * Deterministic: sfc32 per region, IEEE + − × ÷ √ only (random directions come from
  * rejection sampling in the unit disc, not trigonometry), and a fixed visiting order.
  */
+import { sq } from '@shared/core/dmath';
 import { hash4, sfc32, type Rng } from '@shared/core/hash';
 import { keyI, keyJ, packKey } from './level';
 import { Climate, type ClimateParams } from './climate';
@@ -415,7 +416,7 @@ export class Rivers {
     let firstChild = new Int32Array(cap).fill(-1);
     let n = 0;
     /** main-stem dominance: a suppressed side branch's attractors within this distance drain into the stem */
-    const absorb2 = (P.kill + 2 * P.step) ** 2;
+    const absorb2 = sq(P.kill + 2 * P.step);
     const cc = coneCos(P.cone);
     const cc2 = cc * cc;
     /**
@@ -521,7 +522,7 @@ export class Rivers {
     const isBanned = (a: number, k: number): boolean => banned.get(a)?.has(k) ?? false;
     /** Does the straight line from node k to (x, y) stay inside (sampled every D/2)? */
     const visible = (k: number, x: number, y: number): boolean => {
-      const d = Math.sqrt((x - nx[k]) ** 2 + (y - ny[k]) ** 2);
+      const d = Math.sqrt(sq(x - nx[k]) + sq(y - ny[k]));
       if (d < 1e-9) return true;
       const ux = (x - nx[k]) / d;
       const uy = (y - ny[k]) / d;
@@ -551,7 +552,7 @@ export class Rivers {
           if (!list) continue;
           for (const m of list) {
             if (dead[m] || isBanned(a, m)) continue;
-            const d2 = (ax[a] - nx[m]) ** 2 + (ay[a] - ny[m]) ** 2;
+            const d2 = sq(ax[a] - nx[m]) + sq(ay[a] - ny[m]);
             if (sees(m, a, d2)) cands.push({ m, d2 });
           }
         }
@@ -592,7 +593,7 @@ export class Rivers {
           let bd = Infinity;
           for (const s of w.elevationZoneSubs(o)) {
             const sd = w.sub(s);
-            const d2 = (sd.x - o.x) ** 2 + (sd.y - o.y) ** 2;
+            const d2 = sq(sd.x - o.x) + sq(sd.y - o.y);
             if (d2 < bd && w.cellAt(sd.x, sd.y, true).ocean) {
               bd = d2;
               px = sd.x;
@@ -813,7 +814,7 @@ export class Rivers {
         let tx = nx[k] + dx * P.step;
         let ty = ny[k] + dy * P.step;
         const lc = lastChild[k];
-        if (lc >= 0 && (nx[lc] - tx) ** 2 + (ny[lc] - ty) ** 2 < (0.05 * P.step) ** 2) {
+        if (lc >= 0 && sq(nx[lc] - tx) + sq(ny[lc] - ty) < sq(0.05 * P.step)) {
           // the same pulls again (a stall: the last child won over none of them):
           // step straight towards the closest pulling attractor instead
           const a = closeA[k];
@@ -917,7 +918,7 @@ export class Rivers {
         const r = this.cache.get(packKey(ri + di, rj + dj));
         if (!r || x < r.x0 - maxDist || x > r.x1 + maxDist || y < r.y0 - maxDist || y > r.y1 + maxDist) continue;
         for (let k = 0; k < r.n; k++) {
-          const d = Math.sqrt((r.x[k] - x) ** 2 + (r.y[k] - y) ** 2);
+          const d = Math.sqrt(sq(r.x[k] - x) + sq(r.y[k] - y));
           if (d <= maxDist && (!best || d < best.d)) best = { r, k, d };
         }
       }

@@ -35,6 +35,7 @@
  * noise only, heap ties broken by cell index (row-major, i.e. world order on any
  * world-aligned raster, so the fill does not depend on the raster's extent).
  */
+import { sq } from '@shared/core/dmath';
 import { MinHeap } from '@shared/core/heap';
 import { fbm, ridged } from '@shared/core/noise';
 import { hash4 } from '@shared/core/hash';
@@ -458,7 +459,7 @@ export class Terrain {
       const c = w.cellAt(x, y, true);
       const type = elevationZoneType(c.elevationZone, c.ocean);
       const rf = this.reliefAt(x, y);
-      const dx = Math.sqrt((x - rr.x[p]) ** 2 + (y - rr.y[p]) ** 2);
+      const dx = Math.sqrt(sq(x - rr.x[p]) + sq(y - rr.y[p]));
       const ch = P.chSlope * this.chanOf(type) * rf * invPowTheta(Math.max(1, rr.flow[k]), P.theta);
       // the same (blurred) hillslope the envelope uses, so a river never caps itself
       const hs = env && env.slope[k] >= 0 ? env.slope[k] : this.hillOf(type) * P.hill * rf;
@@ -808,7 +809,7 @@ export class Terrain {
           if (ii < 0 || jj < 0 || ii >= nx || jj >= ny) continue;
           const q = jj * nx + ii;
           if (kind[q] !== 1) continue;
-          f(q, Math.sqrt((px - cxOf(ii)) ** 2 + (py - cyOf(jj)) ** 2));
+          f(q, Math.sqrt(sq(px - cxOf(ii)) + sq(py - cyOf(jj))));
         }
       }
     };
@@ -834,7 +835,7 @@ export class Terrain {
           const py = cyOf(jj) - ay;
           let t = l2 > 0 ? (px * ex + py * ey) / l2 : 0;
           t = t < 0 ? 0 : t > 1 ? 1 : t;
-          const d = Math.sqrt((px - t * ex) ** 2 + (py - t * ey) ** 2);
+          const d = Math.sqrt(sq(px - t * ex) + sq(py - t * ey));
           const v = za + (zb - za) * t + Math.max(s0, slope[q]) * Math.max(0, d - wv);
           if (v < E[q]) E[q] = v;
         }

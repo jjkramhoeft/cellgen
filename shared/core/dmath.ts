@@ -133,6 +133,16 @@ export function dcos(x: number): number {
   }
 }
 
+/** x². Use instead of `x ** 2`: the exponentiation operator is implementation-approximated. */
+export function sq(x: number): number {
+  return x * x;
+}
+
+/** √(x² + y²). Use instead of Math.hypot, which is implementation-approximated. */
+export function dhypot(x: number, y: number): number {
+  return Math.sqrt(x * x + y * y);
+}
+
 export function clamp(x: number, lo: number, hi: number): number {
   return x < lo ? lo : x > hi ? hi : x;
 }

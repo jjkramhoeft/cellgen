@@ -33,6 +33,7 @@
  * neighbourhood, and the ocean registry is merged with bitwise OR, so the result is
  * independent of the order in which the map is explored (see tests/world.test.ts).
  */
+import { dhypot } from '@shared/core/dmath';
 import { hash4, sfc32, toUnit } from '@shared/core/hash';
 import { keyI, keyJ, Level, packKey } from './level';
 
@@ -330,7 +331,7 @@ export class World {
   trace(a: ElevationZone, b: ElevationZone): number[] {
     const out: number[] = [a.key];
     const seen = new Set<number>(out);
-    const len = Math.hypot(b.x - a.x, b.y - a.y);
+    const len = dhypot(b.x - a.x, b.y - a.y);
     const n = Math.max(1, Math.ceil(len / (this.elevationZoneLevel.size * 0.12)));
     for (let k = 1; k < n; k++) {
       const t = k / n;

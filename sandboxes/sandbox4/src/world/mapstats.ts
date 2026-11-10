@@ -100,6 +100,10 @@ class Acc {
 
   add(v: number, x: number, y: number): void {
     if (v !== v) return;
+    // the samples are stored as float32: round first, so min / max / mean match the
+    // stored values (a float64 min could sit just above its own stored sample, which
+    // would then fall below bin 0)
+    v = Math.fround(v);
     if (this.n === this.v.length) {
       const g = new Float32Array(this.v.length * 2);
       g.set(this.v);

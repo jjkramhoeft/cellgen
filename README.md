@@ -104,6 +104,24 @@ The **initial climate** is two fBm Perlin-noise maps, independent of the map: te
 
 **Colour by → Biomes** shows them in colours that look like the land (sand, dry grass, olive scrub, forest greens, grey tundra, white ice), slightly varied per subbiome. The biome view computes the terrain like the height view; zoomed far out each elevation zone shows the biome at its site. The inspector lists the biome with every input: belt, moisture class, aridity, height (exact or estimated), the temperature before and after the height cooling, the precipitation (and the dry-flat factor), and the biome the subbiome would have at sea level.
 
+### Resources
+
+For each sub biome a set of resources are calcutated (Ore, Minirals, Fish, Wood, Farmable land etc.)
+
+Not done yet.
+
+### City Locations
+
+For each region a list of potential city and town locations are calculated
+
+Not done yet.
+
+### Trade network
+
+River, Ocean and roads
+
+Not done yet.
+
 ### Evaluating the map
 
 - **Colour by:** map (elevation zone types), land & ocean, **ocean genesis** (lone seed, linked seed, link chain, growth pass), **merged cells**, regions, elevation zones, subbiomes, the hierarchy (region hue × elevation zone lightness × subbiome shading), **biomes** (one per subbiome), and **height** (hypsometric tint and hillshade). A **Hillshade** overlay works on any colour mode.
