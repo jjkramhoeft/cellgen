@@ -17,8 +17,8 @@ import { screenToWorld, zoomAt, type Camera, type Viewport } from '@shared/rende
 import { RasterLayer } from '@shared/render/raster';
 import { buildPanel } from '@shared/ui/panel';
 import { tagTooltips } from '@shared/ui/html';
-import { ALL_DEFS, BIOME_KEYS, BIOME_SECTION, CLIMATE_KEYS, PRECIP_KEYS, CLIMATE_SECTIONS, PROSPERITY_KEYS, PROSPERITY_SECTION, DEFAULT_SEED, defaults, GEN_KEYS, PRESETS, RIVER_KEYS, RIVER_SECTION, FLOODPLAIN_SECTION, GRADIENT_SECTION, HILLSLOPE_SECTION, SECTIONS, TERRAIN_KEYS, TERRAIN_SECTION, toBiomeParams, toClimateParams, toRiverParams, toTerrainParams, toWorldParams, VIEW_MODES, VIEW_SECTION } from './params';
-import { drawGrid, drawGrowth, drawLinks, drawMerges, drawRivers, drawRuler, drawSites, fmtDist, niceStep, type Frame } from './render/overlays';
+import { ALL_DEFS, BIOME_KEYS, BIOME_SECTION, CLIMATE_KEYS, PRECIP_KEYS, CLIMATE_SECTIONS, PROSPERITY_KEYS, PROSPERITY_SECTION, DEFAULT_SEED, defaults, GEN_KEYS, PRESETS, RIVER_KEYS, RIVER_SECTION, FLOODPLAIN_SECTION, GRADIENT_SECTION, HILLSLOPE_SECTION, LAKE_KEYS, LAKE_SECTION, SECTIONS, TERRAIN_KEYS, TERRAIN_SECTION, toBiomeParams, toClimateParams, toLakeParams, toRiverParams, toTerrainParams, toWorldParams, VIEW_MODES, VIEW_SECTION } from './params';
+import { drawGrid, drawGrowth, drawLakes, drawLinks, drawMerges, drawRivers, drawRuler, drawSites, fmtDist, niceStep, type Frame } from './render/overlays';
 import { climateSource, type ClimateField } from './render/climate';
 import { DETAIL_PX, mapSource, type ViewMode, type ViewOpts } from './render/source';
 import { computeViewStats, renderInspector, type ClimateLegend, renderLegend, renderLevels, renderRuler, renderStats, type ViewStats } from './ui/widgets';
@@ -27,6 +27,7 @@ import { MapStatsJob, type MapStats } from './world/mapstats';
 import { buildMesh, View3D, type HeightGrid, type Rect } from './render/view3d';
 import { Biomes, coolingCurve } from './world/biomes';
 import { Climate } from './world/climate';
+import { Lakes } from './world/lakes';
 import { Rivers } from './world/rivers';
 import { FLOOD_REF_FLOW, monotoneSpline, Terrain } from './world/terrain';
 import type { FromTerrainWorker, ToTerrainWorker } from './world/terrain.worker';
@@ -69,6 +70,8 @@ let rivers!: Rivers;
 let terrain!: Terrain;
 let climate!: Climate;
 let biomes!: Biomes;
+/** lakes, placed per region after the rivers (rebuilt with the rivers, the climate, the biomes or the lake settings) */
+let lakes!: Lakes;
 /** bumped whenever the biomes are rebuilt (part of the raster key of the biome colours) */
 let biomeGen = 0;
 /** bumped when new terrain rasters are ready (part of the raster key, so the map re-renders) */
@@ -92,6 +95,8 @@ let texDirty = true;
 let meshAt: { cx: number; cy: number; w: number; h: number } | null = null;
 /** regions around the view whose rivers are still being computed */
 let riverPending = 0;
+/** regions around the view whose lakes are still being placed */
+let lakePending = 0;
 let genId = 0;
 let fingerprint = '';
 let stats: ViewStats | null = null;
@@ -144,7 +149,7 @@ if (urlCam) {
 
 // ------------------------------------------------------------------ panels
 
-const leftPanel = buildPanel($('left'), [...SECTIONS, RIVER_SECTION, TERRAIN_SECTION, HILLSLOPE_SECTION, GRADIENT_SECTION, FLOODPLAIN_SECTION, ...CLIMATE_SECTIONS, PROSPERITY_SECTION, BIOME_SECTION], params, onParam, resetSection);
+const leftPanel = buildPanel($('left'), [...SECTIONS, RIVER_SECTION, LAKE_SECTION, TERRAIN_SECTION, HILLSLOPE_SECTION, GRADIENT_SECTION, FLOODPLAIN_SECTION, ...CLIMATE_SECTIONS, PROSPERITY_SECTION, BIOME_SECTION], params, onParam, resetSection);
 
 /** A live plot of a control-point curve, placed under a panel section's help text. */
 interface CurvePlot {
@@ -319,6 +324,8 @@ function setParams(patch: Params): void {
     // prosperity feeds nothing yet: only the overlay and inspector change
     if (changed(CLIMATE_KEYS) || changed(PROSPERITY_KEYS)) newClimate();
     if (riv || changed(TERRAIN_KEYS) || changed(CLIMATE_KEYS) || changed(BIOME_KEYS)) newBiomes();
+    // lakes come after the rivers and read the sea-level biomes (climate, dry flat zones)
+    if (riv || changed(CLIMATE_KEYS) || changed(BIOME_KEYS) || changed(LAKE_KEYS)) newLakes();
     viewChanged();
   }
 }
@@ -332,6 +339,7 @@ function regenerate(): void {
   newTerrain();
   newClimate();
   newBiomes();
+  newLakes();
   genId++;
   timings.render = 0;
   fingerprint = '';
@@ -357,6 +365,14 @@ function newClimate(): void {
 function newBiomes(): void {
   biomes = new Biomes(world, rivers, climate, terrain, toBiomeParams(params));
   biomeGen++;
+}
+
+/**
+ * Lakes on the current world and rivers. They read only the sea-level biome of each
+ * subbiome, so they get a Biomes without terrain: the lakes never change as tiles arrive.
+ */
+function newLakes(): void {
+  lakes = new Lakes(world, rivers, new Biomes(world, rivers, climate, null, toBiomeParams(params)), toLakeParams(params));
 }
 
 /** The climate overlays that are on, bottom first. */
@@ -725,6 +741,9 @@ function frame(): void {
       interacting ? 0 : performance.now() + Math.max(12, budget * 0.6),
     );
   }
+  // lakes after (over) the rivers, which run into and out of them
+  // (they sit on the rivers, so they are shown with them)
+  lakePending = params['riv.on'] === true ? drawLakes(f, lakes, interacting ? 0 : performance.now() + Math.max(8, budget * 0.4)) : 0;
   // climate overlays: half transparent, over the map and rivers (coarse while moving)
   let climateBusy = false;
   for (const field of climateOn()) {
@@ -751,11 +770,11 @@ function frame(): void {
   updateStatus(layer.busy ? layer.progress : 1);
   renderLevels($('levels'), world, cam.zoom, detailOn());
   const terrainBusy = terrainPending > 0;
-  $('busy').hidden = !layer.busy && riverPending === 0 && !terrainBusy && !climateBusy;
-  if (params['view.3d'] === true) update3d(interacting, terrainPending === 0,!layer.busy && riverPending === 0 && !terrainBusy && !climateBusy && !interacting);
+  $('busy').hidden = !layer.busy && riverPending === 0 && lakePending === 0 && !terrainBusy && !climateBusy;
+  if (params['view.3d'] === true) update3d(interacting, terrainPending === 0,!layer.busy && riverPending === 0 && lakePending === 0 && !terrainBusy && !climateBusy && !interacting);
   checkStatistics();
   // with a worker, arriving tiles wake the loop (no need to spin while it works)
-  if (layer.busy || climateBusy || riverPending > 0 || (terrainBusy && !terrainWorker)) invalidate();
+  if (layer.busy || climateBusy || riverPending > 0 || lakePending > 0 || (terrainBusy && !terrainWorker)) invalidate();
   else if (interacting || fresh) {
     clearTimeout(idleTimer);
     idleTimer = window.setTimeout(invalidate, 170);
@@ -775,6 +794,7 @@ function updateStatus(progress: number): void {
     `<span title="Width of the view">view <b>${fmtDist(vp.w / cam.zoom)}</b></span>` +
     (progress < 1 ? `<span class="rendering">rendering ${(progress * 100).toFixed(0)}%</span>` : '') +
     (riverPending > 0 ? `<span class="rendering" title="Regions whose rivers are still growing">rivers: ${riverPending} regions to go</span>` : '') +
+    (lakePending > 0 ? `<span class="rendering" title="Regions whose lakes are still being placed">lakes: ${lakePending} regions to go</span>` : '') +
     (terrainPending > 0 ? `<span class="rendering" title="Terrain tiles (${terrain.k} × ${terrain.k} regions) still being computed">terrain: ${terrainPending} tile${terrainPending === 1 ? '' : 's'} to go</span>` : '') +
     (terrainPending < 0 ? `<span title="The height map is computed per tile of regions; zoom in to see it">terrain: zoom in</span>` : '') +
     `<span class="scalebar"><i style="width:${px.toFixed(0)}px"></i>${fmtDist(len)}</span>`;
@@ -782,7 +802,7 @@ function updateStatus(progress: number): void {
 
 function updateInspector(): void {
   const pt = pinned ?? hover;
-  renderInspector($('inspector'), world, params['riv.on'] === true ? rivers : null, pt ? { ...pt, pinned: !!pinned } : null, needTerrain() ? terrain : null, climate, biomes);
+  renderInspector($('inspector'), world, params['riv.on'] === true ? rivers : null, pt ? { ...pt, pinned: !!pinned } : null, needTerrain() ? terrain : null, climate, biomes, params['riv.on'] === true ? lakes : null);
   tagTooltips($('inspector'));
 }
 

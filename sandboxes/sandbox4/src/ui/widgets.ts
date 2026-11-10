@@ -2,9 +2,10 @@
 import { cssRgb, hashColor } from '@shared/render/colormaps';
 import { esc } from '@shared/ui/html';
 import { keyI, keyJ } from '../world/level';
+import type { LakeBlock, Lakes } from '../world/lakes';
 import type { Rivers } from '../world/rivers';
 import { LINKED, ORIGIN, SEED, World } from '../world/world';
-import { fmtDist, TRAVEL, travelDays } from '../render/overlays';
+import { fmtDist, LAKE_FILL, TRAVEL, travelDays } from '../render/overlays';
 import { GENESIS, heightColor, keyHash, type ViewMode } from '../render/source';
 import { ELEVATION_ZONE_TYPES, elevationZoneType } from '../world/zones';
 import type { Terrain } from '../world/terrain';
@@ -142,7 +143,7 @@ function biomeRows(b: BiomeInfo, sparseDry: number): string {
   return html + '</div>';
 }
 
-export function renderInspector(host: HTMLElement, world: World | null, rivers: Rivers | null, pt: Probe | null, terrain: Terrain | null = null, climate: Climate | null = null, biomes: Biomes | null = null): void {
+export function renderInspector(host: HTMLElement, world: World | null, rivers: Rivers | null, pt: Probe | null, terrain: Terrain | null = null, climate: Climate | null = null, biomes: Biomes | null = null, lakes: Lakes | null = null): void {
   if (!world || !pt) {
     host.innerHTML = '<p class="muted">Hover the map to inspect a point. Click to pin the elevation zone and subbiome under the cursor.</p>';
     return;
@@ -214,7 +215,12 @@ export function renderInspector(host: HTMLElement, world: World | null, rivers: 
   if (c.subRaw !== c.sub) html += `<div class="kv"><span>Raw cell</span><b>${ij(c.subRaw)} → ${ij(c.sub)}</b></div>`;
   const st = world.subTarget(c.sub);
   html += `<div class="kv"><span>Merged</span><b>${c.subMerged ? (st >= 0 ? `joins ${ij(st)}` : 'yes (group root)') : 'no'}</b></div>`;
-  html += `<div class="kv"><span>Neighbours</span><b>${world.subNbrs(world.sub(c.sub)).length}</b></div></div>`;
+  html += `<div class="kv"><span>Neighbours</span><b>${world.subNbrs(world.sub(c.sub)).length}</b></div>`;
+  if (lakes && lakes.p.frequency > 0) {
+    const why = c.ocean ? 'ocean' : lakes.block(c.subRaw);
+    html += `<div class="kv" title="${LAKE_RULES} [lake.*]"><span>Lakes</span><b>${why ? `none · ${LAKE_BLOCK[why]}` : 'allowed'}</b></div>`;
+  }
+  html += '</div>';
   if (biomes) html += biomeRows(biomes.ofSub(c.sub), biomes.p.sparseDry);
   const nr = rivers?.nearestNode(pt.x, pt.y, rivers.p.step * 1.5);
   if (nr) {
@@ -228,9 +234,29 @@ export function renderInspector(host: HTMLElement, world: World | null, rivers: 
     if (ocean !== undefined) html += `<div class="kv"><span>Drains into</span><b>ocean elevation zone ${ij(ocean)}</b></div>`;
     html += '</div>';
   }
+  const lake = lakes?.lakeAt(pt.x, pt.y);
+  if (lake) {
+    const rl = lakes!.peek(lake.region)!;
+    html += `<div class="lvl"><h4><i style="background:${LAKE_FILL}"></i>Lake ${lake.id + 1} of ${rl.lakes.length} in region ${ij(lake.region)}</h4>`;
+    html += `<div class="kv" title="Diameter of a circle with the lake’s area, after the clip to the land it may cover · nominal size drawn for it [lake.min, lake.max]"><span>Size</span><b>${(lake.size / 1000).toFixed(2)} km · nominal ${(lake.nominal / 1000).toFixed(2)} km</b></div>`;
+    html += `<div class="kv"><span>Area</span><b>${(lake.area / 1e6).toFixed(2)} km²</b></div>`;
+    html += `<div class="kv" title="Every lake is centred on a river node: attractors reached upstream of it"><span>On river</span><b>flow ${lake.flow} attractors</b></div>`;
+    html += `<div class="kv"><span>Placed in subbiome</span><b>${ij(lake.sub)}</b></div>`;
+    html += `<div class="kv"><span>Centre</span><b>${(lake.cx / 1000).toFixed(1)}, ${(lake.cy / 1000).toFixed(1)} km</b></div>`;
+    html += `<div class="kv" title="Subbiomes that may hold a lake and have a river in them · of those, passed the frequency roll · dropped because too close to another lake · dropped because the clip left them below the minimum size · compute time [lake.freq]"><span>Region tries</span><b>${rl.candidates} with river · ${rl.tries} rolled · ${rl.crowded} crowded · ${rl.tooSmall} too small · ${rl.ms.toFixed(0)} ms</b></div>`;
+    html += '</div>';
+  }
   html += `<p class="muted small">${pt.pinned ? 'Pinned — Esc to release.' : 'Click to pin.'} Cell ids are lattice indices (i, j).</p>`;
   host.innerHTML = html;
 }
+
+const LAKE_RULES = 'No lakes in ocean or mountains elevation zones, in desert subbiomes (hot or cold desert at sea level) or in restricted subbiomes (in a river-poor flat elevation zone); lakes never cross a region border';
+const LAKE_BLOCK: Record<Exclude<LakeBlock, null>, string> = {
+  ocean: 'ocean',
+  mountains: 'mountains zone',
+  desert: 'desert at sea level',
+  restricted: 'restricted (river-poor flat zone)',
+};
 
 // ------------------------------------------------------------------ view statistics
 

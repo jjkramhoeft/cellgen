@@ -7,6 +7,7 @@
 import type { Camera, Viewport } from '@shared/render/camera';
 import { LINKED, World } from '../world/world';
 import type { Level } from '../world/level';
+import type { Lakes } from '../world/lakes';
 import type { Rivers } from '../world/rivers';
 
 export interface Frame {
@@ -395,6 +396,51 @@ export function drawRivers(f: Frame, rivers: Rivers, o: RiverDraw, deadline: num
     }
     ctx.lineWidth = 2 * dpr;
     ctx.strokeStyle = '#ffffff';
+    ctx.stroke();
+  }
+  return pending;
+}
+
+/** Lake fill and shore colours. */
+export const LAKE_FILL = '#3a78b6';
+const LAKE_SHORE = 'rgba(20, 52, 88, 0.85)';
+
+/**
+ * Lakes of the regions around the view: computed regions always, new ones (whose rivers
+ * are grown) until the deadline. Returns the number of regions still to place (drawn on a later frame).
+ */
+export function drawLakes(f: Frame, lakes: Lakes, deadline: number): number {
+  if (lakes.p.frequency <= 0) return 0;
+  const R = lakes.world.regionLevel;
+  if (World.countIn(R, f.x0, f.y0, f.x1, f.y1, 1) > 900) return 0;
+  const { ctx, dpr } = f;
+  let pending = 0;
+  ctx.beginPath();
+  let any = false;
+  for (const rk of World.cellsIn(R, f.x0, f.y0, f.x1, f.y1, 1)) {
+    let rl = lakes.peek(rk);
+    if (!rl) {
+      // lakes sit on the rivers: wait until the region's rivers are grown (drawRivers does that)
+      if (!lakes.rivers.has(rk) || performance.now() > deadline) {
+        pending++;
+        continue;
+      }
+      rl = lakes.get(rk);
+    }
+    for (const l of rl.lakes) {
+      if (l.x1 < f.x0 || l.x0 > f.x1 || l.y1 < f.y0 || l.y0 > f.y1) continue;
+      any = true;
+      ctx.moveTo(sx(f, l.x[0]), sy(f, l.y[0]));
+      for (let k = 1; k < l.x.length; k++) ctx.lineTo(sx(f, l.x[k]), sy(f, l.y[k]));
+      ctx.closePath();
+    }
+  }
+  if (any) {
+    ctx.fillStyle = LAKE_FILL;
+    ctx.fill();
+    ctx.lineJoin = 'round';
+    ctx.lineWidth = Math.max(0.75, Math.min(1.5, 600 * f.cam.zoom)) * dpr;
+    ctx.strokeStyle = LAKE_SHORE;
     ctx.stroke();
   }
   return pending;

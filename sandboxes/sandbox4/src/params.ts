@@ -2,6 +2,7 @@
 import { bindDefaults, bool, defaultsOf, num, opt, str, type DefaultsFile, type ParamDef, type Params, type Section } from '@shared/params/schema';
 import type { BiomeParams } from './world/biomes';
 import type { ClimateParams, NoiseFieldParams } from './world/climate';
+import type { LakeParams } from './world/lakes';
 import type { ConeAngle, PullPower, RiverParams } from './world/rivers';
 import { FLOOD_REF_FLOW, type TerrainParams, type Theta } from './world/terrain';
 import type { GrowFrom, WorldParams } from './world/world';
@@ -209,6 +210,46 @@ export function toRiverParams(p: Params, seed: number): RiverParams {
     climate: toClimateParams(p, seed),
     maxHops: 4,
   };
+}
+
+/**
+ * Lake parameters (left panel). Lakes are placed per region after the rivers, so changing
+ * them never regenerates the map, the rivers or the terrain.
+ */
+export const LAKE_SECTION: Section = withDefaults.section({
+  id: 'lakes',
+  title: 'Lakes',
+  open: true,
+  help: 'Per region, after the rivers, and always on a river: every subbiome that may hold a lake and has a river running through it gets one try, centred on the river (shown with the rivers). No lakes in ocean or mountains elevation zones, in desert subbiomes (hot or cold desert at sea level, so never where the map shows desert) or in restricted subbiomes (those of a river-poor flat elevation zone, see “Flat: sparse river precipitation cutoff”). The outline is an ellipse with a few broad noise lobes, clipped so a lake never leaves its region or the land it may cover, then rounded.',
+  params: [
+    {
+      key: 'lake.freq',
+      label: 'Frequency',
+      type: 'number',
+      min: 0,
+      max: 1,
+      step: 0.01,
+      help: 'Chance that a subbiome which may hold a lake, and has a river in it, gets one. 0 = no lakes. Lakes that would overlap another lake, or that the clip leaves smaller than the minimum size, are dropped.',
+    },
+    {
+      key: 'lake.min',
+      label: 'Minimum size',
+      type: 'number',
+      min: 0.2,
+      max: 40,
+      step: 0.1,
+      log: true,
+      unit: ' km',
+      help: 'Smallest lake: the diameter of a circle with the lake’s area. Nominal sizes are drawn between the minimum and maximum, favouring small lakes.',
+    },
+    { key: 'lake.max', label: 'Maximum size', type: 'number', min: 0.2, max: 40, step: 0.1, log: true, unit: ' km', help: 'Largest lake (diameter of a circle with the same area). A lake the noise makes larger is scaled down.' },
+  ],
+});
+export const LAKE_KEYS = new Set(LAKE_SECTION.params.map((p) => p.key));
+
+/** Schema → model parameters for Lakes. */
+export function toLakeParams(p: Params): LakeParams {
+  return { frequency: num(p, 'lake.freq'), minSize: num(p, 'lake.min') * KM, maxSize: num(p, 'lake.max') * KM };
 }
 
 /**
@@ -523,7 +564,7 @@ export const VIEW_SECTION: Section = withDefaults.section({
   ],
 });
 
-export const ALL_DEFS: ParamDef[] = [...SECTIONS.flatMap((s) => s.params), ...RIVER_SECTION.params, ...TERRAIN_SECTION.params, ...HILLSLOPE_SECTION.params, ...GRADIENT_SECTION.params, ...FLOODPLAIN_SECTION.params, ...CLIMATE_SECTIONS.flatMap((s) => s.params), ...PROSPERITY_SECTION.params, ...BIOME_SECTION.params, ...VIEW_SECTION.params];
+export const ALL_DEFS: ParamDef[] = [...SECTIONS.flatMap((s) => s.params), ...RIVER_SECTION.params, ...LAKE_SECTION.params, ...TERRAIN_SECTION.params, ...HILLSLOPE_SECTION.params, ...GRADIENT_SECTION.params, ...FLOODPLAIN_SECTION.params, ...CLIMATE_SECTIONS.flatMap((s) => s.params), ...PROSPERITY_SECTION.params, ...BIOME_SECTION.params, ...VIEW_SECTION.params];
 withDefaults.checkAllUsed();
 export const GEN_KEYS = new Set(SECTIONS.flatMap((s) => s.params.map((p) => p.key)).filter((k) => !RIVER_KEYS.has(k)));
 
