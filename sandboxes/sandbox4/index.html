@@ -107,7 +107,7 @@
         <ul>
           <li>An <b>initial temperature map</b> (−10 to 30 °C by default) and an <b>initial precipitation map</b> (100 to 12 000 mm per year on a log scale, so the middle is about 1 100), each an fBm of <b>Perlin noise</b> with its own feature size, octaves, lacunarity, gain and range (left panel, <b>Climate</b> sections).</li>
           <li>Turn on <b>Temperature overlay</b> or <b>Precipitation overlay</b> under Display to draw them <b>50 % transparent on top</b> of the map and rivers; the inspector shows both values under the cursor.</li>
-          <li>A <b>prosperity map</b> (1 to 100 by default, unitless) built the same way, with its own seed and parameters (left panel, <b>Prosperity</b>). It does not affect anything yet; turn on <b>Prosperity overlay</b> under Display to see it (dark purple = poor, gold = prosperous).</li>
+          <li>A <b>prosperity map</b> (1 to 100 by default, unitless) built the same way, with its own seed and parameters (left panel, <b>Prosperity</b>). It is one of the five factors of the city and town locations; turn on <b>Prosperity overlay</b> under Display to see it (dark purple = poor, gold = prosperous).</li>
           <li>A <b>supernatural map</b> (0 to 100 by default, unitless): how strong magic is, for magic resources and other fantasy game play. The same Perlin fBm with its own seed and much finer features (10 km, 3 octaves by default; left panel, <b>Supernatural</b>). It does not affect anything yet; turn on <b>Supernatural overlay</b> under Display to see it (near black = mundane, violet → glowing cyan = strong magic).</li>
         </ul>
         <h3>Biomes</h3>
@@ -118,12 +118,18 @@
           <li><b>Mangrove</b>: a coastal subbiome (bordering the ocean) in a flat or lowland zone becomes mangrove where it is at least 20 °C and not desert (aridity ≥ 0.5); both are settings. Never inland or in hills or mountains.</li>
           <li>Colour by <b>Biomes</b> (<b>2</b>) to see them; the inspector shows each subbiome’s biome and the values that picked it.</li>
         </ul>
+        <h3>City &amp; town locations</h3>
+        <ul>
+          <li>Every region gets about <b>20 potential locations</b> for cities (◆) and towns (●). Each land subbiome is scored on five factors: <b>resources</b> (food of its catchment, fresh water, wood / stone / clay, fish), <b>geography</b> (buildable ground, a waterside site, defence, depth inside the region), <b>trade &amp; travel</b> (river mouth, harbour, navigable river, confluence, or a central place), <b>climate</b> and <b>prosperity</b> (the prosperity map).</li>
+          <li>The <b>viability</b> score (0–100) is the weighted mean of the five, scaled down to 0 where there is no fresh water or the temperature is unlivable. The best-scoring subbiomes, kept apart by a spacing, become the locations; the top ones, far apart and well inside the region, are cities (left panel, <b>City &amp; town locations</b>).</li>
+          <li>Display → <b>City &amp; town locations</b> (<b>C</b>) shows them, coloured by viability; the <b>Location viability</b> slider hides the ones below a score. Zoom in for the scores, and hover a location (or any land subbiome) to see its factors in the inspector.</li>
+        </ul>
         <h3>Navigation</h3>
         <ul>
           <li><b>Scroll</b> to zoom at the cursor, <b>drag</b> to pan, <b>pinch</b> on touch, <b>double-click</b> zooms in (Shift zooms out).</li>
           <li><b>Click</b> pins the elevation zone (yellow outline) and subbiome (cyan outline) under the cursor; <b>Esc</b> releases.</li>
           <li><b>Shift+drag</b> or <b>M</b> measures a distance, with travel times for a horse, a marching legion and a hiker.</li>
-          <li><b>+ / −</b> zoom · <b>0 / H</b> origin · arrows pan · <b>R</b> new seed · <b>1–9</b> or <b>[ ]</b> colour mode · <b>T</b> 3D landscape · <b>B</b> elevation zone borders · <b>N</b> subbiome borders · <b>L</b> links · <b>W</b> growth · <b>J</b> merges · <b>V</b> rivers · <b>S</b> sites · <b>G</b> grid · <b>?</b> help.</li>
+          <li><b>+ / −</b> zoom · <b>0 / H</b> origin · arrows pan · <b>R</b> new seed · <b>1–9</b> or <b>[ ]</b> colour mode · <b>T</b> 3D landscape · <b>B</b> elevation zone borders · <b>N</b> subbiome borders · <b>L</b> links · <b>W</b> growth · <b>J</b> merges · <b>V</b> rivers · <b>S</b> sites · <b>G</b> grid · <b>C</b> city &amp; town locations · <b>?</b> help.</li>
         </ul>
         <p class="muted">Arrows connect cell <i>sites</i>. With border warp a site can sit slightly outside its own warped cell. Travel speeds are reference data from <code>sandbox3.md</code>; the generator does not use them.</p>
         <div class="dlg-actions"><button class="btn primary">Close</button></div>

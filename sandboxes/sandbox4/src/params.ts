@@ -3,6 +3,7 @@ import { bindDefaults, bool, defaultsOf, num, opt, str, type DefaultsFile, type 
 import type { BiomeParams } from './world/biomes';
 import type { ClimateParams, NoiseFieldParams } from './world/climate';
 import type { LakeParams } from './world/lakes';
+import type { LocationParams } from './world/locations';
 import type { ConeAngle, PullPower, RiverParams } from './world/rivers';
 import { FLOOD_REF_FLOW, type TerrainParams, type Theta } from './world/terrain';
 import type { GrowFrom, WorldParams } from './world/world';
@@ -418,11 +419,11 @@ export const CLIMATE_KEYS = new Set(CLIMATE_SECTIONS.flatMap((sec) => sec.params
 /** Precipitation keys: they also feed the rivers (river-poor dry flat zones). */
 export const PRECIP_KEYS = new Set([...CLIMATE_KEYS].filter((k) => k.startsWith('clim.p.')));
 
-/** Prosperity map: Perlin noise like the climate, but it feeds nothing yet (no biome or river rebuild). */
+/** Prosperity map: Perlin noise like the climate. It feeds only the city and town locations (no biome or river rebuild). */
 export const PROSPERITY_SECTION: Section = climateSection(
   'pros',
   'Prosperity',
-  'Prosperity map (unitless index, 1 to 100 by default): fBm of Perlin noise with its own seed, independent of the climate and the map for now. Shown with Display → Prosperity overlay and in the inspector.',
+  'Prosperity map (unitless index, 1 to 100 by default): fBm of Perlin noise with its own seed, independent of the climate and the map. It is one of the five factors of the city and town locations. Shown with Display → Prosperity overlay and in the inspector.',
   '',
   0,
   1000,
@@ -537,6 +538,48 @@ export function toBiomeParams(p: Params): BiomeParams {
   };
 }
 
+/**
+ * City and town locations (left panel): scored per region on top of the map, rivers, lakes,
+ * climate and prosperity map. Changing them only re-scores the locations.
+ */
+export const LOCATION_SECTION: Section = withDefaults.section({
+  id: 'locations',
+  title: 'City & town locations',
+  open: false,
+  help: 'Per region, every land subbiome is scored as a place for a city or town on five factors, each 0–1: resources (food of the catchment, fresh water, wood / stone / clay, fish), geography (buildable ground, a waterside site, defence, depth inside the region), trade & travel (river mouth, harbour, navigable river, confluence, or a central place within a day or two of much farmland), climate (temperature and aridity) and prosperity (the prosperity map). Viability = 100 × the weighted mean of the five, scaled down to 0 where there is no fresh water or the temperature is unlivable. The best-scoring subbiomes become the region’s locations, kept apart by the spacing; the top ones, far apart and well inside the region, are cities. Shown with Display → City & town locations; the Location viability slider there hides the weaker ones.',
+  params: [
+    { key: 'loc.count', label: 'Locations / region', type: 'int', min: 0, max: 60, help: 'How many locations a region aims for (cities included). Regions with little habitable land get fewer.' },
+    { key: 'loc.cities', label: 'Cities / region', type: 'int', min: 0, max: 12, help: 'At most this many of a region’s locations are cities: its best scores that lie at least two subbiomes inside the region and 2.5 × the spacing apart. The rest are towns.' },
+    {
+      key: 'loc.spacing',
+      label: 'Spacing',
+      type: 'number',
+      min: 4,
+      max: 80,
+      step: 0.5,
+      log: true,
+      unit: ' km',
+      help: 'Least distance between two locations of a region. When that leaves a region short of its number of locations, the spacing is relaxed step by step, down to one subbiome size.',
+    },
+    { key: 'loc.wRes', label: 'Weight · resources', type: 'number', min: 0, max: 1, step: 0.05, help: 'Relative weight of each factor in the viability score (the five weights are normalised).' },
+    { key: 'loc.wGeo', label: 'Weight · geography', type: 'number', min: 0, max: 1, step: 0.05 },
+    { key: 'loc.wTrade', label: 'Weight · trade & travel', type: 'number', min: 0, max: 1, step: 0.05 },
+    { key: 'loc.wClim', label: 'Weight · climate', type: 'number', min: 0, max: 1, step: 0.05 },
+    { key: 'loc.wPros', label: 'Weight · prosperity', type: 'number', min: 0, max: 1, step: 0.05 },
+  ],
+});
+export const LOCATION_KEYS = new Set(LOCATION_SECTION.params.map((p) => p.key));
+
+/** Schema → model parameters for the locations. */
+export function toLocationParams(p: Params): LocationParams {
+  return {
+    count: num(p, 'loc.count'),
+    cities: num(p, 'loc.cities'),
+    spacing: num(p, 'loc.spacing') * KM,
+    weights: { resources: num(p, 'loc.wRes'), geography: num(p, 'loc.wGeo'), trade: num(p, 'loc.wTrade'), climate: num(p, 'loc.wClim'), prosperity: num(p, 'loc.wPros') },
+  };
+}
+
 /** Colour modes: [id, label]. */
 export const VIEW_MODES = [
   ['map', 'Map (elevation zone types)'],
@@ -571,6 +614,17 @@ export const VIEW_SECTION: Section = withDefaults.section({
     { key: 'view.precip', label: 'Precipitation overlay', type: 'bool', view: true, help: 'The initial precipitation map, 50 % transparent on top of the map and rivers (brown = dry, teal/blue = wet). Drawn above the temperature overlay when both are on.' },
     { key: 'view.prosperity', label: 'Prosperity overlay', type: 'bool', view: true, help: 'The prosperity map, 50 % transparent on top of the map and rivers (dark purple = poor, gold = prosperous). Drawn above the climate overlays.' },
     { key: 'view.supernatural', label: 'Supernatural overlay', type: 'bool', view: true, help: 'The supernatural map, 50 % transparent on top of the map and rivers (near black = mundane, violet → glowing cyan = strong magic). Drawn above the other noise overlays.' },
+    { key: 'view.locations', label: 'City & town locations', type: 'bool', view: true, help: 'The potential city (diamond) and town (dot) locations of every region, coloured by their viability score (purple = poor, orange, pale yellow = excellent). Zoom in for the scores; hover one for the factors behind it. Zoomed far out only the cities are drawn.' },
+    {
+      key: 'view.locMin',
+      label: 'Location viability',
+      type: 'number',
+      min: 0,
+      max: 100,
+      step: 1,
+      view: true,
+      help: 'Show only locations whose combined viability score (0–100: resources, geography, trade & travel, climate and prosperity) is at least this. 0 shows every location; raise it to keep only the most viable sites.',
+    },
     { key: 'view.regEdges', label: 'Region borders', type: 'bool', view: true },
     { key: 'view.zoneEdges', label: 'Elevation zone borders', type: 'bool', view: true },
     { key: 'view.subEdges', label: 'Subbiome borders', type: 'bool', view: true, help: 'Drawn when subbiomes are large enough on screen.' },
@@ -604,7 +658,7 @@ export const VIEW_SECTION: Section = withDefaults.section({
   ],
 });
 
-export const ALL_DEFS: ParamDef[] = [...SECTIONS.flatMap((s) => s.params), ...RIVER_SECTION.params, ...LAKE_SECTION.params, ...TERRAIN_SECTION.params, ...HILLSLOPE_SECTION.params, ...GRADIENT_SECTION.params, ...FLOODPLAIN_SECTION.params, ...CLIMATE_SECTIONS.flatMap((s) => s.params), ...PROSPERITY_SECTION.params, ...SUPERNATURAL_SECTION.params, ...BIOME_SECTION.params, ...VIEW_SECTION.params];
+export const ALL_DEFS: ParamDef[] = [...SECTIONS.flatMap((s) => s.params), ...RIVER_SECTION.params, ...LAKE_SECTION.params, ...TERRAIN_SECTION.params, ...HILLSLOPE_SECTION.params, ...GRADIENT_SECTION.params, ...FLOODPLAIN_SECTION.params, ...CLIMATE_SECTIONS.flatMap((s) => s.params), ...PROSPERITY_SECTION.params, ...SUPERNATURAL_SECTION.params, ...BIOME_SECTION.params, ...LOCATION_SECTION.params, ...VIEW_SECTION.params];
 withDefaults.checkAllUsed();
 export const GEN_KEYS = new Set(SECTIONS.flatMap((s) => s.params.map((p) => p.key)).filter((k) => !RIVER_KEYS.has(k)));
 

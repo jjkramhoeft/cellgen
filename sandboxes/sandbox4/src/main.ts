@@ -17,8 +17,8 @@ import { screenToWorld, zoomAt, type Camera, type Viewport } from '@shared/rende
 import { RasterLayer } from '@shared/render/raster';
 import { buildPanel } from '@shared/ui/panel';
 import { tagTooltips } from '@shared/ui/html';
-import { ALL_DEFS, BIOME_KEYS, BIOME_SECTION, CLIMATE_KEYS, PRECIP_KEYS, CLIMATE_SECTIONS, PROSPERITY_KEYS, PROSPERITY_SECTION, SUPERNATURAL_KEYS, SUPERNATURAL_SECTION, DEFAULT_SEED, defaults, GEN_KEYS, PRESETS, RIVER_KEYS, RIVER_SECTION, FLOODPLAIN_SECTION, GRADIENT_SECTION, HILLSLOPE_SECTION, LAKE_KEYS, LAKE_SECTION, SECTIONS, TERRAIN_KEYS, TERRAIN_SECTION, toBiomeParams, toClimateParams, toLakeParams, toRiverParams, toTerrainParams, toWorldParams, VIEW_MODES, VIEW_SECTION } from './params';
-import { drawGrid, drawGrowth, drawLakes, drawLinks, drawMerges, drawRivers, drawRuler, drawSites, fmtDist, niceStep, type Frame } from './render/overlays';
+import { ALL_DEFS, BIOME_KEYS, BIOME_SECTION, CLIMATE_KEYS, PRECIP_KEYS, CLIMATE_SECTIONS, PROSPERITY_KEYS, PROSPERITY_SECTION, SUPERNATURAL_KEYS, SUPERNATURAL_SECTION, DEFAULT_SEED, defaults, GEN_KEYS, PRESETS, RIVER_KEYS, RIVER_SECTION, FLOODPLAIN_SECTION, GRADIENT_SECTION, HILLSLOPE_SECTION, LAKE_KEYS, LAKE_SECTION, LOCATION_KEYS, LOCATION_SECTION, SECTIONS, TERRAIN_KEYS, TERRAIN_SECTION, toBiomeParams, toClimateParams, toLakeParams, toLocationParams, toRiverParams, toTerrainParams, toWorldParams, VIEW_MODES, VIEW_SECTION } from './params';
+import { drawGrid, drawGrowth, drawLakes, drawLinks, drawLocations, drawMerges, drawRivers, drawRuler, drawSites, fmtDist, niceStep, type Frame } from './render/overlays';
 import { climateSource, type ClimateField } from './render/climate';
 import { DETAIL_PX, mapSource, type ViewMode, type ViewOpts } from './render/source';
 import { computeViewStats, renderInspector, type ClimateLegend, renderLegend, renderLevels, renderRuler, renderStats, type ViewStats } from './ui/widgets';
@@ -28,6 +28,7 @@ import { buildMesh, View3D, type HeightGrid, type Rect } from './render/view3d';
 import { Biomes, coolingCurve } from './world/biomes';
 import { Climate } from './world/climate';
 import { Lakes } from './world/lakes';
+import { Locations } from './world/locations';
 import { Rivers } from './world/rivers';
 import { FLOOD_REF_FLOW, monotoneSpline, Terrain } from './world/terrain';
 import type { FromTerrainWorker, ToTerrainWorker } from './world/terrain.worker';
@@ -72,6 +73,8 @@ let climate!: Climate;
 let biomes!: Biomes;
 /** lakes, placed per region after the rivers (rebuilt with the rivers, the climate, the biomes or the lake settings) */
 let lakes!: Lakes;
+/** potential city and town locations per region (rebuilt with the rivers, lakes, climate, prosperity map or location settings) */
+let locations!: Locations;
 /** bumped whenever the biomes are rebuilt (part of the raster key of the biome colours) */
 let biomeGen = 0;
 /** bumped when new terrain rasters are ready (part of the raster key, so the map re-renders) */
@@ -97,6 +100,8 @@ let meshAt: { cx: number; cy: number; w: number; h: number } | null = null;
 let riverPending = 0;
 /** regions around the view whose lakes are still being placed */
 let lakePending = 0;
+/** regions around the view whose locations are still being scored */
+let locPending = 0;
 let genId = 0;
 let fingerprint = '';
 let stats: ViewStats | null = null;
@@ -149,7 +154,7 @@ if (urlCam) {
 
 // ------------------------------------------------------------------ panels
 
-const leftPanel = buildPanel($('left'), [...SECTIONS, RIVER_SECTION, LAKE_SECTION, TERRAIN_SECTION, HILLSLOPE_SECTION, GRADIENT_SECTION, FLOODPLAIN_SECTION, ...CLIMATE_SECTIONS, PROSPERITY_SECTION, SUPERNATURAL_SECTION, BIOME_SECTION], params, onParam, resetSection);
+const leftPanel = buildPanel($('left'), [...SECTIONS, RIVER_SECTION, LAKE_SECTION, TERRAIN_SECTION, HILLSLOPE_SECTION, GRADIENT_SECTION, FLOODPLAIN_SECTION, ...CLIMATE_SECTIONS, PROSPERITY_SECTION, SUPERNATURAL_SECTION, BIOME_SECTION, LOCATION_SECTION], params, onParam, resetSection);
 
 /** A live plot of a control-point curve, placed under a panel section's help text. */
 interface CurvePlot {
@@ -321,11 +326,14 @@ function setParams(patch: Params): void {
     const riv = changed(RIVER_KEYS) || changed(PRECIP_KEYS);
     if (riv) rivers = new Rivers(world, toRiverParams(params, seedFromText(seedText)));
     if (riv || changed(TERRAIN_KEYS)) newTerrain();
-    // prosperity and supernatural feed nothing yet: only the overlays and inspector change
+    // the supernatural map feeds nothing yet (only its overlay and the inspector change); prosperity feeds the locations
     if (changed(CLIMATE_KEYS) || changed(PROSPERITY_KEYS) || changed(SUPERNATURAL_KEYS)) newClimate();
     if (riv || changed(TERRAIN_KEYS) || changed(CLIMATE_KEYS) || changed(BIOME_KEYS)) newBiomes();
     // lakes come after the rivers and read the sea-level biomes (climate, dry flat zones)
-    if (riv || changed(CLIMATE_KEYS) || changed(BIOME_KEYS) || changed(LAKE_KEYS)) newLakes();
+    const lak = riv || changed(CLIMATE_KEYS) || changed(BIOME_KEYS) || changed(LAKE_KEYS);
+    if (lak) newLakes();
+    // locations are scored on the rivers, lakes, climate, sea-level biomes and the prosperity map
+    if (lak || changed(PROSPERITY_KEYS) || changed(LOCATION_KEYS)) newLocations();
     viewChanged();
   }
 }
@@ -340,6 +348,7 @@ function regenerate(): void {
   newClimate();
   newBiomes();
   newLakes();
+  newLocations();
   genId++;
   timings.render = 0;
   fingerprint = '';
@@ -373,6 +382,20 @@ function newBiomes(): void {
  */
 function newLakes(): void {
   lakes = new Lakes(world, rivers, new Biomes(world, rivers, climate, null, toBiomeParams(params)), toLakeParams(params));
+}
+
+/**
+ * City and town locations on the current rivers, lakes, climate and prosperity map. They
+ * share the lakes' terrain-less biomes (zone-typical heights), so they never change as
+ * terrain tiles arrive.
+ */
+function newLocations(): void {
+  locations = new Locations(world, rivers, lakes, lakes.biomes, climate, toLocationParams(params));
+}
+
+/** The viability threshold of the locations overlay, or null when the overlay is off. */
+function locationMin(): number | null {
+  return params['view.locations'] === true ? Number(params['view.locMin']) : null;
 }
 
 /** The climate overlays that are on, bottom first. */
@@ -548,7 +571,7 @@ function viewOpts(): ViewOpts {
 function viewChanged(): void {
   meshDirty = texDirty = true;
   show3d();
-  renderLegend($('legend'), viewOpts().mode, stats ? stats.oceanShare : null, world.p.growPasses, climateLegend());
+  renderLegend($('legend'), viewOpts().mode, stats ? stats.oceanShare : null, world.p.growPasses, climateLegend(), locationMin());
   updateInspector();
   writeUrl();
   scheduleStats();
@@ -575,7 +598,7 @@ function scheduleStats(): void {
     const [x1, y1] = screenToWorld(cam, vp, vp.w, vp.h);
     stats = computeViewStats(world, x0, y0, x1, y1, detailOn(), params['riv.on'] === true ? rivers : null);
     renderStatsPanel();
-    if (str(params, 'view.color') === 'landsea') renderLegend($('legend'), 'landsea', stats.oceanShare, world.p.growPasses, climateLegend());
+    if (str(params, 'view.color') === 'landsea') renderLegend($('legend'), 'landsea', stats.oceanShare, world.p.growPasses, climateLegend(), locationMin());
   }, 350);
 }
 
@@ -757,6 +780,10 @@ function frame(): void {
     cl.draw(ctx, cam, vp, dpr, csrc.key, true, true);
     ctx.globalAlpha = 1;
   }
+  // city and town locations, over the climate overlays so the markers keep their colours;
+  // regions not scored yet are scored between interactions (that grows their rivers too)
+  const locMin = locationMin();
+  locPending = locMin === null ? 0 : drawLocations(f, locations, { min: locMin }, interacting ? 0 : performance.now() + Math.max(8, budget * 0.4));
   // vector overlays only once the raster is settled (they trigger the same lazy work)
   if (!layer.busy || !interacting) {
     if (params['view.grid'] === true) drawGrid(f);
@@ -771,11 +798,11 @@ function frame(): void {
   updateStatus(layer.busy ? layer.progress : 1);
   renderLevels($('levels'), world, cam.zoom, detailOn());
   const terrainBusy = terrainPending > 0;
-  $('busy').hidden = !layer.busy && riverPending === 0 && lakePending === 0 && !terrainBusy && !climateBusy;
-  if (params['view.3d'] === true) update3d(interacting, terrainPending === 0,!layer.busy && riverPending === 0 && lakePending === 0 && !terrainBusy && !climateBusy && !interacting);
+  $('busy').hidden = !layer.busy && riverPending === 0 && lakePending === 0 && locPending === 0 && !terrainBusy && !climateBusy;
+  if (params['view.3d'] === true) update3d(interacting, terrainPending === 0, !layer.busy && riverPending === 0 && lakePending === 0 && locPending === 0 && !terrainBusy && !climateBusy && !interacting);
   checkStatistics();
   // with a worker, arriving tiles wake the loop (no need to spin while it works)
-  if (layer.busy || climateBusy || riverPending > 0 || lakePending > 0 || (terrainBusy && !terrainWorker)) invalidate();
+  if (layer.busy || climateBusy || riverPending > 0 || lakePending > 0 || locPending > 0 || (terrainBusy && !terrainWorker)) invalidate();
   else if (interacting || fresh) {
     clearTimeout(idleTimer);
     idleTimer = window.setTimeout(invalidate, 170);
@@ -796,6 +823,7 @@ function updateStatus(progress: number): void {
     (progress < 1 ? `<span class="rendering">rendering ${(progress * 100).toFixed(0)}%</span>` : '') +
     (riverPending > 0 ? `<span class="rendering" title="Regions whose rivers are still growing">rivers: ${riverPending} regions to go</span>` : '') +
     (lakePending > 0 ? `<span class="rendering" title="Regions whose lakes are still being placed">lakes: ${lakePending} regions to go</span>` : '') +
+    (locPending > 0 ? `<span class="rendering" title="Regions whose city and town locations are still being scored">locations: ${locPending} regions to go</span>` : '') +
     (terrainPending > 0 ? `<span class="rendering" title="Terrain tiles (${terrain.k} × ${terrain.k} regions) still being computed">terrain: ${terrainPending} tile${terrainPending === 1 ? '' : 's'} to go</span>` : '') +
     (terrainPending < 0 ? `<span title="The height map is computed per tile of regions; zoom in to see it">terrain: zoom in</span>` : '') +
     `<span class="scalebar"><i style="width:${px.toFixed(0)}px"></i>${fmtDist(len)}</span>`;
@@ -803,7 +831,10 @@ function updateStatus(progress: number): void {
 
 function updateInspector(): void {
   const pt = pinned ?? hover;
-  renderInspector($('inspector'), world, params['riv.on'] === true ? rivers : null, pt ? { ...pt, pinned: !!pinned } : null, needTerrain() ? terrain : null, climate, biomes, params['riv.on'] === true ? lakes : null);
+  const locMin = locationMin();
+  // a location is picked up within 9 px of the cursor
+  const loc = locMin === null ? null : { locations, reach: 9 / cam.zoom, min: locMin };
+  renderInspector($('inspector'), world, params['riv.on'] === true ? rivers : null, pt ? { ...pt, pinned: !!pinned } : null, needTerrain() ? terrain : null, climate, biomes, params['riv.on'] === true ? lakes : null, loc);
   tagTooltips($('inspector'));
 }
 
@@ -1233,6 +1264,10 @@ window.addEventListener('keydown', (e) => {
     case 'g':
     case 'G':
       toggle('view.grid');
+      break;
+    case 'c':
+    case 'C':
+      toggle('view.locations');
       break;
     case 't':
     case 'T':

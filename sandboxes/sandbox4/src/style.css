@@ -173,6 +173,21 @@
   border: 1px solid rgba(255, 255, 255, 0.15);
 }
 
+/* the location viability scale: the part below the threshold is dimmed */
+.lg-via {
+  position: relative;
+  overflow: hidden;
+}
+
+.lg-via i {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  background: rgba(11, 14, 19, 0.72);
+  border-right: 2px solid #fff;
+}
+
 .lg-clim-ends {
   display: flex;
   justify-content: space-between;
@@ -381,6 +396,18 @@
   font-style: normal;
   text-align: right;
   color: #b7c0cc;
+}
+
+/* inspector: the factor bars of a location and the terms under each */
+.loc-bar {
+  grid-template-columns: 96px 1fr 34px;
+}
+
+.loc-terms {
+  margin: 0 0 3px 102px;
+  font: 10.5px var(--mono);
+  color: var(--muted);
+  opacity: 0.85;
 }
 
 /* Statistics section */

@@ -1,6 +1,6 @@
 # cellgen
 
-Procedural world-map generation in the browser, built from Voronoi cells. The site has one sandbox, **Sandbox 4 · Terrain**: an unbounded, deterministic base map from three nested levels of Voronoi cells (regions, elevation zones, subbiomes) with oceans, space-colonization rivers and lakes, a biome per subbiome (including coastal mangrove), plus a height map fitted to it and a 3D landscape view. You set the parameters on the left and inspect the result on the right, with zoom, pan, an inspector and statistics.
+Procedural world-map generation in the browser, built from Voronoi cells. The site has one sandbox, **Sandbox 4 · Terrain**: an unbounded, deterministic base map from three nested levels of Voronoi cells (regions, elevation zones, subbiomes) with oceans, space-colonization rivers and lakes, a biome per subbiome (including coastal mangrove) and scored city and town locations per region, plus a height map fitted to it and a 3D landscape view. You set the parameters on the left and inspect the result on the right, with zoom, pan, an inspector and statistics.
 
 **Live site:** <https://jjkramhoeft.github.io/cellgen/>
 
@@ -108,7 +108,7 @@ The **initial climate** is two fBm Perlin-noise maps, independent of the map: te
 
 ### Supernatural
 
-A **supernatural map** is a third noise layer for fantasy game play: how strong magic is at every point (a unitless index, 0 to 100 by default), meant for magic resources and other supernatural features. It is the same fBm of Perlin noise as the climate, with its own seed and much finer features: **feature size 10 km, 3 octaves** (lacunarity 2, gain 0.5) by default, all configurable in the left panel (**Supernatural**). It does not feed anything yet. Turn on **Supernatural overlay** under Display to see it (near black = mundane, deep indigo → violet → magenta → glowing cyan = strong magic); the inspector shows its value under the cursor. A **prosperity map** (1 to 100, 200 km features) is built the same way.
+A **supernatural map** is a third noise layer for fantasy game play: how strong magic is at every point (a unitless index, 0 to 100 by default), meant for magic resources and other supernatural features. It is the same fBm of Perlin noise as the climate, with its own seed and much finer features: **feature size 10 km, 3 octaves** (lacunarity 2, gain 0.5) by default, all configurable in the left panel (**Supernatural**). It does not feed anything yet. Turn on **Supernatural overlay** under Display to see it (near black = mundane, deep indigo → violet → magenta → glowing cyan = strong magic); the inspector shows its value under the cursor. A **prosperity map** (1 to 100, 200 km features) is built the same way; it is one of the five factors of the [city locations](#city-locations).
 
 ### Resources
 
@@ -118,9 +118,25 @@ Not done yet. Research: [subbiome-resources.md](docs/research/subbiome-resources
 
 ### City Locations
 
-For each region a list of potential city and town locations are calculated
+Every region gets a list of about **20 potential city and town locations**, each with a combined **viability score** (0–100). This is the map-level part ("Tier M") of [settlement-siting.md](docs/research/settlement-siting.md) in a first, simpler form: a ranked list of scored sites, not yet a full settlement hierarchy with populations.
 
-Not done yet. Research: [settlement-siting.md](docs/research/settlement-siting.md).
+Every land subbiome of the region is a candidate and gets five factor scores, each 0–1, read from the map alone (rivers, lakes, zone types, climate, estimated biomes; no terrain tiles, so the list never changes as tiles arrive):
+
+| Factor | Default weight | What it measures |
+|---|---|---|
+| **Resources** | 30 % | Food of the catchment (farmland by biome and zone type, river irrigation where the climate is dry; the subbiome and its neighbours), fresh water (river, lake, humid climate; the coast counts half), building material and fuel (wood, stone in hills and mountains, river clay) and fish (coast, harbour, large river, lake). The resource layer does not exist yet, so these come from the biome and zone tables of the research note |
+| **Geography** | 15 % | Buildable ground (flat and lowland over hills and mountains; mangrove is swamp), a waterside site (river, harbour, coast, lake), defence (high ground, a peninsula, a confluence) and the depth inside the region (region borders are ridges) |
+| **Trade & travel** | 25 % | The better of a **gateway** (river mouth, sheltered harbour, navigable river, head of navigation, confluence, lake: one dominant feature plus a quarter of the rest) and a **central place** (Hansen accessibility: how much of the region's food lies within a day or two of travel, over land by zone type and vegetation and faster along navigable rivers) |
+| **Climate** | 15 % | Comfort of the temperature (at the zone type's typical height; best between 4 and 24 °C) and of the aridity |
+| **Prosperity** (wealth) | 15 % | The prosperity map at the spot |
+
+**Viability = 100 × need × the weighted mean of the five factors.** `need` is the limiting necessity, min(fresh water, temperature comfort) × 2 capped at 1, so a site with no water or an unlivable temperature scores 0 whatever else it has. A river counts as navigable from 20 subbiomes drained upstream and as large from 80.
+
+**Selection**, inside one region (so it is order-independent): candidates need a score above 0 and must not touch another region's land, which keeps locations apart across region borders without reading the neighbour. First up to **4 cities**: the best scores that lie at least two subbiomes inside the region and 2.5 × the spacing apart. Then **towns**, best first, each at least the **spacing** (20 km) from every location chosen so far. When that leaves fewer than 20, the spacing is relaxed step by step (down to one subbiome size) and the towns are picked again; regions with little habitable land end up with fewer. Each location sits on its subbiome's river (at the mouth, or where the river is largest, never in a lake) or else at the subbiome's site. The count, the number of cities, the spacing and the five weights are settings (left panel, **City & town locations**).
+
+**Display → City & town locations** (`C`) draws them: cities as diamonds, towns as dots, coloured by viability (purple = poor, orange, pale yellow = excellent), with the score next to each when zoomed in. The **Location viability** slider hides every location below a score. The inspector shows a location's rank, score, the five factors with the terms behind each, and what stands out about it ("river mouth", "sheltered harbour", "central place", …); over any other land subbiome it shows the same breakdown and why it is not a location.
+
+Not done yet: the settlement hierarchy and populations, fall lines and bridging points (they need the river bed heights), sea routes, and refining the spot on the height raster (the note's "Tier T").
 
 ### Trade network
 
@@ -132,13 +148,13 @@ Not done yet.
 
 - **Colour by:** map (elevation zone types), land & ocean, **ocean genesis** (lone seed, linked seed, link chain, growth pass), **merged cells**, regions, elevation zones, subbiomes, the hierarchy (region hue × elevation zone lightness × subbiome shading), **biomes** (one per subbiome), and **height** (hypsometric tint and hillshade). A **Hillshade** overlay works on any colour mode.
 - **3D landscape** (`T`): a WebGL2 height mesh over the current view, draped with the 2D map (rivers and borders included). Drag to orbit, scroll to zoom, Shift- or right-drag to pan. Vertical exaggeration is a setting.
-- **Overlays:** the noise maps (temperature, precipitation, prosperity, supernatural), each 50 % transparent with a legend bar; pixel-exact region, elevation zone and subbiome borders and the coastline; rivers (width from flow), attractor points (unreached in red) and river roots; lakes; ocean seeds and links, growth arrows, merge arrows, sites per level, and a kilometre grid with the origin marked.
-- **Inspector:** hover or click a point to see its region (owned elevation zones, seeds, links, merges), elevation zone (genesis, merged group, neighbours, owned subbiomes), subbiome, its **biome** (with the temperature, precipitation, height and aridity that picked it) the river under the cursor (flow here, whole river, root, the ocean elevation zone it drains into) and the lake under the cursor (size, area, the river's flow, host subbiome); every subbiome says whether it may hold a lake, or why not. Click pins the elevation zone and subbiome.
+- **Overlays:** the noise maps (temperature, precipitation, prosperity, supernatural), each 50 % transparent with a legend bar; pixel-exact region, elevation zone and subbiome borders and the coastline; rivers (width from flow), attractor points (unreached in red) and river roots; lakes; **city and town locations** with a viability slider; ocean seeds and links, growth arrows, merge arrows, sites per level, and a kilometre grid with the origin marked.
+- **Inspector:** hover or click a point to see its region (owned elevation zones, seeds, links, merges), elevation zone (genesis, merged group, neighbours, owned subbiomes), subbiome, its **biome** (with the temperature, precipitation, height and aridity that picked it) the river under the cursor (flow here, whole river, root, the ocean elevation zone it drains into) and the lake under the cursor (size, area, the river's flow, host subbiome); every subbiome says whether it may hold a lake, or why not; the **location** under the cursor, or the subbiome as a site (viability score and its five factors). Click pins the elevation zone and subbiome.
 - **Ruler:** Shift+drag or `M` measures a straight-line distance, with travel days for a horse (32–48 km/day), a marching legion (24–32) and a long-distance hiker (16–24).
 - **In view:** ocean share, cell counts, elevation zones per region, subbiomes per elevation zone, seeds and links, ocean elevation zones by genesis, merged groups, rivers and attractors reached, render time, cache size, and a determinism fingerprint of a fixed window around the origin.
 - **Sharing:** the URL hash also holds the camera. 10 presets and PNG export. Subbiomes smaller than ~3 px are skipped automatically.
 
-Keyboard: `+`/`−` zoom · `0`/`H` origin · arrows pan · `R` random seed · `1`–`9` or `[`/`]` colour mode · `T` 3D landscape · `B` elevation zone borders · `N` subbiome borders · `L` links · `W` growth · `J` merges · `V` rivers · `S` sites · `G` grid · `M` measure · `Esc` unpin · `?` help.
+Keyboard: `+`/`−` zoom · `0`/`H` origin · arrows pan · `R` random seed · `1`–`9` or `[`/`]` colour mode · `T` 3D landscape · `B` elevation zone borders · `N` subbiome borders · `L` links · `W` growth · `J` merges · `V` rivers · `S` sites · `G` grid · `C` city and town locations · `M` measure · `Esc` unpin · `?` help.
 
 **Code map** (`sandboxes/sandbox4/`):
 
@@ -148,6 +164,7 @@ src/world/     level (stateless warped lattice Voronoi, Gabriel neighbours),
                zones (elevation zone types: ocean, flat, lowland, hills, mountains),
                rivers (per-region space colonization: attractors, coastal roots, flow),
                lakes (per-region lakes after the rivers: eligibility, noise-shaped outlines, clip),
+               locations (per-region city and town locations: five factor scores per subbiome, combined viability, spaced selection),
                terrain (river profiles and the per-tile height pipeline, mean height per subbiome),
                terrain.worker (height tiles computed off the main thread),
                climate (initial temperature and precipitation maps, prosperity and supernatural maps),
@@ -162,7 +179,8 @@ tests/         nearest-site and neighbour checks, determinism and order independ
                zones (zone type picks and weights), climate (ranges, independence, supernatural feature size),
                biomes (belts and aridity classes, cooling curve, dry flat zones favour desert, tile heights,
                        coastal subbiomes, mangrove only on warm, not-desert coasts of flat and lowland zones),
-               lakes (only eligible land of their own region, on a river that runs through them, smooth outlines, sizes, no overlaps, frequency, varied shapes, determinism)
+               lakes (only eligible land of their own region, on a river that runs through them, smooth outlines, sizes, no overlaps, frequency, varied shapes, determinism),
+               locations (about 20 per region, scores from five factors, own-region land off the border, spacing, order independence, weights, viability threshold)
 ```
 
 ## Research
@@ -179,7 +197,7 @@ The work builds on these notes in `docs/research/`:
 | [biomes-and-climate.md](docs/research/biomes-and-climate.md) | Biome schemes (Whittaker, Holdridge, Köppen, WWF), aridity, lapse rates; its aridity × thermal belt classifier, height cooling and the mangrove override are implemented |
 | [subbiome-resources.md](docs/research/subbiome-resources.md) | A catalogue of about 370 natural resources (food, building materials, wealth) and fantasy resources, keyed to the map's fields; how lakes, mangrove and the supernatural map plug in |
 | [game-resources-and-trade.md](docs/research/game-resources-and-trade.md) | How games choose, place and trade resources, trade theory, and a 37-resource set for the generator |
-| [settlement-siting.md](docs/research/settlement-siting.md) | Where villages, towns and cities form, and a deterministic siting design for the map (water from rivers and lakes, coasts, mangrove as poor farmland) |
+| [settlement-siting.md](docs/research/settlement-siting.md) | Where villages, towns and cities form, and a deterministic siting design for the map (water from rivers and lakes, coasts, mangrove as poor farmland); its map-level scoring is implemented in a first form as the city and town locations |
 
 ## Deployment
 

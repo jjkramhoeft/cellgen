@@ -1,6 +1,7 @@
 /**
  * Vector overlays drawn over the raster in device pixels: ocean seeds and links,
- * growth and merge arrows, sites, a kilometre grid and the measuring ruler.
+ * growth and merge arrows, sites, rivers, lakes, city and town locations, a kilometre
+ * grid and the measuring ruler.
  * Overlays enumerate lattice cells around the view and skip themselves when that
  * would mean too many cells (they would be unreadable anyway).
  */
@@ -8,6 +9,7 @@ import type { Camera, Viewport } from '@shared/render/camera';
 import { LINKED, World } from '../world/world';
 import type { Level } from '../world/level';
 import type { Lakes } from '../world/lakes';
+import type { Location, Locations } from '../world/locations';
 import type { Rivers } from '../world/rivers';
 
 export interface Frame {
@@ -442,6 +444,123 @@ export function drawLakes(f: Frame, lakes: Lakes, deadline: number): number {
     ctx.lineWidth = Math.max(0.75, Math.min(1.5, 600 * f.cam.zoom)) * dpr;
     ctx.strokeStyle = LAKE_SHORE;
     ctx.stroke();
+  }
+  return pending;
+}
+
+/** Viability colour stops (score 0–100): purple (poor) → crimson → orange → pale yellow (excellent). */
+export const VIABILITY_STOPS: [number, number, number, number][] = [
+  [0, 75, 42, 107],
+  [35, 184, 64, 94],
+  [65, 240, 138, 36],
+  [100, 255, 243, 176],
+];
+
+/** CSS colour of a viability score (0–100). */
+export function viabilityColor(score: number): string {
+  const v = Math.min(100, Math.max(0, score));
+  let k = 1;
+  while (k < VIABILITY_STOPS.length - 1 && v > VIABILITY_STOPS[k][0]) k++;
+  const a = VIABILITY_STOPS[k - 1];
+  const b = VIABILITY_STOPS[k];
+  const t = (v - a[0]) / (b[0] - a[0]);
+  const c = (i: 1 | 2 | 3) => Math.round(a[i] + (b[i] - a[i]) * t);
+  return `rgb(${c(1)},${c(2)},${c(3)})`;
+}
+
+/** A region must be at least this wide on screen (CSS px) for its cities, and for its towns, to be drawn. */
+export const LOC_CITY_PX = 14;
+export const LOC_TOWN_PX = 44;
+/** Scores are written next to the markers when the location spacing is at least this wide on screen (CSS px). */
+const LOC_LABEL_PX = 30;
+
+export interface LocationDraw {
+  /** hide locations with a viability score below this (0–100) */
+  min: number;
+}
+
+/**
+ * Potential city (diamond) and town (dot) locations of the regions around the view, coloured
+ * by viability and filtered by the viability threshold. Regions not scored yet are computed
+ * until `deadline` (that grows their rivers and lakes too); returns how many are still pending.
+ */
+export function drawLocations(f: Frame, locations: Locations, o: LocationDraw, deadline: number): number {
+  const world = locations.world;
+  const R = world.regionLevel;
+  const regPx = cellPx(R, f.cam);
+  if (regPx < LOC_CITY_PX || World.countIn(R, f.x0, f.y0, f.x1, f.y1, 1) > 900) return 0;
+  const { ctx, dpr } = f;
+  const towns = regPx >= LOC_TOWN_PX;
+  const labels = locations.p.spacing * f.cam.zoom >= LOC_LABEL_PX;
+  let pending = 0;
+  const shown: Location[] = [];
+  const pad = 12 * dpr;
+  for (const rk of World.cellsIn(R, f.x0, f.y0, f.x1, f.y1, 1)) {
+    let rl = locations.peek(rk);
+    if (!rl) {
+      if (performance.now() > deadline) {
+        pending++;
+        continue;
+      }
+      rl = locations.get(rk);
+    }
+    for (const l of rl.list) {
+      if (l.score < o.min || (!towns && l.kind !== 'city')) continue;
+      const x = sx(f, l.x);
+      const y = sy(f, l.y);
+      if (x < -pad || y < -pad || x > f.vp.w * dpr + pad || y > f.vp.h * dpr + pad) continue;
+      shown.push(l);
+    }
+  }
+  // towns under cities, weaker under stronger
+  shown.sort((a, b) => (a.kind === b.kind ? a.score - b.score : a.kind === 'city' ? 1 : -1));
+  const zf = Math.min(1.5, Math.max(0.7, regPx / 160));
+  ctx.lineJoin = 'round';
+  for (const l of shown) {
+    const x = sx(f, l.x);
+    const y = sy(f, l.y);
+    const city = l.kind === 'city';
+    const r = (city ? 5.2 : 3.2) * zf * dpr;
+    ctx.beginPath();
+    if (city) {
+      ctx.moveTo(x, y - r * 1.25);
+      ctx.lineTo(x + r * 1.25, y);
+      ctx.lineTo(x, y + r * 1.25);
+      ctx.lineTo(x - r * 1.25, y);
+      ctx.closePath();
+    } else ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fillStyle = viabilityColor(l.score);
+    ctx.fill();
+    if (city) {
+      ctx.lineWidth = 3.2 * dpr;
+      ctx.strokeStyle = 'rgba(8,10,14,0.9)';
+      ctx.stroke();
+      ctx.lineWidth = 1.4 * dpr;
+      ctx.strokeStyle = '#ffffff';
+      ctx.stroke();
+    } else {
+      ctx.lineWidth = 1.2 * dpr;
+      ctx.strokeStyle = 'rgba(8,10,14,0.9)';
+      ctx.stroke();
+    }
+  }
+  if (labels) {
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    ctx.lineWidth = 3 * dpr;
+    ctx.strokeStyle = 'rgba(8,10,14,0.85)';
+    for (const l of shown) {
+      const city = l.kind === 'city';
+      const r = (city ? 5.2 * 1.25 : 3.2) * zf * dpr;
+      ctx.font = `${city ? '700' : '500'} ${(city ? 11.5 : 10) * dpr}px system-ui, sans-serif`;
+      const text = String(Math.round(l.score));
+      const x = sx(f, l.x);
+      const y = sy(f, l.y) + r + 2 * dpr;
+      ctx.strokeText(text, x, y);
+      ctx.fillStyle = city ? '#ffffff' : 'rgba(236,240,246,0.95)';
+      ctx.fillText(text, x, y);
+    }
+    ctx.textAlign = 'start';
   }
   return pending;
 }

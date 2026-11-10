@@ -5,7 +5,8 @@ import { keyI, keyJ } from '../world/level';
 import type { LakeBlock, Lakes } from '../world/lakes';
 import type { Rivers } from '../world/rivers';
 import { LINKED, ORIGIN, SEED, World } from '../world/world';
-import { fmtDist, LAKE_FILL, TRAVEL, travelDays } from '../render/overlays';
+import { fmtDist, LAKE_FILL, TRAVEL, travelDays, viabilityColor } from '../render/overlays';
+import { CITY_DEPTH, FACTOR_NAMES, FACTORS, NO_BORDER, type Candidate, type Factor, type Location, type Locations, type RegionLocations } from '../world/locations';
 import { GENESIS, heightColor, keyHash, type ViewMode } from '../render/source';
 import { ELEVATION_ZONE_TYPES, elevationZoneType } from '../world/zones';
 import type { Terrain } from '../world/terrain';
@@ -65,7 +66,19 @@ function climateBar(c: ClimateLegend): string {
   );
 }
 
-export function renderLegend(host: HTMLElement, mode: ViewMode, oceanShare: number | null, passes: number, climate: ClimateLegend[] = []): void {
+/** The viability scale of the locations overlay, with the part the threshold hides dimmed. */
+function locationBar(min: number): string {
+  const stops = [0, 12.5, 25, 37.5, 50, 62.5, 75, 87.5, 100].map((v) => `${viabilityColor(v)} ${v}%`).join(',');
+  const cut = Math.min(100, Math.max(0, min));
+  return (
+    `<div class="lg-clim"><div class="lg-clim-name">Location viability <em>${cut > 0 ? `showing ≥ ${cut}` : 'showing all'}</em></div>` +
+    `<div class="lg-bar lg-via" style="background:linear-gradient(90deg,${stops})">${cut > 0 ? `<i style="width:${cut}%"></i>` : ''}</div>` +
+    `<div class="lg-clim-ends"><span>0 poor</span><span>◆ city · ● town</span><span>100</span></div></div>`
+  );
+}
+
+/** `locMin`: the viability threshold of the locations overlay (null = the overlay is off). */
+export function renderLegend(host: HTMLElement, mode: ViewMode, oceanShare: number | null, passes: number, climate: ClimateLegend[] = [], locMin: number | null = null): void {
   const [title, note] = NOTES[mode];
   const min = host.classList.contains('min');
   let html = `<div class="lg-title" title="Click to collapse / expand">${esc(title)}</div>`;
@@ -92,6 +105,7 @@ export function renderLegend(host: HTMLElement, mode: ViewMode, oceanShare: numb
   }
   html += `<div class="lg-note">${esc(note)}</div>`;
   for (const c of climate) html += climateBar(c);
+  if (locMin !== null) html += locationBar(locMin);
   host.innerHTML = html;
   host.classList.toggle('min', min);
   host.querySelector('.lg-title')!.addEventListener('click', () => host.classList.toggle('min'));
@@ -155,7 +169,64 @@ function biomeRows(b: BiomeInfo, bp: BiomeParams): string {
   return html + '</div>';
 }
 
-export function renderInspector(host: HTMLElement, world: World | null, rivers: Rivers | null, pt: Probe | null, terrain: Terrain | null = null, climate: Climate | null = null, biomes: Biomes | null = null, lakes: Lakes | null = null): void {
+/** The locations overlay as the inspector sees it: a location within `reach` metres of the cursor is picked up. */
+export interface LocationProbe {
+  locations: Locations;
+  reach: number;
+  /** the viability threshold on show */
+  min: number;
+}
+
+/** The terms behind each factor of a candidate, for the inspector. */
+const FACTOR_TERMS: Record<Factor, (c: Candidate) => string> = {
+  resources: (c) => `food ${c.food.toFixed(2)} · water ${c.water.toFixed(2)} · materials ${c.materials.toFixed(2)} · fish ${c.fish.toFixed(2)}`,
+  geography: (c) => `buildable ${c.buildable.toFixed(2)} · waterside ${c.waterside.toFixed(2)} · defence ${c.defence.toFixed(2)} · ${c.depth >= NO_BORDER ? 'no land border' : `${c.depth} from the border`}`,
+  trade: (c) => `gateway ${c.gateway.toFixed(2)} · central place ${c.centrality.toFixed(2)}`,
+  climate: (c) => `temperature comfort ${c.comfort.toFixed(2)}`,
+  prosperity: () => 'the prosperity map at the spot',
+};
+const FACTOR_HELP: Record<Factor, string> = {
+  resources: 'Food of the catchment (farmland by biome and zone type, river irrigation in dry land; the subbiome and its neighbours), fresh water, building material and fuel (wood, stone, clay) and fish',
+  geography: 'Buildable ground (flat and lowland over hills and mountains; mangrove is swamp), a waterside site (river, harbour, coast, lake), defence (high ground, peninsula, confluence) and the depth inside the region',
+  trade: 'The better of a gateway (river mouth, sheltered harbour, navigable river, head of navigation, confluence, lake) and a central place (how much of the region’s food lies within a day or two of travel)',
+  climate: 'Comfort of the temperature (at the zone type’s typical height) and of the aridity',
+  prosperity: 'The prosperity map at the spot [clim.pros.*]',
+};
+
+/** Why a land subbiome with this score is not one of its region's locations. */
+function notChosen(c: Candidate): string {
+  if (c.score <= 0) return c.comfort <= 0 ? 'no · unlivable temperature' : c.water <= 0 ? 'no · no fresh water' : 'no · score 0';
+  if (c.depth < 1) return 'no · on the region border';
+  return 'no · better sites nearby or elsewhere';
+}
+
+/** The inspector rows of a location (or, with `l` null, of the subbiome under the cursor as a site). */
+function locationRows(c: Candidate, l: Location | null, rl: RegionLocations, lp: LocationProbe): string {
+  const color = viabilityColor(c.score);
+  const ink = c.score >= 50 ? '#0b0e13' : '#f2f5f7';
+  const w = lp.locations.p.weights;
+  const total = FACTORS.reduce((a, k) => a + Math.max(0, w[k]), 0);
+  const share = (k: Factor) => (total > 0 ? Math.max(0, w[k]) / total : 1 / FACTORS.length);
+  const title = l ? `${l.kind === 'city' ? 'City' : 'Town'} location · rank ${l.rank} of ${rl.list.length} in region ${ij(c.region)}` : 'Site viability of this subbiome';
+  let html = `<div class="lvl"><h4><i style="background:${color}"></i>${title}</h4>`;
+  const hidden = l && l.score < lp.min ? ' · hidden by the slider' : '';
+  html += `<div class="kv" title="Combined score: 100 × need × the weighted mean of the five factors below [loc.w*]. Display → Location viability hides locations below a score [view.locMin]"><span>Viability</span><b><span class="chip" style="background:${color};color:${ink}">${c.score.toFixed(0)} / 100</span>${hidden}</b></div>`;
+  if (!l) html += `<div class="kv" title="A region’s locations are its best-scoring subbiomes that do not touch another region’s land, kept apart by the spacing (cities: at least ${CITY_DEPTH} subbiomes inside) [loc.count, loc.cities, loc.spacing]"><span>Location</span><b>${notChosen(c)}</b></div>`;
+  for (const k of FACTORS) {
+    html += `<div class="obar loc-bar" title="${FACTOR_HELP[k]}. Weight ${(share(k) * 100).toFixed(0)} % of the score"><span>${FACTOR_NAMES[k]}</span><i style="width:${(c[k] * 100).toFixed(1)}%;background:${viabilityColor(c[k] * 100)}"></i><em>${c[k].toFixed(2)}</em></div>`;
+    html += `<div class="loc-terms">${FACTOR_TERMS[k](c)}</div>`;
+  }
+  if (c.need < 1) {
+    const what = c.water < c.comfort ? `fresh water ${c.water.toFixed(2)}` : `temperature comfort ${c.comfort.toFixed(2)}`;
+    html += `<div class="kv" title="Necessities: the score is scaled by min(water, temperature comfort) × 2, capped at 1"><span>Limited by</span><b>${what} · × ${c.need.toFixed(2)}</b></div>`;
+  }
+  if (c.features.length) html += `<div class="kv" title="${esc(c.features.join(', '))}"><span>Stands out</span><b>${esc(c.features.join(', '))}</b></div>`;
+  if (c.river > 0) html += `<div class="kv" title="The largest river in the subbiome: subbiomes it drains upstream (navigable from 20, large from 80)${c.mouth > 0 ? '; it meets the sea here' : ''}"><span>River</span><b>${c.river.toFixed(1)} subbiomes upstream${c.mouth > 0 ? ' · mouth' : ''}</b></div>`;
+  html += `<div class="kv" title="The spot: on the subbiome’s river (its mouth, or where it is largest) when it has one, otherwise the subbiome’s site"><span>Spot</span><b>${(c.x / 1000).toFixed(1)}, ${(c.y / 1000).toFixed(1)} km · ${c.onRiver ? 'on the river' : 'subbiome site'}</b></div>`;
+  return html + '</div>';
+}
+
+export function renderInspector(host: HTMLElement, world: World | null, rivers: Rivers | null, pt: Probe | null, terrain: Terrain | null = null, climate: Climate | null = null, biomes: Biomes | null = null, lakes: Lakes | null = null, loc: LocationProbe | null = null): void {
   if (!world || !pt) {
     host.innerHTML = '<p class="muted">Hover the map to inspect a point. Click to pin the elevation zone and subbiome under the cursor.</p>';
     return;
@@ -193,7 +264,22 @@ export function renderInspector(host: HTMLElement, world: World | null, rivers: 
     html += `<div class="kv"><span>Attractors reached</span><b>${rr.reached} / ${rr.ax.length}</b></div>`;
     html += `<div class="kv" title="Growth iterations · nodes · straight bridges over gaps wider than dᵢ · compute time [riv.influence]"><span>Growth</span><b>${rr.iterations} it · ${rr.n} nodes · ${rr.bridges} br · ${rr.ms.toFixed(0)} ms</b></div>`;
   }
+  const rl = loc?.locations.peek(c.region);
+  if (rl) {
+    const cities = rl.list.filter((l) => l.kind === 'city').length;
+    const shown = rl.list.filter((l) => l.score >= loc!.min).length;
+    const best = rl.list.length ? ` · best ${rl.list[0].score.toFixed(0)}` : '';
+    html += `<div class="kv" title="Potential city and town locations of the region (cities among them) · the best viability score · how many the viability slider leaves on show · the selection kept them at least ${(rl.spacing / 1000).toFixed(1)} km apart [loc.*, view.locMin]"><span>Locations</span><b>${rl.list.length} · ${cities} cit${cities === 1 ? 'y' : 'ies'}${best} · ${shown} shown</b></div>`;
+  }
   html += '</div>';
+
+  // the location under the cursor, or else the subbiome under it as a site
+  if (loc) {
+    const near = loc.locations.nearest(pt.x, pt.y, loc.reach, loc.min);
+    const nrl = near ? loc.locations.peek(near.region) : rl;
+    const cand = near ?? (c.ocean ? null : (rl?.bySub.get(c.sub) ?? null));
+    if (cand && nrl) html += locationRows(cand, near, nrl, loc);
+  }
 
   const typeName = ELEVATION_ZONE_TYPES[elevationZoneType(c.elevationZone, c.ocean)].name;
   const g = GENESIS.find((x) => x.origin === c.origin);
