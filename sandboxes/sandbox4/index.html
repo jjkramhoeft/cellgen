@@ -124,12 +124,19 @@
           <li>The <b>viability</b> score (0–100) is the weighted mean of the five, scaled down to 0 where there is no fresh water or the temperature is unlivable. The best-scoring subbiomes, kept apart by a spacing, become the locations; the top ones, far apart and well inside the region, are cities (left panel, <b>City &amp; town locations</b>).</li>
           <li>Display → <b>City &amp; town locations</b> (<b>C</b>) shows them, coloured by viability; the <b>Location viability</b> slider hides the ones below a score. Zoom in for the scores, and hover a location (or any land subbiome) to see its factors in the inspector.</li>
         </ul>
+        <h3>Travel network</h3>
+        <ul>
+          <li>Display → <b>Travel network</b> (<b>P</b>) connects the cities and towns that are on show (the <b>Location viability</b> slider; zoomed far out only the cities): <b>roads</b> over land, <b>river routes</b> along navigable rivers and <b>sea lanes</b> between harbours and river mouths.</li>
+          <li>Roads cost more through hills and far more through <b>mountains</b>, <b>deserts</b> and ice, on steep ground, at height, across lakes and big rivers; boats are cheap per kilometre but pay for loading at both ends, so short hops go by road.</li>
+          <li>Neighbouring places are linked by their cheapest route; a link is left out when a short detour over cheaper links does the same job, so everything stays connected without a line between every two places. Links between two cities are drawn heavier.</li>
+          <li><b>Travel routes</b> switches between <b>straight lines</b> from place to place and routes that <b>follow the terrain</b>: roads wind along valleys and over the lowest passes, river routes follow the river, sea lanes go round the land.</li>
+        </ul>
         <h3>Navigation</h3>
         <ul>
           <li><b>Scroll</b> to zoom at the cursor, <b>drag</b> to pan, <b>pinch</b> on touch, <b>double-click</b> zooms in (Shift zooms out).</li>
           <li><b>Click</b> pins the elevation zone (yellow outline) and subbiome (cyan outline) under the cursor; <b>Esc</b> releases.</li>
           <li><b>Shift+drag</b> or <b>M</b> measures a distance, with travel times for a horse, a marching legion and a hiker.</li>
-          <li><b>+ / −</b> zoom · <b>0 / H</b> origin · arrows pan · <b>R</b> new seed · <b>1–9</b> or <b>[ ]</b> colour mode · <b>T</b> 3D landscape · <b>B</b> elevation zone borders · <b>N</b> subbiome borders · <b>L</b> links · <b>W</b> growth · <b>J</b> merges · <b>V</b> rivers · <b>S</b> sites · <b>G</b> grid · <b>C</b> city &amp; town locations · <b>?</b> help.</li>
+          <li><b>+ / −</b> zoom · <b>0 / H</b> origin · arrows pan · <b>R</b> new seed · <b>1–9</b> or <b>[ ]</b> colour mode · <b>T</b> 3D landscape · <b>B</b> elevation zone borders · <b>N</b> subbiome borders · <b>L</b> links · <b>W</b> growth · <b>J</b> merges · <b>V</b> rivers · <b>S</b> sites · <b>G</b> grid · <b>C</b> city &amp; town locations · <b>P</b> travel network · <b>?</b> help.</li>
         </ul>
         <p class="muted">Arrows connect cell <i>sites</i>. With border warp a site can sit slightly outside its own warped cell. Travel speeds are reference data from <code>sandbox3.md</code>; the generator does not use them.</p>
         <div class="dlg-actions"><button class="btn primary">Close</button></div>

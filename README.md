@@ -1,6 +1,6 @@
 # cellgen
 
-Procedural world-map generation in the browser, built from Voronoi cells. The site has one sandbox, **Sandbox 4 · Terrain**: an unbounded, deterministic base map from three nested levels of Voronoi cells (regions, elevation zones, subbiomes) with oceans, space-colonization rivers and lakes, a biome per subbiome (including coastal mangrove) and scored city and town locations per region, plus a height map fitted to it and a 3D landscape view. You set the parameters on the left and inspect the result on the right, with zoom, pan, an inspector and statistics.
+Procedural world-map generation in the browser, built from Voronoi cells. The site has one sandbox, **Sandbox 4 · Terrain**: an unbounded, deterministic base map from three nested levels of Voronoi cells (regions, elevation zones, subbiomes) with oceans, space-colonization rivers and lakes, a biome per subbiome (including coastal mangrove) and scored city and town locations per region and a travel network of roads, river routes and sea lanes between them, plus a height map fitted to it and a 3D landscape view. You set the parameters on the left and inspect the result on the right, with zoom, pan, an inspector and statistics.
 
 **Live site:** <https://jjkramhoeft.github.io/cellgen/>
 
@@ -136,25 +136,39 @@ Every land subbiome of the region is a candidate and gets five factor scores, ea
 
 **Display → City & town locations** (`C`) draws them: cities as diamonds, towns as dots, coloured by viability (purple = poor, orange, pale yellow = excellent), with the score next to each when zoomed in. The **Location viability** slider hides every location below a score. The inspector shows a location's rank, score, the five factors with the terms behind each, and what stands out about it ("river mouth", "sheltered harbour", "central place", …); over any other land subbiome it shows the same breakdown and why it is not a location.
 
-Not done yet: the settlement hierarchy and populations, fall lines and bridging points (they need the river bed heights), sea routes, and refining the spot on the height raster (the note's "Tier T").
+Not done yet: the settlement hierarchy and populations, fall lines and bridging points (they need the river bed heights), and refining the spot on the height raster (the note's "Tier T"). Roads, river routes and sea lanes between the locations are the [trade network](#trade-network).
 
 ### Trade network
 
-River, Ocean and roads
+A **travel network** connects the cities and towns that are on show (those at or above the **Location viability** slider; zoomed far out, where only the cities are drawn, only the cities). Travel goes three ways:
 
-Not done yet.
+| Kind | Where | Cost, in km of open flat road |
+|---|---|---|
+| **Road** | Any land | Per km: elevation zone type (flat 1, lowland 1.15, hills 1.8, **mountains 4**) × biome (grassland 1, forest 1.3, rainforest 2.2, mangrove 3, **deserts 3.5–4, ice 5**) × slope (1 + (slope / 5 %)², at most 13 ×) × height (twice at 1 500 m) × 8 across a lake; + 3 km to cross a navigable river |
+| **River route** | Navigable rivers (20 subbiomes drained upstream, as for the locations) | 0.4 per km, + 6 km at each end for loading |
+| **Sea lane** | Open sea, from the harbour of every coastal location and through every river mouth up the navigable rivers | 0.3 per km (0.6 right at the shore, so lanes keep clear of capes), + 12 km at each end |
+
+All of it runs on a **2 km grid** per region, which needs no terrain tile: heights are estimated the way the height map builds them, coarsely (river beds rise upstream from the sea by the stream-power law, the land rises from every river and the coast at its zone type's hillslope). So rivers are the valleys and region borders the ridges, as in the height map, and the network never changes as tiles arrive.
+
+**Which places are linked.** Two shortest-path forests are grown over a region and its eight neighbours, one over land from every location and one over water from every location on a navigable river or the coast. Each cell ends up with its cheapest location, which is a Voronoi diagram under travel cost; two locations whose cells touch are neighbours, and their candidate link is the cheapest route through their common border. A link is then **dropped when cheaper links make a detour of at most 1.6 × its cost** (through other places, or the other kind of link between the same two); a road only gives way to a route that uses water when that costs at most 0.35 × the road, which is how a mountain road loses to the sea lane round it. Only the dearest link of a cycle is ever dropped, and the neighbour graph contains the minimum spanning tree, so whatever can be reached stays connected. Because loading costs are per link, short hops go by road and long hauls by water.
+
+Every pair of regions has one owner (the smaller key of two neighbours, the region between two that are two apart), which decides the links between their locations from its own 3 × 3 regions, so the network does not depend on the order regions are computed in.
+
+**Display → Travel network** (`P`) draws it: roads solid, river routes as short dashes along the river, sea lanes as long dashes, all heavier between two cities. **Travel routes** switches between **straight lines** from place to place and routes that **follow the terrain**: roads wind along valleys and over the lowest passes (the grid path, smoothed, drawn as a spline; the stretch several roads share out of a town is drawn once), river routes follow the river's own course, and sea lanes are pulled straight wherever the line of sight is open water.
+
+Not done yet: trade itself (goods, prices, flows, see [game-resources-and-trade.md](docs/research/game-resources-and-trade.md)), road classes beyond city-to-city and the rest, bridges and fords as places, and routing on the real height raster.
 
 ### Evaluating the map
 
 - **Colour by:** map (elevation zone types), land & ocean, **ocean genesis** (lone seed, linked seed, link chain, growth pass), **merged cells**, regions, elevation zones, subbiomes, the hierarchy (region hue × elevation zone lightness × subbiome shading), **biomes** (one per subbiome), and **height** (hypsometric tint and hillshade). A **Hillshade** overlay works on any colour mode.
 - **3D landscape** (`T`): a WebGL2 height mesh over the current view, draped with the 2D map (rivers and borders included). Drag to orbit, scroll to zoom, Shift- or right-drag to pan. Vertical exaggeration is a setting.
-- **Overlays:** the noise maps (temperature, precipitation, prosperity, supernatural), each 50 % transparent with a legend bar; pixel-exact region, elevation zone and subbiome borders and the coastline; rivers (width from flow), attractor points (unreached in red) and river roots; lakes; **city and town locations** with a viability slider; ocean seeds and links, growth arrows, merge arrows, sites per level, and a kilometre grid with the origin marked.
+- **Overlays:** the noise maps (temperature, precipitation, prosperity, supernatural), each 50 % transparent with a legend bar; pixel-exact region, elevation zone and subbiome borders and the coastline; rivers (width from flow), attractor points (unreached in red) and river roots; lakes; **city and town locations** with a viability slider; the **travel network** between them (roads, river routes, sea lanes; straight lines or following the terrain); ocean seeds and links, growth arrows, merge arrows, sites per level, and a kilometre grid with the origin marked.
 - **Inspector:** hover or click a point to see its region (owned elevation zones, seeds, links, merges), elevation zone (genesis, merged group, neighbours, owned subbiomes), subbiome, its **biome** (with the temperature, precipitation, height and aridity that picked it) the river under the cursor (flow here, whole river, root, the ocean elevation zone it drains into) and the lake under the cursor (size, area, the river's flow, host subbiome); every subbiome says whether it may hold a lake, or why not; the **location** under the cursor, or the subbiome as a site (viability score and its five factors). Click pins the elevation zone and subbiome.
 - **Ruler:** Shift+drag or `M` measures a straight-line distance, with travel days for a horse (32–48 km/day), a marching legion (24–32) and a long-distance hiker (16–24).
 - **In view:** ocean share, cell counts, elevation zones per region, subbiomes per elevation zone, seeds and links, ocean elevation zones by genesis, merged groups, rivers and attractors reached, render time, cache size, and a determinism fingerprint of a fixed window around the origin.
 - **Sharing:** the URL hash also holds the camera. 10 presets and PNG export. Subbiomes smaller than ~3 px are skipped automatically.
 
-Keyboard: `+`/`−` zoom · `0`/`H` origin · arrows pan · `R` random seed · `1`–`9` or `[`/`]` colour mode · `T` 3D landscape · `B` elevation zone borders · `N` subbiome borders · `L` links · `W` growth · `J` merges · `V` rivers · `S` sites · `G` grid · `C` city and town locations · `M` measure · `Esc` unpin · `?` help.
+Keyboard: `+`/`−` zoom · `0`/`H` origin · arrows pan · `R` random seed · `1`–`9` or `[`/`]` colour mode · `T` 3D landscape · `B` elevation zone borders · `N` subbiome borders · `L` links · `W` growth · `J` merges · `V` rivers · `S` sites · `G` grid · `C` city and town locations · `P` travel network · `M` measure · `Esc` unpin · `?` help.
 
 **Code map** (`sandboxes/sandbox4/`):
 
@@ -165,6 +179,7 @@ src/world/     level (stateless warped lattice Voronoi, Gabriel neighbours),
                rivers (per-region space colonization: attractors, coastal roots, flow),
                lakes (per-region lakes after the rivers: eligibility, noise-shaped outlines, clip),
                locations (per-region city and town locations: five factor scores per subbiome, combined viability, spaced selection),
+               travel (2 km cost grid per region with estimated heights; per-region roads, river routes and sea lanes between the locations on show),
                terrain (river profiles and the per-tile height pipeline, mean height per subbiome),
                terrain.worker (height tiles computed off the main thread),
                climate (initial temperature and precipitation maps, prosperity and supernatural maps),
@@ -180,7 +195,8 @@ tests/         nearest-site and neighbour checks, determinism and order independ
                biomes (belts and aridity classes, cooling curve, dry flat zones favour desert, tile heights,
                        coastal subbiomes, mangrove only on warm, not-desert coasts of flat and lowland zones),
                lakes (only eligible land of their own region, on a river that runs through them, smooth outlines, sizes, no overlaps, frequency, varied shapes, determinism),
-               locations (about 20 per region, scores from five factors, own-region land off the border, spacing, order independence, weights, viability threshold)
+               locations (about 20 per region, scores from five factors, own-region land off the border, spacing, order independence, weights, viability threshold),
+               travel (one connected network, one owner per link, routes from place to place, roads off mountains and deserts, boats only from coasts and navigable rivers, order independence, threshold and cities-only)
 ```
 
 ## Research

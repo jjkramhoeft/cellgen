@@ -5,7 +5,7 @@ import { keyI, keyJ } from '../world/level';
 import type { LakeBlock, Lakes } from '../world/lakes';
 import type { Rivers } from '../world/rivers';
 import { LINKED, ORIGIN, SEED, World } from '../world/world';
-import { fmtDist, LAKE_FILL, TRAVEL, travelDays, viabilityColor } from '../render/overlays';
+import { fmtDist, LAKE_FILL, TRAVEL, TRAVEL_COLORS, TRAVEL_DASH, travelDays, viabilityColor, type TravelStyle } from '../render/overlays';
 import { CITY_DEPTH, FACTOR_NAMES, FACTORS, NO_BORDER, type Candidate, type Factor, type Location, type Locations, type RegionLocations } from '../world/locations';
 import { GENESIS, heightColor, keyHash, type ViewMode } from '../render/source';
 import { ELEVATION_ZONE_TYPES, elevationZoneType } from '../world/zones';
@@ -77,8 +77,19 @@ function locationBar(min: number): string {
   );
 }
 
-/** `locMin`: the viability threshold of the locations overlay (null = the overlay is off). */
-export function renderLegend(host: HTMLElement, mode: ViewMode, oceanShare: number | null, passes: number, climate: ClimateLegend[] = [], locMin: number | null = null): void {
+/** The line styles of the travel network overlay. */
+function travelKey(style: TravelStyle): string {
+  const line = (mode: 'road' | 'river' | 'sea', name: string) =>
+    `<span><svg width="30" height="8" viewBox="0 0 30 8" aria-hidden="true"><line x1="1" y1="4" x2="29" y2="4" stroke="rgba(8,10,14,0.9)" stroke-width="5" stroke-linecap="round"/>` +
+    `<line x1="1" y1="4" x2="29" y2="4" stroke="${TRAVEL_COLORS[mode]}" stroke-width="2"${TRAVEL_DASH[mode].length ? ` stroke-dasharray="${TRAVEL_DASH[mode].join(' ')}"` : ''}/></svg>${name}</span>`;
+  return (
+    `<div class="lg-clim"><div class="lg-clim-name">Travel network <em>${style === 'simple' ? 'straight lines' : 'following the terrain'}</em></div>` +
+    `<div class="lg-travel">${line('road', 'Road')}${line('river', 'River route')}${line('sea', 'Sea lane')}</div></div>`
+  );
+}
+
+/** `locMin`: the viability threshold of the locations overlay (null = the overlay is off). `travel`: the style of the travel network overlay (null = off). */
+export function renderLegend(host: HTMLElement, mode: ViewMode, oceanShare: number | null, passes: number, climate: ClimateLegend[] = [], locMin: number | null = null, travel: TravelStyle | null = null): void {
   const [title, note] = NOTES[mode];
   const min = host.classList.contains('min');
   let html = `<div class="lg-title" title="Click to collapse / expand">${esc(title)}</div>`;
@@ -106,6 +117,7 @@ export function renderLegend(host: HTMLElement, mode: ViewMode, oceanShare: numb
   html += `<div class="lg-note">${esc(note)}</div>`;
   for (const c of climate) html += climateBar(c);
   if (locMin !== null) html += locationBar(locMin);
+  if (travel !== null) html += travelKey(travel);
   host.innerHTML = html;
   host.classList.toggle('min', min);
   host.querySelector('.lg-title')!.addEventListener('click', () => host.classList.toggle('min'));

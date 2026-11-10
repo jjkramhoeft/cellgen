@@ -127,6 +127,8 @@
     "view.supernatural": false,
     "view.locations": true,
     "view.locMin": 59,
+    "view.travel": true,
+    "view.travelStyle": "terrain",
     "view.regEdges": true,
     "view.zoneEdges": true,
     "view.subEdges": true,

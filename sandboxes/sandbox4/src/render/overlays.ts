@@ -1,7 +1,7 @@
 /**
  * Vector overlays drawn over the raster in device pixels: ocean seeds and links,
- * growth and merge arrows, sites, rivers, lakes, city and town locations, a kilometre
- * grid and the measuring ruler.
+ * growth and merge arrows, sites, rivers, lakes, the travel network, city and town
+ * locations, a kilometre grid and the measuring ruler.
  * Overlays enumerate lattice cells around the view and skip themselves when that
  * would mean too many cells (they would be unreadable anyway).
  */
@@ -11,6 +11,7 @@ import type { Level } from '../world/level';
 import type { Lakes } from '../world/lakes';
 import type { Location, Locations } from '../world/locations';
 import type { Rivers } from '../world/rivers';
+import { CELL, type RegionTravel, type Travel, type TravelMode } from '../world/travel';
 
 export interface Frame {
   ctx: CanvasRenderingContext2D;
@@ -561,6 +562,145 @@ export function drawLocations(f: Frame, locations: Locations, o: LocationDraw, d
       ctx.fillText(text, x, y);
     }
     ctx.textAlign = 'start';
+  }
+  return pending;
+}
+
+/** How the travel network is drawn: one straight line per link, or the routes that follow the terrain. */
+export type TravelStyle = 'simple' | 'terrain';
+
+export interface TravelDraw {
+  style: TravelStyle;
+}
+
+/** Line colours of the travel network: roads, river routes and sea lanes. */
+export const TRAVEL_COLORS: Record<TravelMode, string> = { road: '#f3dfb4', river: '#c9f6ff', sea: '#eaf3ff' };
+const TRAVEL_CASING: Record<TravelMode, string> = { road: 'rgba(52,28,10,0.9)', river: 'rgba(6,34,66,0.85)', sea: 'rgba(6,24,52,0.8)' };
+/** Dash pattern (CSS px) of each kind of link; roads are solid. */
+export const TRAVEL_DASH: Record<TravelMode, number[]> = { road: [], river: [2.5, 3.5], sea: [7, 5] };
+/** Line width (CSS px) of a link between two cities and of any other, before the zoom factor. */
+const TRAVEL_WIDTH: Record<TravelMode, [number, number]> = { road: [2.3, 1.3], river: [1.9, 1.4], sea: [1.7, 1.2] };
+
+/**
+ * Add the points [i0 … i1] of a route to the current path: straight pieces when they are
+ * tiny on screen, otherwise a Catmull-Rom spline through them (as cubic Béziers, the
+ * handles capped at a third of the piece so uneven spacing cannot overshoot).
+ */
+function traceRoute(f: Frame, pts: Float64Array, i0: number, i1: number, curved: boolean): void {
+  const { ctx } = f;
+  const n = pts.length / 2;
+  const X = (i: number) => sx(f, pts[2 * i]);
+  const Y = (i: number) => sy(f, pts[2 * i + 1]);
+  let px = X(i0);
+  let py = Y(i0);
+  ctx.moveTo(px, py);
+  if (!curved) {
+    const tiny = f.dpr * f.dpr;
+    for (let i = i0 + 1; i <= i1; i++) {
+      const x = X(i);
+      const y = Y(i);
+      // skip points under a pixel away (but never the last)
+      if (i < i1 && (x - px) * (x - px) + (y - py) * (y - py) < tiny) continue;
+      ctx.lineTo(x, y);
+      px = x;
+      py = y;
+    }
+    return;
+  }
+  for (let i = i0; i < i1; i++) {
+    const x1 = X(i);
+    const y1 = Y(i);
+    const x2 = X(i + 1);
+    const y2 = Y(i + 1);
+    const a = Math.max(0, i - 1);
+    const b = Math.min(n - 1, i + 2);
+    let t1x = (x2 - X(a)) / 6;
+    let t1y = (y2 - Y(a)) / 6;
+    let t2x = (X(b) - x1) / 6;
+    let t2y = (Y(b) - y1) / 6;
+    const cap = Math.hypot(x2 - x1, y2 - y1) / 3;
+    const l1 = Math.hypot(t1x, t1y);
+    if (l1 > cap) {
+      t1x *= cap / l1;
+      t1y *= cap / l1;
+    }
+    const l2 = Math.hypot(t2x, t2y);
+    if (l2 > cap) {
+      t2x *= cap / l2;
+      t2y *= cap / l2;
+    }
+    ctx.bezierCurveTo(x1 + t1x, y1 + t1y, x2 - t2x, y2 - t2y, x2, y2);
+  }
+}
+
+/**
+ * The travel network of the regions around the view: roads (solid), river routes (short
+ * dashes along the river) and sea lanes (long dashes), heavier between two cities. Regions
+ * not connected yet are computed until `deadline` (that scores the locations of their
+ * neighbours too); returns how many are still pending.
+ */
+export function drawTravel(f: Frame, travel: Travel, o: TravelDraw, deadline: number): number {
+  const world = travel.world;
+  const R = world.regionLevel;
+  const regPx = cellPx(R, f.cam);
+  if (regPx < LOC_CITY_PX || World.countIn(R, f.x0, f.y0, f.x1, f.y1, 1) > 900) return 0;
+  const { ctx, dpr } = f;
+  let pending = 0;
+  const shown: RegionTravel[] = [];
+  for (const rk of World.cellsIn(R, f.x0, f.y0, f.x1, f.y1, 1)) {
+    let rt = travel.peek(rk);
+    if (!rt) {
+      if (performance.now() > deadline || !travel.prepare(rk, deadline)) {
+        pending++;
+        continue;
+      }
+      rt = travel.get(rk);
+    }
+    shown.push(rt);
+  }
+  // one path per kind and weight; sea lanes lowest, roads on top
+  const zf = Math.min(1.5, Math.max(0.65, regPx / 160));
+  const curved = CELL * f.cam.zoom >= 2.5;
+  ctx.lineJoin = 'round';
+  for (const mode of ['sea', 'river', 'road'] as TravelMode[]) {
+    for (const major of [false, true]) {
+      ctx.beginPath();
+      let any = false;
+      for (const rt of shown) {
+        for (const e of rt.edges) {
+          if (e.major !== major) continue;
+          if (o.style === 'simple') {
+            if (e.mode !== mode) continue;
+            if (Math.max(e.a.x, e.b.x) < f.x0 || Math.min(e.a.x, e.b.x) > f.x1 || Math.max(e.a.y, e.b.y) < f.y0 || Math.min(e.a.y, e.b.y) > f.y1) continue;
+            ctx.moveTo(sx(f, e.a.x), sy(f, e.a.y));
+            ctx.lineTo(sx(f, e.b.x), sy(f, e.b.y));
+            any = true;
+            continue;
+          }
+          if (e.x1 < f.x0 || e.x0 > f.x1 || e.y1 < f.y0 || e.y0 > f.y1) continue;
+          for (const part of e.parts) {
+            if (part.mode !== mode) continue;
+            for (let r = 0; r < part.runs.length; r += 2) {
+              // a river route is the river's own polyline: no spline needed
+              traceRoute(f, part.pts, part.runs[r], part.runs[r + 1], curved && mode !== 'river');
+              any = true;
+            }
+          }
+        }
+      }
+      if (!any) continue;
+      const w = TRAVEL_WIDTH[mode][major ? 0 : 1] * zf;
+      ctx.lineCap = mode === 'road' ? 'round' : 'butt';
+      ctx.setLineDash([]);
+      ctx.strokeStyle = TRAVEL_CASING[mode];
+      ctx.lineWidth = (w + (mode === 'road' ? 1.8 : 1.4)) * dpr;
+      ctx.stroke();
+      ctx.setLineDash(TRAVEL_DASH[mode].map((d) => d * zf * dpr));
+      ctx.strokeStyle = TRAVEL_COLORS[mode];
+      ctx.lineWidth = w * dpr;
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
   }
   return pending;
 }

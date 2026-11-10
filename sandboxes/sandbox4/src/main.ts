@@ -7,7 +7,8 @@
  *
  * Display: a progressive per-pixel raster (shared RasterLayer) with pixel-exact
  * borders at every level, vector overlays (seeds, links, growth and merge arrows,
- * sites, km grid, ruler), an inspector and statistics for the current view.
+ * sites, rivers, lakes, the travel network, locations, km grid, ruler), an inspector
+ * and statistics for the current view.
  */
 import './style.css';
 import { seedFromText } from '@shared/core/hash';
@@ -18,7 +19,7 @@ import { RasterLayer } from '@shared/render/raster';
 import { buildPanel } from '@shared/ui/panel';
 import { tagTooltips } from '@shared/ui/html';
 import { ALL_DEFS, BIOME_KEYS, BIOME_SECTION, CLIMATE_KEYS, PRECIP_KEYS, CLIMATE_SECTIONS, PROSPERITY_KEYS, PROSPERITY_SECTION, SUPERNATURAL_KEYS, SUPERNATURAL_SECTION, DEFAULT_SEED, defaults, GEN_KEYS, PRESETS, RIVER_KEYS, RIVER_SECTION, FLOODPLAIN_SECTION, GRADIENT_SECTION, HILLSLOPE_SECTION, LAKE_KEYS, LAKE_SECTION, LOCATION_KEYS, LOCATION_SECTION, SECTIONS, TERRAIN_KEYS, TERRAIN_SECTION, toBiomeParams, toClimateParams, toLakeParams, toLocationParams, toRiverParams, toTerrainParams, toWorldParams, VIEW_MODES, VIEW_SECTION } from './params';
-import { drawGrid, drawGrowth, drawLakes, drawLinks, drawLocations, drawMerges, drawRivers, drawRuler, drawSites, fmtDist, niceStep, type Frame } from './render/overlays';
+import { cellPx, drawGrid, drawGrowth, drawLakes, drawLinks, drawLocations, drawMerges, drawRivers, drawRuler, drawSites, drawTravel, fmtDist, LOC_TOWN_PX, niceStep, type Frame, type TravelStyle } from './render/overlays';
 import { climateSource, type ClimateField } from './render/climate';
 import { DETAIL_PX, mapSource, type ViewMode, type ViewOpts } from './render/source';
 import { computeViewStats, renderInspector, type ClimateLegend, renderLegend, renderLevels, renderRuler, renderStats, type ViewStats } from './ui/widgets';
@@ -31,6 +32,7 @@ import { Lakes } from './world/lakes';
 import { Locations } from './world/locations';
 import { Rivers } from './world/rivers';
 import { FLOOD_REF_FLOW, monotoneSpline, Terrain } from './world/terrain';
+import { Travel, TravelGrid } from './world/travel';
 import type { FromTerrainWorker, ToTerrainWorker } from './world/terrain.worker';
 import { keyI, keyJ } from './world/level';
 import { World } from './world/world';
@@ -75,6 +77,10 @@ let biomes!: Biomes;
 let lakes!: Lakes;
 /** potential city and town locations per region (rebuilt with the rivers, lakes, climate, prosperity map or location settings) */
 let locations!: Locations;
+/** the cost grid of the travel network (rebuilt with the rivers, lakes, biomes or terrain settings) */
+let travelGrid!: TravelGrid;
+/** travel networks on the current grid and locations, by viability threshold and cities-only (see `currentTravel`) */
+const travels = new Map<string, Travel>();
 /** bumped whenever the biomes are rebuilt (part of the raster key of the biome colours) */
 let biomeGen = 0;
 /** bumped when new terrain rasters are ready (part of the raster key, so the map re-renders) */
@@ -102,6 +108,8 @@ let riverPending = 0;
 let lakePending = 0;
 /** regions around the view whose locations are still being scored */
 let locPending = 0;
+/** regions around the view whose travel network is still being worked out */
+let travelPending = 0;
 let genId = 0;
 let fingerprint = '';
 let stats: ViewStats | null = null;
@@ -334,6 +342,8 @@ function setParams(patch: Params): void {
     if (lak) newLakes();
     // locations are scored on the rivers, lakes, climate, sea-level biomes and the prosperity map
     if (lak || changed(PROSPERITY_KEYS) || changed(LOCATION_KEYS)) newLocations();
+    // the travel network runs between the locations, over the rivers, lakes, biomes and the terrain's slopes
+    if (lak || changed(PROSPERITY_KEYS) || changed(LOCATION_KEYS) || changed(TERRAIN_KEYS)) newTravel();
     viewChanged();
   }
 }
@@ -349,6 +359,7 @@ function regenerate(): void {
   newBiomes();
   newLakes();
   newLocations();
+  newTravel();
   genId++;
   timings.render = 0;
   fingerprint = '';
@@ -391,6 +402,38 @@ function newLakes(): void {
  */
 function newLocations(): void {
   locations = new Locations(world, rivers, lakes, lakes.biomes, climate, toLocationParams(params));
+}
+
+/**
+ * The travel network's cost grid on the current rivers, lakes, sea-level biomes and terrain
+ * settings (it estimates heights itself, so it never waits for terrain tiles), and with it
+ * a clean slate of networks: they depend on the grid and the locations.
+ */
+function newTravel(): void {
+  travelGrid = new TravelGrid(world, rivers, lakes, lakes.biomes, terrain);
+  travels.clear();
+}
+
+/**
+ * The travel network between the locations on show: those at or above the viability
+ * threshold, and only the cities while the view is too wide for the towns to be drawn.
+ */
+function currentTravel(): Travel {
+  const p = { minScore: Number(params['view.locMin']), citiesOnly: cellPx(world.regionLevel, cam) < LOC_TOWN_PX };
+  const key = `${p.minScore}|${p.citiesOnly}`;
+  let t = travels.get(key);
+  if (!t) {
+    // a dragged slider leaves a trail of thresholds: keep the last few only
+    if (travels.size >= 4) travels.delete(travels.keys().next().value!);
+    t = new Travel(travelGrid, locations, p);
+    travels.set(key, t);
+  }
+  return t;
+}
+
+/** The style of the travel network overlay, or null when the overlay is off. */
+function travelStyle(): TravelStyle | null {
+  return params['view.travel'] === true ? (str(params, 'view.travelStyle') as TravelStyle) : null;
 }
 
 /** The viability threshold of the locations overlay, or null when the overlay is off. */
@@ -571,7 +614,7 @@ function viewOpts(): ViewOpts {
 function viewChanged(): void {
   meshDirty = texDirty = true;
   show3d();
-  renderLegend($('legend'), viewOpts().mode, stats ? stats.oceanShare : null, world.p.growPasses, climateLegend(), locationMin());
+  renderLegend($('legend'), viewOpts().mode, stats ? stats.oceanShare : null, world.p.growPasses, climateLegend(), locationMin(), travelStyle());
   updateInspector();
   writeUrl();
   scheduleStats();
@@ -598,7 +641,7 @@ function scheduleStats(): void {
     const [x1, y1] = screenToWorld(cam, vp, vp.w, vp.h);
     stats = computeViewStats(world, x0, y0, x1, y1, detailOn(), params['riv.on'] === true ? rivers : null);
     renderStatsPanel();
-    if (str(params, 'view.color') === 'landsea') renderLegend($('legend'), 'landsea', stats.oceanShare, world.p.growPasses, climateLegend(), locationMin());
+    if (str(params, 'view.color') === 'landsea') renderLegend($('legend'), 'landsea', stats.oceanShare, world.p.growPasses, climateLegend(), locationMin(), travelStyle());
   }, 350);
 }
 
@@ -780,6 +823,10 @@ function frame(): void {
     cl.draw(ctx, cam, vp, dpr, csrc.key, true, true);
     ctx.globalAlpha = 1;
   }
+  // the travel network, under the locations it connects; regions are connected between
+  // interactions (that scores the locations of their neighbours too)
+  const tStyle = travelStyle();
+  travelPending = tStyle === null ? 0 : drawTravel(f, currentTravel(), { style: tStyle }, interacting ? 0 : performance.now() + Math.max(8, budget * 0.4));
   // city and town locations, over the climate overlays so the markers keep their colours;
   // regions not scored yet are scored between interactions (that grows their rivers too)
   const locMin = locationMin();
@@ -798,11 +845,12 @@ function frame(): void {
   updateStatus(layer.busy ? layer.progress : 1);
   renderLevels($('levels'), world, cam.zoom, detailOn());
   const terrainBusy = terrainPending > 0;
-  $('busy').hidden = !layer.busy && riverPending === 0 && lakePending === 0 && locPending === 0 && !terrainBusy && !climateBusy;
-  if (params['view.3d'] === true) update3d(interacting, terrainPending === 0, !layer.busy && riverPending === 0 && lakePending === 0 && locPending === 0 && !terrainBusy && !climateBusy && !interacting);
+  const overlaysBusy = riverPending > 0 || lakePending > 0 || locPending > 0 || travelPending > 0;
+  $('busy').hidden = !layer.busy && !overlaysBusy && !terrainBusy && !climateBusy;
+  if (params['view.3d'] === true) update3d(interacting, terrainPending === 0, !layer.busy && !overlaysBusy && !terrainBusy && !climateBusy && !interacting);
   checkStatistics();
   // with a worker, arriving tiles wake the loop (no need to spin while it works)
-  if (layer.busy || climateBusy || riverPending > 0 || lakePending > 0 || locPending > 0 || (terrainBusy && !terrainWorker)) invalidate();
+  if (layer.busy || climateBusy || overlaysBusy || (terrainBusy && !terrainWorker)) invalidate();
   else if (interacting || fresh) {
     clearTimeout(idleTimer);
     idleTimer = window.setTimeout(invalidate, 170);
@@ -824,6 +872,7 @@ function updateStatus(progress: number): void {
     (riverPending > 0 ? `<span class="rendering" title="Regions whose rivers are still growing">rivers: ${riverPending} regions to go</span>` : '') +
     (lakePending > 0 ? `<span class="rendering" title="Regions whose lakes are still being placed">lakes: ${lakePending} regions to go</span>` : '') +
     (locPending > 0 ? `<span class="rendering" title="Regions whose city and town locations are still being scored">locations: ${locPending} regions to go</span>` : '') +
+    (travelPending > 0 ? `<span class="rendering" title="Regions whose roads, river routes and sea lanes are still being worked out">travel: ${travelPending} regions to go</span>` : '') +
     (terrainPending > 0 ? `<span class="rendering" title="Terrain tiles (${terrain.k} × ${terrain.k} regions) still being computed">terrain: ${terrainPending} tile${terrainPending === 1 ? '' : 's'} to go</span>` : '') +
     (terrainPending < 0 ? `<span title="The height map is computed per tile of regions; zoom in to see it">terrain: zoom in</span>` : '') +
     `<span class="scalebar"><i style="width:${px.toFixed(0)}px"></i>${fmtDist(len)}</span>`;
@@ -1268,6 +1317,10 @@ window.addEventListener('keydown', (e) => {
     case 'c':
     case 'C':
       toggle('view.locations');
+      break;
+    case 'p':
+    case 'P':
+      toggle('view.travel');
       break;
     case 't':
     case 'T':
