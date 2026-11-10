@@ -13,6 +13,8 @@ import type { Params } from '@shared/params/schema';
 /** Values the tests were written against (defaults.json before the 2026-11-09 retune). */
 export const BASELINE: Params = {
   'ez.flatSparseP': 660,
+  // defaults.json raised it to 12 000 (2026-11-10); the climate, river and biome tests were measured at 10 000
+  'clim.p.max': 10000,
   'riv.step': 2,
   'riv.influence': 16,
   'riv.kill': 3,

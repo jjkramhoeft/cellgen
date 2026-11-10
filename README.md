@@ -1,6 +1,6 @@
 # cellgen
 
-Procedural world-map generation in the browser, built from Voronoi cells. The site has one sandbox, **Sandbox 4 · Terrain**: an unbounded, deterministic base map from three nested levels of Voronoi cells (regions, elevation zones, subbiomes) with oceans and space-colonization rivers, plus a height map fitted to it and a 3D landscape view. You set the parameters on the left and inspect the result on the right, with zoom, pan, an inspector and statistics.
+Procedural world-map generation in the browser, built from Voronoi cells. The site has one sandbox, **Sandbox 4 · Terrain**: an unbounded, deterministic base map from three nested levels of Voronoi cells (regions, elevation zones, subbiomes) with oceans, space-colonization rivers and lakes, a biome per subbiome (including coastal mangrove), plus a height map fitted to it and a 3D landscape view. You set the parameters on the left and inspect the result on the right, with zoom, pan, an inspector and statistics.
 
 **Live site:** <https://jjkramhoeft.github.io/cellgen/>
 
@@ -76,7 +76,7 @@ The world is unbounded and measured in metres. Every level is a stateless lattic
 | **Merges** | Chosen cells join their nearest neighbour (Gabriel graph, by site distance). Chains merge into one cell, and cycles resolve to the smallest key. Elevation zone merges stay on one side of the coast (optional); subbiome merges stay inside one elevation zone |
 | **Cells** | Grid size, jitter (0 = squares), border warp amplitude and frequency per level. **Nesting**: every point is classified through its subbiome, so elevation zone and region borders, and coasts, follow subbiome cells. Turn it off to look each level up independently |
 | **Rivers** | Space colonization (Runions et al., open venation), computed **per region**. A **root** sits at the site of every ocean elevation zone that touches the region's land, so each river first crosses the water to the coast (that stretch is hidden unless *River paths over sea* is on); a landlocked region searches up to 4 elevation zone steps out for the nearest ocean. Every land, **non-coastal subbiome** of the region gets **10 attraction points** inside its cell. Each step, every attractor pulls on its nearest node within the influence radius dᵢ; pulled nodes grow one step D towards the mean pull plus a configurable amount of **random motion** (a random unit vector, weight 0–2); attractors within the kill distance dₖ are reached. Growth runs **until every attractor in the region is reached**: a gap wider than dᵢ is bridged with a straight run, and a stalled node steps straight to its closest attractor. Each node counts the attractors it reached; summed upstream this **flow** sets the **line width** (∝ √flow). Options: attractors per subbiome, D, dᵢ, dₖ, random motion, skip coast subbiomes; display width, minimum flow and attractor points |
-| **Lakes** | Placed **per region after the rivers**, and **always on a river**: every subbiome drawn in the region that may hold a lake and has a river running through it (a land node with a flow of at least 4) gets one try with chance **frequency**, centred on one of its river nodes, so the river runs in and out of the lake. Lakes are shown with the rivers. No lakes in **ocean** or **mountains** elevation zones, in **desert** subbiomes (hot or cold desert at sea level, the warmest and most arid a subbiome can be, so never where the map shows desert at any height) or in **restricted** subbiomes (those of a **river-poor flat** elevation zone, whose site gets less initial precipitation than *Flat: sparse river precipitation cutoff*). A lake's nominal size (diameter) is drawn between the **minimum** and **maximum size**, favouring small lakes. Its outline is 64 rays: a randomly oriented ellipse (elongation 1–2.2) × (1 ± low-frequency fBm noise read on a small circle), so lakes range from round ponds over ovals to kidney and lobed shapes with a few broad bays. Each ray and each outline edge is walked and clipped to eligible land of the region, so a lake **never crosses a region border**; then the rays are tapered (neighbours differ by at most 9 % of the radius) and rounded, only ever shortening them, so clipped sides bend in gently instead of in notches. Lakes keep a gap from each other; one left below the minimum size (or squeezed against its centre) is dropped, one above the maximum is scaled down. Lakes do not depend on the terrain tiles, so they never change as tiles arrive |
+| **Lakes** | Placed **per region after the rivers**, and **always on a river**: every subbiome drawn in the region that may hold a lake and has a river running through it (a land node with a flow of at least 4) gets one try with chance **frequency**, centred on one of its river nodes, so the river runs in and out of the lake. Lakes are shown with the rivers. No lakes in **ocean** or **mountains** elevation zones, in **desert** subbiomes (hot or cold desert at sea level, the warmest and most arid a subbiome can be, so never where the map shows desert at any height) or in **restricted** subbiomes (those of a **river-poor flat** elevation zone, whose site gets less initial precipitation than *Flat: sparse river precipitation cutoff*). A lake's nominal size (diameter) is drawn between the **minimum** and **maximum size**, favouring small lakes. Its outline is 64 rays: a randomly oriented ellipse (elongation 1–2.2) × (1 ± low-frequency fBm noise read on a small circle), so lakes range from round ponds over ovals to kidney and lobed shapes with a few broad bays. Each ray and each outline edge is walked and clipped to eligible land of the region, so a lake **never crosses a region border**; then the rays are tapered (neighbours differ by at most 9 % of the radius) and rounded, only ever shortening them, so clipped sides bend in gently instead of in notches. Lakes keep a gap from each other; one left below the minimum size (or squeezed against its centre) is dropped, one above the maximum is scaled down. Lakes do not depend on the terrain tiles, so they never change as tiles arrive; the height map does not level them (yet) |
 
 ### Height map
 
@@ -94,7 +94,7 @@ The result is **seamless**. Steps 1–4 are a pure function of position, and the
 
 ### Climate and biomes
 
-The **initial climate** is two fBm Perlin-noise maps, independent of the map: temperature (−10 to 30 °C by default) and precipitation (100 to 10 000 mm per year on a log scale). Every land **subbiome** gets one **biome** from them, read at its site ([docs/research/biomes-and-climate.md](docs/research/biomes-and-climate.md) §7):
+The **initial climate** is two fBm Perlin-noise maps, independent of the map: temperature (−10 to 30 °C by default) and precipitation (100 to 12 000 mm per year on a log scale, so the middle is about 1 100 mm). Every land **subbiome** gets one **biome** from them, read at its site ([docs/research/biomes-and-climate.md](docs/research/biomes-and-climate.md) §7):
 
 | Step | Method |
 |---|---|
@@ -114,13 +114,13 @@ A **supernatural map** is a third noise layer for fantasy game play: how strong 
 
 For each sub biome a set of resources are calcutated (Ore, Minirals, Fish, Wood, Farmable land etc.)
 
-Not done yet.
+Not done yet. Research: [subbiome-resources.md](docs/research/subbiome-resources.md) (catalogue keyed to the map's fields, including lakes, mangrove and the supernatural map) and [game-resources-and-trade.md](docs/research/game-resources-and-trade.md) (a game resource set).
 
 ### City Locations
 
 For each region a list of potential city and town locations are calculated
 
-Not done yet.
+Not done yet. Research: [settlement-siting.md](docs/research/settlement-siting.md).
 
 ### Trade network
 
@@ -160,7 +160,8 @@ tests/         nearest-site and neighbour checks, determinism and order independ
                rivers (attractor placement, every attractor reached, roots at ocean elevation zone points, flow conservation),
                terrain (monotone beds, drainage of every cell, burnt-in rivers, seamless tiles, determinism),
                zones (zone type picks and weights), climate (ranges, independence, supernatural feature size),
-               biomes (belts and aridity classes, cooling curve, dry flat zones favour desert, tile heights),
+               biomes (belts and aridity classes, cooling curve, dry flat zones favour desert, tile heights,
+                       coastal subbiomes, mangrove only on warm, not-desert coasts of flat and lowland zones),
                lakes (only eligible land of their own region, on a river that runs through them, smooth outlines, sizes, no overlaps, frequency, varied shapes, determinism)
 ```
 
@@ -175,6 +176,10 @@ The work builds on these notes in `docs/research/`:
 | [space-colonization-branch-variants.md](docs/research/space-colonization-branch-variants.md) | Knobs that change the branching and look of the space-colonization rivers |
 | [heightmap-from-biomes-and-rivers.md](docs/research/heightmap-from-biomes-and-rivers.md) | Methods that fit a height map to an existing map and river network; Option B is implemented in Sandbox 4 |
 | [sandbox4-tiling.md](docs/research/sandbox4-tiling.md) | Generating Sandbox 4 tile by tile; the terrain part (tiles in a Web Worker) is implemented |
+| [biomes-and-climate.md](docs/research/biomes-and-climate.md) | Biome schemes (Whittaker, Holdridge, Köppen, WWF), aridity, lapse rates; its aridity × thermal belt classifier, height cooling and the mangrove override are implemented |
+| [subbiome-resources.md](docs/research/subbiome-resources.md) | A catalogue of about 370 natural resources (food, building materials, wealth) and fantasy resources, keyed to the map's fields; how lakes, mangrove and the supernatural map plug in |
+| [game-resources-and-trade.md](docs/research/game-resources-and-trade.md) | How games choose, place and trade resources, trade theory, and a 37-resource set for the generator |
+| [settlement-siting.md](docs/research/settlement-siting.md) | Where villages, towns and cities form, and a deterministic siting design for the map (water from rivers and lakes, coasts, mangrove as poor farmland) |
 
 ## Deployment
 

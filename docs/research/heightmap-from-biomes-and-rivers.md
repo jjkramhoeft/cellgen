@@ -426,6 +426,7 @@ All three options share step 0:
 5. Run Priority-Flood with ε seeded from the region's ocean cells only, with border cells fixed (5.1).
 
 - **Guarantees:** every cell has a downhill path to the sea through the given rivers. Pockets become lakes.
+  - *Note added later:* the map's own lakes (`lakes.ts`, commit `4766597`) are a separate layer: polygons placed on the rivers, independent of the terrain tiles. The height map does not level them, and the filled pockets above are not drawn as lakes.
 - **Params:** Option A's params, plus `hgt.borderRidge`, `hgt.divideBoost`, `hgt.burnBuffer` (×w), `hgt.burnSmooth`, `hgt.burnSharp`, `hgt.fillEps`, `hgt.pockets` (`lake | lowerRidge`).
 
 ### Option C: Pinned stream-power relaxation (ambitious)

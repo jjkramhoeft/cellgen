@@ -94,6 +94,7 @@
           <li>Grown per region by <b>space colonization</b>: a root at the point of every ocean elevation zone touching the region, and 10 <b>attraction points</b> in every inland (non-coastal) land subbiome.</li>
           <li>Each step, nodes grow towards the attractors pulling on them, plus some <b>random motion</b>, until every attractor of the region is reached.</li>
           <li>Line width = <b>attractors reached upstream</b>. Turn on <b>Attractor points</b> to see the attractors (unreached in red) and the roots (rings).</li>
+          <li><b>Lakes</b> come after the rivers and always sit on one: each subbiome with a river gets a small chance of a lake (6 % by default, 1.5–5 km across), with a noise-shaped outline clipped to its region. No lakes in ocean or mountains zones, in deserts or in river-poor flat zones (left panel, <b>Lakes</b>; shown with the rivers). The inspector says whether a subbiome may hold a lake.</li>
         </ul>
         <h3>Terrain (Sandbox 4)</h3>
         <ul>
@@ -104,7 +105,7 @@
         </ul>
         <h3>Initial climate</h3>
         <ul>
-          <li>An <b>initial temperature map</b> (−10 to 30 °C by default) and an <b>initial precipitation map</b> (100 to 10 000 mm per year on a log scale, so the middle is 1 000), each an fBm of <b>Perlin noise</b> with its own feature size, octaves, lacunarity, gain and range (left panel, <b>Climate</b> sections).</li>
+          <li>An <b>initial temperature map</b> (−10 to 30 °C by default) and an <b>initial precipitation map</b> (100 to 12 000 mm per year on a log scale, so the middle is about 1 100), each an fBm of <b>Perlin noise</b> with its own feature size, octaves, lacunarity, gain and range (left panel, <b>Climate</b> sections).</li>
           <li>Turn on <b>Temperature overlay</b> or <b>Precipitation overlay</b> under Display to draw them <b>50 % transparent on top</b> of the map and rivers; the inspector shows both values under the cursor.</li>
           <li>A <b>prosperity map</b> (1 to 100 by default, unitless) built the same way, with its own seed and parameters (left panel, <b>Prosperity</b>). It does not affect anything yet; turn on <b>Prosperity overlay</b> under Display to see it (dark purple = poor, gold = prosperous).</li>
           <li>A <b>supernatural map</b> (0 to 100 by default, unitless): how strong magic is, for magic resources and other fantasy game play. The same Perlin fBm with its own seed and much finer features (10 km, 3 octaves by default; left panel, <b>Supernatural</b>). It does not affect anything yet; turn on <b>Supernatural overlay</b> under Display to see it (near black = mundane, violet → glowing cyan = strong magic).</li>
@@ -114,6 +115,7 @@
           <li>Every land <b>subbiome</b> gets a biome from the initial climate at its site. The temperature is lowered by a <b>cooling curve</b> over the subbiome’s mean height from the terrain: a smooth curve through 5 points you set (height → °C cooler, 6.5 °C per km by default), plotted in the <b>Biomes</b> section; until its terrain is computed a typical height for the elevation zone type stands in.</li>
           <li><b>River-poor flat elevation zones</b> are drier (precipitation × 0.2), so they favour <b>desert</b>.</li>
           <li>The aridity P / (20·T + 140) and a thermal belt pick one of 15 biomes, from ice, tundra and taiga over temperate forests and grassland to hot desert, savanna and rainforest (left panel, <b>Biomes</b>).</li>
+          <li><b>Mangrove</b>: a coastal subbiome (bordering the ocean) in a flat or lowland zone becomes mangrove where it is at least 20 °C and not desert (aridity ≥ 0.5); both are settings. Never inland or in hills or mountains.</li>
           <li>Colour by <b>Biomes</b> (<b>2</b>) to see them; the inspector shows each subbiome’s biome and the values that picked it.</li>
         </ul>
         <h3>Navigation</h3>

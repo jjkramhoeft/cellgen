@@ -83,7 +83,7 @@
     "clim.p.lacunarity": 2.2,
     "clim.p.gain": 0.55,
     "clim.p.min": 100,
-    "clim.p.max": 10000,
+    "clim.p.max": 12000,
     "clim.pros.scale": 200,
     "clim.pros.octaves": 3,
     "clim.pros.lacunarity": 2,

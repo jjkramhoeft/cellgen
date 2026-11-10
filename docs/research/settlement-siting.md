@@ -28,6 +28,14 @@
 | Biomes | `src/world/biomes.ts` L88–94 (belts), L111 (`dryThreshold`), L134 (`classify`), L194 (`TYPICAL_HEIGHT`), L247–260 (`ofSub`), L278 (`info`) | Biome, belt and aridity per subbiome. They are **exact once the tile exists and an estimate before**, which matters for determinism (§6.1) |
 | Deterministic maths | `shared/core/dmath.ts` L1–8, L31 (`dexp`); `shared/core/hash.ts` L37 (`hash4`); `shared/core/heap.ts` L1–15 (ties on the smaller value) | Bit-exact exp for Tobler's function; hashes for tie-breaking; a deterministic heap for Dijkstra |
 | Prosperity overlay | `src/main.ts` L119, L319, L367 | Where a settlement-potential view would plug in |
+
+**Added since `b94e28d`** (lines at commit `397f779`)
+
+| Hook | File, lines | What it gives a settlement pass |
+|---|---|---|
+| Lakes | `src/world/lakes.ts` L1–39 (header), L57–82 (`Lake`), L189 (`get`), L237 (`lakeAt`); commit `4766597` | River-fed lakes per region, after the rivers and on them, each with a host subbiome (`Lake.sub`), area and the river's flow. Like the rivers they are region-local and do not depend on the terrain tiles, so they are safe for Tier M (§6.1). Fresh water, fish and a lakeshore site |
+| Mangrove | `src/world/biomes.ts` L23–28, L85, L343; commit `dc52798` | Biome `mangrove` on warm, not-desert coasts of flat and lowland zones (T ≥ 20 °C, m ≥ 0.5). Tidal swamp: little farmland, hard going, but fish and timber |
+| Coast per merged subbiome | `src/world/biomes.ts` L238 (`BiomeInfo.coastal`), L298–321 (`isCoastal`) | The `coast` feature (§6.3) for a merged subbiome, already cached with its biome |
 | Tests | `tests/fixture.ts` (`testParams`, frozen baseline); `tests/world.test.ts` L74 (order independence); `tests/terrain.test.ts` L127, L158, L200 (seamless, per-region, deterministic) | Patterns for the settlement tests in §6.12 |
 | Ruler | `README.md` L131 | Horse 32–48 km/day, legion 24–32, hiker 16–24 |
 
@@ -61,7 +69,7 @@ The textbook split is between **site**, the physical ground a settlement stands 
 
 | Factor | What it means | Source | Map signal in sandbox4 |
 |---|---|---|---|
-| **Water supply** | Perennial river, spring, well or lake within short carrying distance | General; the top variable in archaeological predictive models (§3.2) [unverified as a general statement] | River node in the subbiome; aridity m = P/(20T+140) (`biomes.ts` L111) as a proxy for wells and springs |
+| **Water supply** | Perennial river, spring, well or lake within short carrying distance | General; the top variable in archaeological predictive models (§3.2) [unverified as a general statement] | River node or a lake in the subbiome (`Lake.sub`, `lakes.ts`); aridity m = P/(20T+140) (`biomes.ts` L111) as a proxy for wells and springs |
 | **Wet point / dry point** | Dry areas favour wet points (oasis, river); wet areas favour dry points (terrace, levee, island above floods) | [unverified: textbook concept] | Aridity × river; HAND (h − src, §3.5) |
 | **Floodplain vs terrace** | Fields on the floodplain, houses on the first terrace above flood level | HAND classes: 0–5 m above the drainage is near-surface water table, 5–15 m shallow, > 15 m deep (NOB via GRASS r.hand) [partially verified] | `terrain.ts` L986 `src` gives the base height of each cell's drainage path |
 | **Defensibility** | Hilltop, spur between two rivers (confluence), meander loop, island, peninsula | Civ IV gives a hill city site +200 (CIV4 L2170). Civ V gives hills in ring 1 a strategic value of 3 (CIV5 L1011–1052). Emilien et al. score "geographical domination" (EMI §4) | Zone type; relative height (TPI); confluence; peninsula (mostly ocean neighbours) |
@@ -372,7 +380,8 @@ Notation:
 |---|---|---|
 | `zt` | `elevationZoneType(cell.elevationZone, false)` | `zones.ts` L45 |
 | `T, P, m, belt, biome` | `info(..., h = NaN)`: T = T₀ − cooling(TYPICAL_HEIGHT[zt]); m = P / max(40, 20T + 140) | `biomes.ts` L278 |
-| `coast` | `rivers.isCoastSub(s)` | `rivers.ts` L237 |
+| `coast` | `rivers.isCoastSub(s)`, or `BiomeInfo.coastal` for the merged subbiome | `rivers.ts` L237; `biomes.ts` L238 (at `397f779`) |
+| `lake` | the largest `Lake` with `sub = s` in `lakes.get(R)`: its area, or 0 | `lakes.ts` L57–82, L189 (at `397f779`) |
 | `oceanFrac` | ocean Gabriel neighbours / all Gabriel neighbours | `world.subNbrs` |
 | `harbour` | coast and some adjacent ocean subbiome o has landFrac(o) ≥ 0.5 (an enclosed bay) → 1; coast only → 0.4; else 0 | analogue of Azgaar `harbor === 1` |
 | `aMax` | max *a* over dry nodes in s | `RegionRivers.flow`, `wet` |
@@ -400,9 +409,9 @@ All terms are in [0, 1] unless noted. `sat(x) = min(1, max(0, x))`. `ramp(x, x0,
 
 | Term | Formula | Real factor (§2) | Notes |
 |---|---|---|---|
-| **K** food density, people/km² | `K_biome[biome] × K_zone[zt] + irrig + fish`. Irrigation: `irrig = (m < 1) ? K_irr × sat(aMax / A_big) : 0`, the wet point in dry land. Fish: `fish = 2 × coast + 1 × (aMax ≥ A_nav)` | Catchment (VFH); densities §2.7 | Replace by Σ potentials × yields once the resource layer exists (`game-resources-and-trade.md` §5.8 step 1) |
+| **K** food density, people/km² | `K_biome[biome] × K_zone[zt] + irrig + fish`. Irrigation: `irrig = (m < 1) ? K_irr × sat(aMax / A_big) : 0`, the wet point in dry land. Fish: `fish = 2 × coast + 1 × (aMax ≥ A_nav) + 1 × (lake > 0)` | Catchment (VFH); densities §2.7 | Replace by Σ potentials × yields once the resource layer exists (`game-resources-and-trade.md` §5.8 step 1) |
 | **P_v** village catchment, people | `K × S²` | The subbiome is the 1 h catchment | |
-| **W** water (necessity) | `max(sat(aMax / 2), ramp(m, 0.5, 1.5), 0.5 × coast)` | Water supply | Any stream with 2+ subbiomes upstream, or a humid climate, or the coast (brackish: half) |
+| **W** water (necessity) | `max(sat(aMax / 2), ramp(m, 0.5, 1.5), 0.5 × coast, 1 × (lake > 0))` | Water supply | Any stream with 2+ subbiomes upstream, or a humid climate, or the coast (brackish: half) |
 | **C** climate comfort (necessity) | `trap(T, −8, 4, 24, 34)` | Cold and heat limits | Polar belt → 0. Aridity is already in W and K |
 | **M** material and fuel | `0.5 × build + 0.5 × max(fuel, 1 − need)`. `build = max(wood[biome], stoneZ[zt], clay)`, `clay = (zt ∈ {flat, lowland} and aMax ≥ 1) ? 0.8 : 0.3`. `need = [1, 1, 0.8, 0.5, 0.1][belt]` | Building material and fuel (`game-resources-and-trade.md` §5.5) | `wood` from biome, `stoneZ` = [_, 0.2, 0.3, 0.8, 1] |
 | **D** defence | `max(Dz[zt], 0.5 × (oceanFrac ≥ 0.5), 0.4 × (aConf ≥ A_nav / 2))`, with Dz = [_, 0, 0.1, 0.6, 0.7] | Hill, peninsula, confluence spur | A bonus only. Ruggedness is not rewarded for cities (BB) |
@@ -418,6 +427,7 @@ All terms are in [0, 1] unless noted. `sat(x) = min(1, max(0, x))`. `ramp(x, x0,
 | Dry forest, savanna | 18, 12 | 0.7, 0.4 |
 | Temperate rainforest, tropical rainforest | 8, 8 | 1.0 |
 | Taiga | 2 | 1.0 |
+| Mangrove (added with the biome, `dc52798`) | 3 | 0.5 (poles, charcoal) |
 | Cold steppe, thorn scrub | 3, 4 | 0.2, 0.3 |
 | Hot desert, cold desert, tundra | 0.3 | 0.05 |
 | Ice | 0 | 0 |
@@ -498,7 +508,7 @@ The graph has one node per land subbiome, with Gabriel edges (`world.subNbrs`), 
 
 | Edge | Time (h), for travel days | Freight (cost units), for prices | Notes |
 |---|---|---|---|
-| Land a → b | `d / 5 + max(0, h_b − h_a) / 600` (Naismith), `× rough[zt] × veg[biome]` | `d × 25 × rough × veg` | `h` = TYPICAL_HEIGHT in Tier M (bed height where a river is present). rough = [_, 1, 1, 1.3, 2]; veg 1, forest 1.3, rainforest 2 [Design] |
+| Land a → b | `d / 5 + max(0, h_b − h_a) / 600` (Naismith), `× rough[zt] × veg[biome]` | `d × 25 × rough × veg` | `h` = TYPICAL_HEIGHT in Tier M (bed height where a river is present). rough = [_, 1, 1, 1.3, 2]; veg 1, forest 1.3, rainforest 2, mangrove 2 [Design] |
 | Land, undirected | `d / 5 + \|Δh\| / 1200` | as above | Ascent split evenly over both directions; Langmuir descent is ignored |
 | River downstream / upstream (both ends on a node chain with a ≥ A_nav) | `d / 6` / `d / 3` | `d × 2.5` / `d × 5` | `game-resources-and-trade.md` §4.2 ratios |
 | Sea (coastal s to coastal t through ocean subbiomes) | `d / 6` | `d × 1` | Path over the ocean subbiome graph inside the k-ring |

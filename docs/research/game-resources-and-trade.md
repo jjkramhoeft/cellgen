@@ -24,6 +24,15 @@
 | Travel days | `README.md` L131 | Ruler: horse 32–48 km/day, marching legion 24–32, hiker 16–24 |
 | Planned features | `README.md` "Resources", "City Locations", "Trade network" | All three marked "Not done yet"; trade network is to use "River, Ocean and roads" |
 
+**Added since `b94e28d`** (lines at commit `397f779`)
+
+| Hook | File, lines | What it gives an economy pass |
+|---|---|---|
+| Lakes | `src/world/lakes.ts` L57–82 (`Lake`), L189 (`get`), L237 (`lakeAt`); commit `4766597` | River-fed lakes per region, each with a host subbiome, area and the river's flow. Fish, reeds and lake transport; a lake on a navigable river extends it |
+| Mangrove | `src/world/biomes.ts` L85, L90–95, L343; commit `dc52798` | Biome `mangrove` (MG) on warm, not-desert coasts of flat and lowland zones. Mangrove timber, charcoal and tannin bark; poor farmland |
+| Coast per merged subbiome | `src/world/biomes.ts` L238 (`BiomeInfo.coastal`), L298 (`isCoastal`) | The coast test for a merged subbiome, cached with its biome |
+| Supernatural | `src/world/climate.ts` L121–123 (`supernaturalAt`); commit `397f779` | A 0–100 noise field (10 km features) for magic. A ready input for the fantasy goods of `subbiome-resources.md` §5 |
+
 ---
 
 ## 1. Overview
@@ -309,13 +318,13 @@ Zone, biome and belt codes as in `subbiome-resources.md` §4.0. "Level" says whe
 | Produce | #19–46 | Same, over roots, pulses, vegetables | Subbiome potential (zone-local only) |
 | Orchard | #47–78, #35–39 (oilseeds) | Tree-crop trapezoids; olive and vine in WS, BL Te-w; dates in HD, TS with `riv`; palms on Tr `cst` | Subbiome potential |
 | Livestock | #94–97, #102–104, #106, #108–112 | Pasture by biome: GR, CS, SV, WS, Hi, Mo; yak and camelids by height; poor in RF, TA, IC | Subbiome potential |
-| Fish | #143–155, #165 | River `flow` above a threshold; `cst`; ocean-zone adjacency; cold shelf and upwelling bonuses | Subbiome potential |
+| Fish | #143–155, #165 | River `flow` above a threshold; `cst`; ocean-zone adjacency; cold shelf and upwelling bonuses; a lake in the subbiome (`Lake.sub`, by area; #147); crabs and oysters in MG (#153) | Subbiome potential |
 | Wild food & game | #79–93, #113–121 | Forest and tundra biomes; low on farmed land | Subbiome potential |
-| Timber | #247–278 | Forest biomes (TA, MF, BL, TR, DF, RF); thin in WS, SV; none in HD, CD, GR, CS, TU, IC | Subbiome potential |
+| Timber | #247–278 | Forest biomes (TA, MF, BL, TR, DF, RF); mangrove poles in MG (#276); thin in WS, SV; none in HD, CD, GR, CS, TU, IC | Subbiome potential |
 | Stone | #294–307 | Common deposit in Hi, Mo; uncommon in Lo; rare in Fl (glacial boulders only) | Subbiome deposit |
 | Clay & earth | #291–293, #308–309 | Fl, Lo, `fp`; kaolin (#309) as a rare deposit | Subbiome potential |
 | Fibre | #212–226 | Flax, hemp in MF, BL, GR; cotton in SV, TS (irrigated), DF; jute on tropical `fp` | Subbiome potential |
-| Fuel | #323–330, #286 | Wood in forests; peat in Bo/Te Hu–PHu flats (*peat bog*); dung in CS, GR, CD, Mo; coal as a deposit on *clastic basin* | Potential + deposit |
+| Fuel | #323–330, #286 | Wood in forests; mangrove charcoal in MG (#276); peat in Bo/Te Hu–PHu flats (*peat bog*); dung in CS, GR, CD, Mo; coal as a deposit on *clastic basin* | Potential + deposit |
 | Salt | #166–171 | Solar salt on `cst` in Ar–SAr warm belts; playa salt in `isSparseFlat` Arid zones; rock salt and brine on *evaporite* bedrock | Subbiome deposit |
 | Iron ore | #343–347 | Bog iron in TA, MF, BL wet flats; laterite in RF, SV, DF; skarn and BIF by bedrock | Subbiome deposit |
 | Copper ore | #337–340, #365 | Mo, Hi; *volcanic arc*, *ophiolite*, *clastic basin* | Subbiome deposit |
@@ -328,9 +337,9 @@ Zone, biome and belt codes as in `subbiome-resources.md` §4.0. "Level" says whe
 | Furs & ivory | #122–139, #142 | Furs in TA, TU, MF; ivory in SV, RF, DF and on polar coasts | Subbiome potential |
 | Dyes | #156–158, #161, #230–239 | Woad, madder in Te; indigo in Tr; cochineal, kermes, murex rare | Potential / deposit |
 | Horses & pack animals | #98–101, #105 | GR, CS (horses); HD, CD (camels); Mo (mules) | Zone aggregate |
-| Enablers (not goods) | #378–385 | River, navigable river, water power, springs, aquifer, harbour | Subbiome flags |
+| Enablers (not goods) | #378–385 | River, navigable river, water power, springs, aquifer, harbour; a lake (`Lake.sub`) as fresh water and a sheltered landing | Subbiome flags |
 
-Tanning bark (#241–245), resins (#205), plant ash (#320) and limestone (#297) feed the intermediates and need no separate game resource.
+Tanning bark (#241–245, including mangrove bark #243 in MG), resins (#205), plant ash (#320) and limestone (#297) feed the intermediates and need no separate game resource.
 
 ### 5.4 Which level of the hierarchy owns what
 
@@ -455,6 +464,8 @@ The weighting is a market-potential index in the spirit of Harris 1954 [unverifi
 | Tropical highland (`hiT`) | Stimulants (tea, coffee), Grain (highland crops) |
 | Dry warm coast | Solar Salt, Fish, Preserved food, a port |
 | River mouth on a flat coast | Port + navigable river: the region's trade hub and likely city |
+| Warm flat or lowland coast with mangrove (MG) | Fish and shellfish, Timber (poles), Fuel (charcoal), tanning bark; imports Grain, Salt, Iron |
+| Lake on a river (`Lake.sub`) | Fish, fresh water, reeds; a natural market and a stop for river transport |
 
 ---
 
@@ -504,6 +515,7 @@ The weighting is a market-potential index in the spirit of Harris 1954 [unverifi
 ### 7.3 Repository
 
 - `sandboxes/sandbox4/src/world/{world,rivers,climate}.ts`, `README.md`, at commit `b94e28d` (lines as in the code table).
+- `sandboxes/sandbox4/src/world/{lakes,biomes,climate}.ts` at commit `397f779`, for the lakes, the mangrove biome and the supernatural map (the "Added since" table).
 - `docs/research/subbiome-resources.md` (catalogue rows, §6, §7), `docs/research/biomes-and-climate.md` (bit-exactness rule, climate feature sizes).
 
 ### 7.4 Not accessible on the research date
