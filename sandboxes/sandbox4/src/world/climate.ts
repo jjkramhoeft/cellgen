@@ -7,6 +7,10 @@
  *
  * A prosperity map (a unitless index, 1 to 100 by default) is built the same way. It does
  * not feed the biomes or rivers; it is there for later use (settlements, roads).
+ *
+ * So is a supernatural map (a unitless index, 0 to 100 by default, with much finer
+ * features: 10 km). It feeds nothing yet either; it is there for magic resources and other
+ * fantasy game play.
  */
 import { dexp, dlog } from '@shared/core/dmath';
 import { perlinFbm, type FbmParams } from '@shared/core/noise';
@@ -32,12 +36,15 @@ export interface ClimateParams {
   precipitation: NoiseFieldParams;
   /** prosperity index (unitless), linear */
   prosperity: NoiseFieldParams;
+  /** supernatural index (unitless), linear: how strong magic is at a point */
+  supernatural: NoiseFieldParams;
 }
 
 /** Seed salts, so the two fields are independent of each other (and of every other noise). */
 const TEMP_SALT = 0x7e3a11c5;
 const PRECIP_SALT = 0x2b9d40f3;
 const PROSPERITY_SALT = 0x5c1f86a9;
+const SUPERNATURAL_SALT = 0x3ad5e217;
 
 /**
  * Perlin fBm with its spread made independent of the octave count and gain (divided by
@@ -86,11 +93,13 @@ export class Climate {
   private readonly tSeed: number;
   private readonly pSeed: number;
   private readonly wSeed: number;
+  private readonly sSeed: number;
 
   constructor(readonly p: ClimateParams) {
     this.tSeed = (p.seed ^ TEMP_SALT) | 0;
     this.pSeed = (p.seed ^ PRECIP_SALT) | 0;
     this.wSeed = (p.seed ^ PROSPERITY_SALT) | 0;
+    this.sSeed = (p.seed ^ SUPERNATURAL_SALT) | 0;
   }
 
   /** Initial temperature at a point, °C. */
@@ -106,5 +115,10 @@ export class Climate {
   /** Prosperity index at a point (unitless, [min, max] of its parameters). */
   prosperityAt(x: number, y: number): number {
     return fieldValue(this.wSeed, this.p.prosperity, x, y);
+  }
+
+  /** Supernatural index at a point (unitless, [min, max] of its parameters): how strong magic is there. */
+  supernaturalAt(x: number, y: number): number {
+    return fieldValue(this.sSeed, this.p.supernatural, x, y);
   }
 }

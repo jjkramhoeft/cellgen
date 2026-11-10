@@ -119,4 +119,56 @@ describe('initial climate', () => {
     expect(Math.min(...v)).toBeGreaterThanOrEqual(200);
     expect(Math.max(...v)).toBeLessThanOrEqual(500);
   });
+
+  it('supernatural: defaults to 3 octaves of 10 km features over 0 to 100', () => {
+    const d = testParams();
+    expect([d['clim.sup.octaves'], d['clim.sup.scale'], d['clim.sup.min'], d['clim.sup.max']]).toEqual([3, 10, 0, 100]);
+    const p = toClimateParams(d, 11).supernatural;
+    expect(p.scale).toBe(10_000);
+    expect(p.log).toBe(false);
+    const c = climate(11);
+    // a spacing off the noise lattice (Perlin noise is 0 on it): 8.69 km
+    const s = sampleField((x, y) => c.supernaturalAt(x, y), 1_737_000, 200);
+    expect(Math.min(...s)).toBeGreaterThanOrEqual(0);
+    expect(Math.max(...s)).toBeLessThanOrEqual(100);
+    expect(Math.min(...s)).toBeLessThan(15);
+    expect(Math.max(...s)).toBeGreaterThan(85);
+    const mean = s.reduce((a, b) => a + b, 0) / s.length;
+    expect(Math.abs(mean - 50)).toBeLessThan(10);
+  });
+
+  it('supernatural: varies over about 10 km, has its own seed, and follows its parameters', () => {
+    const c = climate(11);
+    // mean |difference| between points a distance apart: small within 1 km, large at 25 km
+    const diff = (dist: number) => {
+      let sum = 0;
+      const n = 2000;
+      for (let k = 0; k < n; k++) {
+        const x = k * 7919.3 - 5e6;
+        const y = k * 3571.7 + 1e6;
+        sum += Math.abs(c.supernaturalAt(x, y) - c.supernaturalAt(x + dist, y));
+      }
+      return sum / n;
+    };
+    expect(diff(500)).toBeLessThan(5);
+    expect(diff(25_000)).toBeGreaterThan(3 * diff(500));
+    // independent of the prosperity map (own seed salt), even with the same noise settings
+    const d = testParams();
+    const same = new Climate(toClimateParams({ ...d, 'clim.sup.scale': d['clim.pros.scale'], 'clim.sup.min': 1, 'clim.sup.max': 100 }, 11));
+    const a = sampleField((x, y) => same.supernaturalAt(x, y), 30_000_000, 100);
+    const b = sampleField((x, y) => same.prosperityAt(x, y), 30_000_000, 100);
+    let equal = 0;
+    for (let k = 0; k < a.length; k++) if (Math.abs(a[k] - b[k]) < 1e-9) equal++;
+    expect(equal).toBeLessThan(a.length / 100);
+    // its parameters change only it
+    const q = new Climate(toClimateParams({ ...d, 'clim.sup.min': 400, 'clim.sup.max': 300, 'clim.sup.octaves': 5 }, 11));
+    const v = sampleField((x, y) => q.supernaturalAt(x, y), 1_737_000, 80);
+    expect(Math.min(...v)).toBeGreaterThanOrEqual(300);
+    expect(Math.max(...v)).toBeLessThanOrEqual(400);
+    for (const [x, y] of [[0, 0], [123_456, -987_654], [5e6, 3e6]]) {
+      expect(q.temperatureAt(x, y)).toBe(c.temperatureAt(x, y));
+      expect(q.precipitationAt(x, y)).toBe(c.precipitationAt(x, y));
+      expect(q.prosperityAt(x, y)).toBe(c.prosperityAt(x, y));
+    }
+  });
 });

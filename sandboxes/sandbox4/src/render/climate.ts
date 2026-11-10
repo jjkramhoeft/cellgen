@@ -1,13 +1,13 @@
 /**
  * Raster sources and colour ramps for the noise-field overlays (initial temperature,
- * precipitation and prosperity). Each overlay is an opaque image drawn at 50 % opacity over the map; the
+ * precipitation, prosperity and supernatural). Each overlay is an opaque image drawn at 50 % opacity over the map; the
  * fields are smooth, so they are rendered below screen resolution and scaled up.
  */
 import { packColor } from '@shared/render/colormaps';
 import type { RasterSource } from '@shared/render/raster';
 import type { Climate, NoiseFieldParams } from '../world/climate';
 
-export type ClimateField = 'temperature' | 'precipitation' | 'prosperity';
+export type ClimateField = 'temperature' | 'precipitation' | 'prosperity' | 'supernatural';
 
 /** Colour stops: [value, r, g, b], on absolute values so a colour always means the same °C or mm per year. */
 type Stops = [number, number, number, number][];
@@ -45,13 +45,23 @@ export const PROSPERITY_STOPS: Stops = [
   [100, 190, 120, 10],
 ];
 
-export const STOPS: Record<ClimateField, Stops> = { temperature: TEMP_STOPS, precipitation: PRECIP_STOPS, prosperity: PROSPERITY_STOPS };
+/** Supernatural index: near black (mundane) → deep indigo → violet → magenta (≈ 75) → glowing cyan (strong magic). */
+export const SUPERNATURAL_STOPS: Stops = [
+  [0, 14, 12, 28],
+  [25, 48, 36, 112],
+  [50, 118, 64, 190],
+  [75, 206, 84, 214],
+  [100, 128, 244, 255],
+];
+
+export const STOPS: Record<ClimateField, Stops> = { temperature: TEMP_STOPS, precipitation: PRECIP_STOPS, prosperity: PROSPERITY_STOPS, supernatural: SUPERNATURAL_STOPS };
 
 /** The value of one field at a point. */
 function fieldReader(climate: Climate, field: ClimateField): (x: number, y: number) => number {
   if (field === 'temperature') return (x, y) => climate.temperatureAt(x, y);
   if (field === 'precipitation') return (x, y) => climate.precipitationAt(x, y);
-  return (x, y) => climate.prosperityAt(x, y);
+  if (field === 'prosperity') return (x, y) => climate.prosperityAt(x, y);
+  return (x, y) => climate.supernaturalAt(x, y);
 }
 
 /** Interpolated [r, g, b] for a value on a ramp (flat beyond the ends). */

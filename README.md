@@ -106,6 +106,10 @@ The **initial climate** is two fBm Perlin-noise maps, independent of the map: te
 
 **Colour by → Biomes** shows them in colours that look like the land (sand, dry grass, olive scrub, forest greens, grey tundra, white ice), slightly varied per subbiome. The biome view computes the terrain like the height view; zoomed far out each elevation zone shows the biome at its site. The inspector lists the biome with every input: belt, moisture class, aridity, height (exact or estimated), the temperature before and after the height cooling, the precipitation (and the dry-flat factor), whether it borders the ocean (and why it is or is not mangrove), and the biome the subbiome would have at sea level.
 
+### Supernatural
+
+A **supernatural map** is a third noise layer for fantasy game play: how strong magic is at every point (a unitless index, 0 to 100 by default), meant for magic resources and other supernatural features. It is the same fBm of Perlin noise as the climate, with its own seed and much finer features: **feature size 10 km, 3 octaves** (lacunarity 2, gain 0.5) by default, all configurable in the left panel (**Supernatural**). It does not feed anything yet. Turn on **Supernatural overlay** under Display to see it (near black = mundane, deep indigo → violet → magenta → glowing cyan = strong magic); the inspector shows its value under the cursor. A **prosperity map** (1 to 100, 200 km features) is built the same way.
+
 ### Resources
 
 For each sub biome a set of resources are calcutated (Ore, Minirals, Fish, Wood, Farmable land etc.)
@@ -128,7 +132,7 @@ Not done yet.
 
 - **Colour by:** map (elevation zone types), land & ocean, **ocean genesis** (lone seed, linked seed, link chain, growth pass), **merged cells**, regions, elevation zones, subbiomes, the hierarchy (region hue × elevation zone lightness × subbiome shading), **biomes** (one per subbiome), and **height** (hypsometric tint and hillshade). A **Hillshade** overlay works on any colour mode.
 - **3D landscape** (`T`): a WebGL2 height mesh over the current view, draped with the 2D map (rivers and borders included). Drag to orbit, scroll to zoom, Shift- or right-drag to pan. Vertical exaggeration is a setting.
-- **Overlays:** pixel-exact region, elevation zone and subbiome borders and the coastline; rivers (width from flow), attractor points (unreached in red) and river roots; lakes; ocean seeds and links, growth arrows, merge arrows, sites per level, and a kilometre grid with the origin marked.
+- **Overlays:** the noise maps (temperature, precipitation, prosperity, supernatural), each 50 % transparent with a legend bar; pixel-exact region, elevation zone and subbiome borders and the coastline; rivers (width from flow), attractor points (unreached in red) and river roots; lakes; ocean seeds and links, growth arrows, merge arrows, sites per level, and a kilometre grid with the origin marked.
 - **Inspector:** hover or click a point to see its region (owned elevation zones, seeds, links, merges), elevation zone (genesis, merged group, neighbours, owned subbiomes), subbiome, its **biome** (with the temperature, precipitation, height and aridity that picked it) the river under the cursor (flow here, whole river, root, the ocean elevation zone it drains into) and the lake under the cursor (size, area, the river's flow, host subbiome); every subbiome says whether it may hold a lake, or why not. Click pins the elevation zone and subbiome.
 - **Ruler:** Shift+drag or `M` measures a straight-line distance, with travel days for a horse (32–48 km/day), a marching legion (24–32) and a long-distance hiker (16–24).
 - **In view:** ocean share, cell counts, elevation zones per region, subbiomes per elevation zone, seeds and links, ocean elevation zones by genesis, merged groups, rivers and attractors reached, render time, cache size, and a determinism fingerprint of a fixed window around the origin.
@@ -146,7 +150,7 @@ src/world/     level (stateless warped lattice Voronoi, Gabriel neighbours),
                lakes (per-region lakes after the rivers: eligibility, noise-shaped outlines, clip),
                terrain (river profiles and the per-tile height pipeline, mean height per subbiome),
                terrain.worker (height tiles computed off the main thread),
-               climate (initial temperature and precipitation maps),
+               climate (initial temperature and precipitation maps, prosperity and supernatural maps),
                biomes (height cooling curve, dry flat zones, aridity × thermal belt → biome per subbiome, coastal mangrove)
 src/render/    per-pixel raster source with borders per level, vector overlays and ruler,
                view3d (WebGL2 mesh, draped texture, orbit camera)
@@ -155,7 +159,7 @@ src/params.ts  parameter schema and presets
 tests/         nearest-site and neighbour checks, determinism and order independence, ocean and merge rules,
                rivers (attractor placement, every attractor reached, roots at ocean elevation zone points, flow conservation),
                terrain (monotone beds, drainage of every cell, burnt-in rivers, seamless tiles, determinism),
-               zones (zone type picks and weights), climate (ranges, independence),
+               zones (zone type picks and weights), climate (ranges, independence, supernatural feature size),
                biomes (belts and aridity classes, cooling curve, dry flat zones favour desert, tile heights),
                lakes (only eligible land of their own region, on a river that runs through them, smooth outlines, sizes, no overlaps, frequency, varied shapes, determinism)
 ```

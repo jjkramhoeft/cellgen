@@ -50,7 +50,7 @@ export interface ClimateLegend {
   p: NoiseFieldParams;
 }
 
-const CLIMATE_NAMES: Record<ClimateField, [string, string]> = { temperature: ['Initial temperature', '°C'], precipitation: ['Initial precipitation', 'mm/yr'], prosperity: ['Prosperity', ''] };
+const CLIMATE_NAMES: Record<ClimateField, [string, string]> = { temperature: ['Initial temperature', '°C'], precipitation: ['Initial precipitation', 'mm/yr'], prosperity: ['Prosperity', ''], supernatural: ['Supernatural', ''] };
 
 /** A gradient bar over [min, max] for one climate overlay (drawn at 50 % on the map). */
 function climateBar(c: ClimateLegend): string {
@@ -179,6 +179,7 @@ export function renderInspector(host: HTMLElement, world: World | null, rivers: 
     html += `<div class="kv" title="Initial temperature map (Perlin noise) [clim.t.*]"><span>Initial temperature</span><b>${climate.temperatureAt(pt.x, pt.y).toFixed(1)} °C</b></div>`;
     html += `<div class="kv" title="Initial precipitation map (Perlin noise) [clim.p.*]"><span>Initial precipitation</span><b>${climate.precipitationAt(pt.x, pt.y).toFixed(0)} mm/yr</b></div>`;
     html += `<div class="kv" title="Prosperity map (Perlin noise, unitless index) [clim.pros.*]"><span>Prosperity</span><b>${climate.prosperityAt(pt.x, pt.y).toFixed(1)}</b></div>`;
+    html += `<div class="kv" title="Supernatural map (Perlin noise, unitless index): how strong magic is here [clim.sup.*]"><span>Supernatural</span><b>${climate.supernaturalAt(pt.x, pt.y).toFixed(1)}</b></div>`;
   }
 
   html += `<div class="lvl"><h4><i style="background:${regColor}"></i>Region ${ij(c.region)}</h4>`;

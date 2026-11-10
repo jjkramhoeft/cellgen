@@ -388,7 +388,7 @@ export function toTerrainParams(p: Params): TerrainParams {
 }
 
 /** Parameters of one Perlin-noise climate field (left panel), keys `clim.<id>.*`. */
-function climateSection(id: FieldId, title: string, help: string, unit: string, lo: number, hi: number, step: number, log: boolean): Section {
+function climateSection(id: FieldId, title: string, help: string, unit: string, lo: number, hi: number, step: number, log: boolean, scaleMin = 20, scaleStep = 10): Section {
   const k = (name: string) => `clim.${id}.${name}`;
   return withDefaults.section({
     id: `climate-${id}`,
@@ -396,7 +396,7 @@ function climateSection(id: FieldId, title: string, help: string, unit: string, 
     open: false,
     help,
     params: [
-      { key: k('scale'), label: 'Feature size', type: 'number', min: 20, max: 4000, step: 10, log: true, unit: ' km', help: 'Wavelength of the first (largest) octave: roughly the distance between a high and the next one.' },
+      { key: k('scale'), label: 'Feature size', type: 'number', min: scaleMin, max: 4000, step: scaleStep, log: true, unit: ' km', help: 'Wavelength of the first (largest) octave: roughly the distance between a high and the next one.' },
       { key: k('octaves'), label: 'Octaves', type: 'int', min: 1, max: 8, help: 'Layers of Perlin noise, each finer than the last. 1 = smooth blobs; more = rougher, more detailed.' },
       { key: k('lacunarity'), label: 'Lacunarity', type: 'number', min: 1.5, max: 4, step: 0.05, help: 'How much finer each octave is than the previous one.' },
       { key: k('gain'), label: 'Gain', type: 'number', min: 0.1, max: 0.9, step: 0.01, help: 'How much weaker each octave is than the previous one. Higher = rougher.' },
@@ -406,8 +406,8 @@ function climateSection(id: FieldId, title: string, help: string, unit: string, 
   });
 }
 
-/** Ids of the Perlin-noise fields: temperature, precipitation, prosperity. */
-type FieldId = 't' | 'p' | 'pros';
+/** Ids of the Perlin-noise fields: temperature, precipitation, prosperity, supernatural. */
+type FieldId = 't' | 'p' | 'pros' | 'sup';
 
 /** Initial temperature and precipitation maps: Perlin noise, independent of the map for now. */
 export const CLIMATE_SECTIONS: Section[] = [
@@ -431,6 +431,24 @@ export const PROSPERITY_SECTION: Section = climateSection(
 );
 export const PROSPERITY_KEYS = new Set(PROSPERITY_SECTION.params.map((p) => p.key));
 
+/**
+ * Supernatural map: Perlin noise like the prosperity map, with fine (10 km) features. It
+ * feeds nothing yet (meant for magic resources and other fantasy game play).
+ */
+export const SUPERNATURAL_SECTION: Section = climateSection(
+  'sup',
+  'Supernatural',
+  'Supernatural map (unitless index, 0 to 100 by default): how strong magic is at a point, for magic resources and other fantasy game play. fBm of Perlin noise with its own seed and fine features (10 km by default), independent of the climate and the map for now. Shown with Display → Supernatural overlay and in the inspector.',
+  '',
+  0,
+  1000,
+  1,
+  false,
+  1,
+  0.5,
+);
+export const SUPERNATURAL_KEYS = new Set(SUPERNATURAL_SECTION.params.map((p) => p.key));
+
 function toField(p: Params, id: FieldId): NoiseFieldParams {
   const a = num(p, `clim.${id}.min`);
   const b = num(p, `clim.${id}.max`);
@@ -447,7 +465,7 @@ function toField(p: Params, id: FieldId): NoiseFieldParams {
 
 /** Schema → model parameters for the climate maps. */
 export function toClimateParams(p: Params, seed: number): ClimateParams {
-  return { seed, temperature: toField(p, 't'), precipitation: toField(p, 'p'), prosperity: toField(p, 'pros') };
+  return { seed, temperature: toField(p, 't'), precipitation: toField(p, 'p'), prosperity: toField(p, 'pros'), supernatural: toField(p, 'sup') };
 }
 
 /**
@@ -552,6 +570,7 @@ export const VIEW_SECTION: Section = withDefaults.section({
     { key: 'view.temp', label: 'Temperature overlay', type: 'bool', view: true, help: 'The initial temperature map, 50 % transparent on top of the map and rivers (blue = cold, red = hot).' },
     { key: 'view.precip', label: 'Precipitation overlay', type: 'bool', view: true, help: 'The initial precipitation map, 50 % transparent on top of the map and rivers (brown = dry, teal/blue = wet). Drawn above the temperature overlay when both are on.' },
     { key: 'view.prosperity', label: 'Prosperity overlay', type: 'bool', view: true, help: 'The prosperity map, 50 % transparent on top of the map and rivers (dark purple = poor, gold = prosperous). Drawn above the climate overlays.' },
+    { key: 'view.supernatural', label: 'Supernatural overlay', type: 'bool', view: true, help: 'The supernatural map, 50 % transparent on top of the map and rivers (near black = mundane, violet → glowing cyan = strong magic). Drawn above the other noise overlays.' },
     { key: 'view.regEdges', label: 'Region borders', type: 'bool', view: true },
     { key: 'view.zoneEdges', label: 'Elevation zone borders', type: 'bool', view: true },
     { key: 'view.subEdges', label: 'Subbiome borders', type: 'bool', view: true, help: 'Drawn when subbiomes are large enough on screen.' },
@@ -585,7 +604,7 @@ export const VIEW_SECTION: Section = withDefaults.section({
   ],
 });
 
-export const ALL_DEFS: ParamDef[] = [...SECTIONS.flatMap((s) => s.params), ...RIVER_SECTION.params, ...LAKE_SECTION.params, ...TERRAIN_SECTION.params, ...HILLSLOPE_SECTION.params, ...GRADIENT_SECTION.params, ...FLOODPLAIN_SECTION.params, ...CLIMATE_SECTIONS.flatMap((s) => s.params), ...PROSPERITY_SECTION.params, ...BIOME_SECTION.params, ...VIEW_SECTION.params];
+export const ALL_DEFS: ParamDef[] = [...SECTIONS.flatMap((s) => s.params), ...RIVER_SECTION.params, ...LAKE_SECTION.params, ...TERRAIN_SECTION.params, ...HILLSLOPE_SECTION.params, ...GRADIENT_SECTION.params, ...FLOODPLAIN_SECTION.params, ...CLIMATE_SECTIONS.flatMap((s) => s.params), ...PROSPERITY_SECTION.params, ...SUPERNATURAL_SECTION.params, ...BIOME_SECTION.params, ...VIEW_SECTION.params];
 withDefaults.checkAllUsed();
 export const GEN_KEYS = new Set(SECTIONS.flatMap((s) => s.params.map((p) => p.key)).filter((k) => !RIVER_KEYS.has(k)));
 

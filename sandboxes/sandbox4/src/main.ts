@@ -17,7 +17,7 @@ import { screenToWorld, zoomAt, type Camera, type Viewport } from '@shared/rende
 import { RasterLayer } from '@shared/render/raster';
 import { buildPanel } from '@shared/ui/panel';
 import { tagTooltips } from '@shared/ui/html';
-import { ALL_DEFS, BIOME_KEYS, BIOME_SECTION, CLIMATE_KEYS, PRECIP_KEYS, CLIMATE_SECTIONS, PROSPERITY_KEYS, PROSPERITY_SECTION, DEFAULT_SEED, defaults, GEN_KEYS, PRESETS, RIVER_KEYS, RIVER_SECTION, FLOODPLAIN_SECTION, GRADIENT_SECTION, HILLSLOPE_SECTION, LAKE_KEYS, LAKE_SECTION, SECTIONS, TERRAIN_KEYS, TERRAIN_SECTION, toBiomeParams, toClimateParams, toLakeParams, toRiverParams, toTerrainParams, toWorldParams, VIEW_MODES, VIEW_SECTION } from './params';
+import { ALL_DEFS, BIOME_KEYS, BIOME_SECTION, CLIMATE_KEYS, PRECIP_KEYS, CLIMATE_SECTIONS, PROSPERITY_KEYS, PROSPERITY_SECTION, SUPERNATURAL_KEYS, SUPERNATURAL_SECTION, DEFAULT_SEED, defaults, GEN_KEYS, PRESETS, RIVER_KEYS, RIVER_SECTION, FLOODPLAIN_SECTION, GRADIENT_SECTION, HILLSLOPE_SECTION, LAKE_KEYS, LAKE_SECTION, SECTIONS, TERRAIN_KEYS, TERRAIN_SECTION, toBiomeParams, toClimateParams, toLakeParams, toRiverParams, toTerrainParams, toWorldParams, VIEW_MODES, VIEW_SECTION } from './params';
 import { drawGrid, drawGrowth, drawLakes, drawLinks, drawMerges, drawRivers, drawRuler, drawSites, fmtDist, niceStep, type Frame } from './render/overlays';
 import { climateSource, type ClimateField } from './render/climate';
 import { DETAIL_PX, mapSource, type ViewMode, type ViewOpts } from './render/source';
@@ -121,7 +121,7 @@ const timings = { render: 0 };
 const canvas = $<HTMLCanvasElement>('view');
 const ctx = canvas.getContext('2d', { alpha: false })!;
 const layer = new RasterLayer();
-const climateLayers: Record<ClimateField, RasterLayer> = { temperature: new RasterLayer(), precipitation: new RasterLayer(), prosperity: new RasterLayer() };
+const climateLayers: Record<ClimateField, RasterLayer> = { temperature: new RasterLayer(), precipitation: new RasterLayer(), prosperity: new RasterLayer(), supernatural: new RasterLayer() };
 let vp: Viewport = { w: 1, h: 1 };
 let cam: Camera = { cx: 0, cy: 0, zoom: 1e-3 };
 let homed = true;
@@ -149,7 +149,7 @@ if (urlCam) {
 
 // ------------------------------------------------------------------ panels
 
-const leftPanel = buildPanel($('left'), [...SECTIONS, RIVER_SECTION, LAKE_SECTION, TERRAIN_SECTION, HILLSLOPE_SECTION, GRADIENT_SECTION, FLOODPLAIN_SECTION, ...CLIMATE_SECTIONS, PROSPERITY_SECTION, BIOME_SECTION], params, onParam, resetSection);
+const leftPanel = buildPanel($('left'), [...SECTIONS, RIVER_SECTION, LAKE_SECTION, TERRAIN_SECTION, HILLSLOPE_SECTION, GRADIENT_SECTION, FLOODPLAIN_SECTION, ...CLIMATE_SECTIONS, PROSPERITY_SECTION, SUPERNATURAL_SECTION, BIOME_SECTION], params, onParam, resetSection);
 
 /** A live plot of a control-point curve, placed under a panel section's help text. */
 interface CurvePlot {
@@ -321,8 +321,8 @@ function setParams(patch: Params): void {
     const riv = changed(RIVER_KEYS) || changed(PRECIP_KEYS);
     if (riv) rivers = new Rivers(world, toRiverParams(params, seedFromText(seedText)));
     if (riv || changed(TERRAIN_KEYS)) newTerrain();
-    // prosperity feeds nothing yet: only the overlay and inspector change
-    if (changed(CLIMATE_KEYS) || changed(PROSPERITY_KEYS)) newClimate();
+    // prosperity and supernatural feed nothing yet: only the overlays and inspector change
+    if (changed(CLIMATE_KEYS) || changed(PROSPERITY_KEYS) || changed(SUPERNATURAL_KEYS)) newClimate();
     if (riv || changed(TERRAIN_KEYS) || changed(CLIMATE_KEYS) || changed(BIOME_KEYS)) newBiomes();
     // lakes come after the rivers and read the sea-level biomes (climate, dry flat zones)
     if (riv || changed(CLIMATE_KEYS) || changed(BIOME_KEYS) || changed(LAKE_KEYS)) newLakes();
@@ -381,6 +381,7 @@ function climateOn(): ClimateField[] {
   if (params['view.temp'] === true) on.push('temperature');
   if (params['view.precip'] === true) on.push('precipitation');
   if (params['view.prosperity'] === true) on.push('prosperity');
+  if (params['view.supernatural'] === true) on.push('supernatural');
   return on;
 }
 
