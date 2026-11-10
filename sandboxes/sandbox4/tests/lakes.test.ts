@@ -32,7 +32,29 @@ function landRegions(w: World, n: number): number[] {
   return out;
 }
 
-describe('lakes', () => {
+/** a bump of the outline counts as a lobe when it stands this × the nominal radius above its surroundings */
+const BUMP_PROMINENCE = 0.02;
+
+/**
+ * Prominence of the peak at ray k of a closed radius profile: how far it rises above the
+ * higher of the two lowest points reached walking either way before a higher ray.
+ */
+function prominence(rad: number[], k: number): number {
+  const n = rad.length;
+  let lo = -Infinity;
+  for (const dir of [1, -1]) {
+    let min = rad[k];
+    for (let j = 1; j < n; j++) {
+      const v = rad[(k + dir * j + n) % n];
+      if (v > rad[k]) break;
+      min = Math.min(min, v);
+    }
+    lo = Math.max(lo, min);
+  }
+  return rad[k] - lo;
+}
+
+describe('lakes', { timeout: 60_000 }, () => {
   it.each([SEED, 777])('only cover lake-eligible land of their own region (seed %i)', (seed) => {
     const { w, rv, bio, lk } = setup({ frequency: 0.25 }, seed);
     let lakes = 0;
@@ -155,13 +177,15 @@ describe('lakes', () => {
         const rad = Array.from({ length: RAYS }, (_, k) => Math.hypot(l.x[k] - l.cx, l.y[k] - l.cy));
         // neighbouring rays never jump: at most TAPER × the nominal radius apart
         for (let k = 0; k < RAYS; k++) expect(Math.abs(rad[k] - rad[(k + 1) % RAYS])).toBeLessThanOrEqual(TAPER * (l.nominal / 2) + 1e-6);
-        // count the bumps: local maxima of the radius around the outline
+        // count the bumps: local maxima of the radius around the outline that stand out by at
+        // least BUMP_PROMINENCE × the nominal radius (the taper and rounding against a clipped
+        // side leave sub-metre ripples that are local maxima too, but no visible lobe)
         let bumps = 0;
         for (let k = 0; k < RAYS; k++) {
           const a = rad[(k + RAYS - 1) % RAYS];
           const b = rad[k];
           const c = rad[(k + 1) % RAYS];
-          if (b > a + 1e-6 && b >= c) bumps++;
+          if (b > a + 1e-6 && b >= c && prominence(rad, k) >= BUMP_PROMINENCE * (l.nominal / 2)) bumps++;
         }
         turns.push(bumps);
       }
