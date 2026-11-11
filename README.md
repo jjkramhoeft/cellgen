@@ -6,6 +6,28 @@ Procedural world-map generation in the browser, built from Voronoi cells. The si
 
 Sandboxes 1 to 3 were earlier experiments and have been removed. Sandbox 4 contains everything from Sandbox 3; Sandboxes 1 and 2 remain in the git history.
 
+## Goal
+
+cellgen is a sandbox, prototype and research repo for a larger PC game. It explores new gameplay and generation algorithms for map-based generated worlds, using diffusion models and LLMs to populate huge worlds on demand. The first priority is an aesthetically pleasing and believable base map that can support the desired gameplay.
+
+## Roadmap
+
+The build follows this general order:
+
+1. ✅ A structure that supports generation on demand: regions, elevation zones and patches
+2. ✅ Rivers (impractical to add after the height, so they come first and drive the height)
+3. ✅ Height (from rivers, regions and elevation zone types)
+4. ✅ Climate (initial temperature and precipitation, cooled by height)
+5. ✅ Biomes
+6. Resources (research only so far)
+7. ✅ City location candidates
+8. ✅ Travel network (roads, river routes, sea lanes); trade itself is not done yet
+9. Flora and fauna
+10. Races
+11. Wealth (only the prosperity map so far)
+12. Factions
+13. Rulers and leading families
+
 ## Getting started
 
 ```bash
