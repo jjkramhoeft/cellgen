@@ -29,6 +29,10 @@ Regenerate it with `npm run export-map` (scripts/export-map.ts, about 20 s) afte
   merged into one of theirs is included.
 - Heights are the mean land height of each patch from the 1 km terrain raster.
 
+The travel network of the same four regions and the regions around them, with the city and
+town locations as nodes, is in [network-default-structure.json](network-default-structure.json),
+described in [network-structure.md](network-structure.md).
+
 ## Root
 
 | Field     | Description                                         |
