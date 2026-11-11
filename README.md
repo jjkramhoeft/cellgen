@@ -28,14 +28,22 @@ The build follows this general order:
 12. Factions
 13. Rulers and leading families
 
+**Next step: resources (6).** It is the first open item and the one the finished steps already wait for: the largest factor of the city locations (resources, 30 %) reads stand-in tables instead of a resource layer, trade has roads but no goods, and the supernatural map feeds nothing. The research is done ([Resources](#resources)).
+
 ## Getting started
+
+Needs Node 22.12 or newer (the deploy workflow uses the current LTS).
 
 ```bash
 npm install
-npm run dev      # http://localhost:5173: landing page linking the sandbox
-npm test         # vitest: shared core, the sandbox, and the sandbox registry
-npm run build    # typecheck + multi-page production build into dist/
+npm run dev        # http://localhost:5173: landing page linking the sandbox
+npm test           # vitest: shared core, the sandbox, and the sandbox registry (about 40 s)
+npm run typecheck  # tsc --noEmit
+npm run build      # typecheck + multi-page production build into dist/
+npm run preview    # serve the built dist/ locally
 ```
+
+Two more scripts write the default world to JSON, see [Exported data](#exported-data).
 
 ## How it is built
 
@@ -55,20 +63,28 @@ shared/core/                deterministic core: hashing and PRNGs, deterministic
 shared/render/              camera (zoom/pan maths), colour helpers and pixel packing, progressive raster layer
 shared/params/              parameter schema types and helpers, URL hash state
 shared/ui/                  schema-driven parameter panel, HTML escaping, base theme (base.css)
-shared/tests/               tests for the shared core
-sandboxes/registry.ts       title, summary and status of every sandbox
+shared/tests/               tests for the shared core and for the defaults binding
+sandboxes/registry.ts       title, summary and status of every sandbox (the text on the landing page)
 sandboxes/<id>/             one sandbox: index.html, defaults.json, src/, tests/  → served at /sandboxes/<id>/
 sandboxes/_template/        skeleton copied by the scaffold script (not built or listed)
 scripts/new-sandbox.mjs     scaffolder
+scripts/export-*.mjs, .ts   write the default map and travel network to docs/ as JSON (see Exported data)
+docs/                       structure of the exported map and network (.md) and the exported JSON
 docs/research/              research notes behind the sandboxes
 sandbox3.md                 the original spec of the three-level base map (used by Sandbox 4)
+.github/workflows/          test, build and deploy to GitHub Pages
+.claude/launch.json         dev-server entry for the Claude Code preview (port 5174)
 ```
+
+`sandbox3.md` and the exported data use older or longer names for two of the levels: the spec's *Biomes* and *Subbiomes* are today's **elevation zones** and **patches**, and the JSON calls a patch a `BiomePatch`.
 
 Import shared code with the `@shared/…` alias, for example `import { fbm } from '@shared/core/noise'`. Keep sandbox-specific code inside its own folder, and move something into `shared/` once a second sandbox needs it.
 
 ### Default settings
 
 Every sandbox keeps its default settings in `sandboxes/<id>/defaults.json`: the default `seed` and the default value of every parameter in `params`, by key. Edit that file to change what a sandbox starts with. The parameter schema (`src/params.ts`) describes each parameter's label, range and options but holds no defaults. `bindDefaults` in `shared/params/schema.ts` attaches them when the page loads, and it throws if a parameter has no default, if a value has the wrong type, is out of range or is not one of the options, or if the file has a key that no parameter uses. Any of these makes the tests fail, so the file and the schema stay in step.
+
+`defaults.json` is tuned for how the map looks and changes often. The Sandbox 4 tests therefore do not run on the live defaults but on a frozen baseline (`sandboxes/sandbox4/tests/fixture.ts`), so retuning the defaults does not break them.
 
 ### Adding a sandbox
 
@@ -89,28 +105,31 @@ The world is unbounded and measured in metres. Every level is a stateless lattic
 | Level | Default | Role |
 |---|---|---|
 | **Regions** | 128 km grid, no warp | Own the elevation zones whose site lies inside them. Pick **0–2 ocean seeds** and **2–4 elevation zone merges** among them |
-| **Elevation zones** | 32 km grid, border warp | The land/ocean unit (also meant for factions). Each is **ocean, flat, lowland, hills or mountains**; the land types are hashed per zone with weights 5 / 6 / 1 / 1 (biomes are per patch, see [Climate and biomes](#climate-and-biomes)). Own their patches and pick **2–4 patch merges** |
-| **Patches** | 8 km grid, border warp | Detail cells: each has a **biome**; also meant for towns, ore, factions |
+| **Elevation zones** | 32 km grid, border warp off (0) | The land/ocean unit (also meant for factions). Each is **ocean, flat, lowland, hills or mountains**; the land types are hashed per zone with weights 5 / 6 / 1 / 1 (biomes are per patch, see [Climate and biomes](#climate-and-biomes)). Own their patches and pick **2–4 patch merges** |
+| **Patches** | 8 km grid, border warp 0.26 | Detail cells: each has a **biome**; also meant for towns, ore, factions |
+
+With nesting on (the default), elevation zone and region borders follow the warped patch cells, so they look organic even though the zones themselves are not warped.
 
 | Area | Methods and parameters |
 |---|---|
 | **Oceans** | Seeds per region (min/max) → each seed **links** to its nearest other seed with a 40 % chance, or with a 5 % **double link** chance to its two nearest seeds, and every elevation zone on the straight line between them turns into ocean, so chains of seeds join into one ocean → **growth**: every linked ocean elevation zone converts its 3 / 2 / 1 / 0 closest land neighbours with chances 10 / 33 / 33 / 23 %. Options: link search radius, grow from linked or from all ocean elevation zones, and 0–4 growth passes (each later pass grows from the previous pass's new ocean) |
 | **Merges** | Chosen cells join their nearest neighbour (Gabriel graph, by site distance). Chains merge into one cell, and cycles resolve to the smallest key. Elevation zone merges stay on one side of the coast (optional); patch merges stay inside one elevation zone |
 | **Cells** | Grid size, jitter (0 = squares), border warp amplitude and frequency per level. **Nesting**: every point is classified through its patch, so elevation zone and region borders, and coasts, follow patch cells. Turn it off to look each level up independently |
-| **Rivers** | Space colonization (Runions et al., open venation), computed **per region**. A **root** sits at the site of every ocean elevation zone that touches the region's land, so each river first crosses the water to the coast (that stretch is hidden unless *River paths over sea* is on); a landlocked region searches up to 4 elevation zone steps out for the nearest ocean. Every land, **non-coastal patch** of the region gets **10 attraction points** inside its cell. Each step, every attractor pulls on its nearest node within the influence radius dᵢ; pulled nodes grow one step D towards the mean pull plus a configurable amount of **random motion** (a random unit vector, weight 0–2); attractors within the kill distance dₖ are reached. Growth runs **until every attractor in the region is reached**: a gap wider than dᵢ is bridged with a straight run, and a stalled node steps straight to its closest attractor. Each node counts the attractors it reached; summed upstream this **flow** sets the **line width** (∝ √flow). Options: attractors per patch, D, dᵢ, dₖ, random motion, skip coast patches; display width, minimum flow and attractor points |
+| **Rivers** | Space colonization (Runions et al., open venation), computed **per region**. A **root** sits at the site of every ocean elevation zone that touches the region's land, so each river first crosses the water to the coast (that stretch is hidden unless *River paths over sea* is on); a landlocked region searches up to 4 elevation zone steps out for the nearest ocean. Every land, **non-coastal patch** of the region gets **10 attraction points** inside its cell; a patch of a **river-poor flat** elevation zone (site precipitation below *Flat: sparse river precipitation cutoff*, about three quarters of the flat zones at the current defaults) gets only 0 or 1. Each step, every attractor pulls on its nearest node within the influence radius dᵢ; pulled nodes grow one step D towards the mean pull plus a configurable amount of **random motion** (a random unit vector, weight 0–2); attractors within the kill distance dₖ are reached. Five more knobs shape the branching ([space-colonization-branch-variants.md](docs/research/space-colonization-branch-variants.md)): **pull power** (equal pulls, or weighted by distance² or √distance), **inertia** (keep the current direction), a **perception cone** (120° by default: no hooking back), **wander** (the random motion carries over from step to step, for long bends) and **main-stem dominance** (weak side branches do not sprout). Growth runs **until every attractor in the region is reached**: a gap wider than dᵢ is bridged with a straight run, and a stalled node steps straight to its closest attractor. Each node counts the attractors it reached; summed upstream this **flow** sets the **line width** (∝ flow^b; b = 0.4 by default, ½ is the hydraulic-geometry value). Options: attractors per patch, D, dᵢ, dₖ, random motion, the five branching knobs, skip coast patches; display width, width exponent, minimum flow and attractor points |
 | **Lakes** | Placed **per region after the rivers**, and **always on a river**: every patch drawn in the region that may hold a lake and has a river running through it (a land node with a flow of at least 4) gets one try with chance **frequency**, centred on one of its river nodes, so the river runs in and out of the lake. Lakes are shown with the rivers. No lakes in **ocean** or **mountains** elevation zones, in **desert** patches (hot or cold desert at sea level, the warmest and most arid a patch can be, so never where the map shows desert at any height) or in **restricted** patches (those of a **river-poor flat** elevation zone, whose site gets less initial precipitation than *Flat: sparse river precipitation cutoff*). A lake's nominal size (diameter) is drawn between the **minimum** and **maximum size**, favouring small lakes. Its outline is 64 rays: a randomly oriented ellipse (elongation 1–2.2) × (1 ± low-frequency fBm noise read on a small circle), so lakes range from round ponds over ovals to kidney and lobed shapes with a few broad bays. Each ray and each outline edge is walked and clipped to eligible land of the region, so a lake **never crosses a region border**; then the rays are tapered (neighbours differ by at most 9 % of the radius) and rounded, only ever shortening them, so clipped sides bend in gently instead of in notches. Lakes keep a gap from each other; one left below the minimum size (or squeezed against its centre) is dropped, one above the maximum is scaled down. Lakes do not depend on the terrain tiles, so they never change as tiles arrive; the height map does not level them (yet) |
 
 ### Height map
 
-The height map is computed in **tiles** of about 256 km (2 × 2 regions at the default size) on a raster with a 24 km halo. A Web Worker computes them while you look, nearest first, plus a ring of tiles just outside the view so that pans usually find them ready. A tile takes about a second at the default 1 km cells. The view computes at most 64 regions at 1 km (scaled by cell area); zoom in further to see the height.
+The height map is computed in **tiles** of about 256 km (2 × 2 regions at the default size) on a raster with a 24 km halo. A Web Worker computes them while you look, nearest first, plus a ring of tiles just outside the view so that pans usually find them ready. A tile takes half a second to a second at the default 1 km cells, the longer time when its rivers are not computed yet (the resolution can be 2 km, 1 km or 500 m). The view computes at most 64 regions at 1 km (scaled by cell area); zoom in further to see the height. Tiles are only computed while something needs them: the height or biome colours, the hillshade, the 3D view or the open Statistics section.
 
 | Step | Method |
 |---|---|
-| **River beds** | Steady-state stream-power law integrated upstream from the sea (the χ integral): each step adds `Δx · S₀ · factor(zone type) · flow^−θ`. Beds rise strictly upstream, and big rivers are flatter. The gradient factor of each land elevation zone type (flat, lowland, hills, mountains) is a setting. θ is ⅜, 7⁄16 or ½, computed with √ only (bit-exact) |
+| **River beds** | Steady-state stream-power law integrated upstream from the sea (the χ integral): each step adds `Δx · S₀ · factor(zone type) · flow^−θ`. Beds rise strictly upstream, and big rivers are flatter. The gradient factor of each land elevation zone type (flat, lowland, hills, mountains) is a setting. θ is ⅜, 7⁄16 or ½, computed with √ only (bit-exact). With **Level flat zones** (on by default) an elevation zone whose gradient factor is below 1 sits at one level: the rivers entering it are lowered towards its lowest entry, which cuts gorges through the steeper land downstream |
 | **Hillslopes** | A geodesic distance (8-connected Dijkstra) from every river bed and the coast, with the hillslope steepness of each elevation zone type as the cost, so every cell drains to a river or the sea. Rivers get a flat **floodplain** whose half-width is a monotone cubic spline over the bed height, through 4 configurable points (wide in the lowlands, narrow in the mountains), optionally × √(flow/100). A slow, region-scale relief field makes mountain belts span several elevation zones. Zone-type parameters are blended across elevation zone borders |
 | **Divides** | A ridge along region borders (rivers never cross them), and a smaller one where two river systems' basins meet. Both fade out near rivers |
-| **Detail** | fbm or ridged noise per elevation zone type, masked to zero on the river beds |
-| **Repair** | Rivers burnt in (AGREE: a trench plus a linear buffer), then an ε-Priority-Flood over each region's own land, seeded from the sea and the region border, so there are no pits |
+| **Detail** | fbm or ridged noise per elevation zone type, masked to zero on the river beds || **Repair** | Rivers burnt in (AGREE: a trench plus a linear buffer), then an ε-Priority-Flood over each region's own land, seeded from the sea and the region border, so there are no pits |
+
+The sea floor simply deepens away from the coast, down to *Sea depth* (300 m) at 40 km and beyond.
 
 The result is **seamless**. Steps 1–4 are a pure function of position, and the fill keeps each region's border cells. The tests check that a tile is bit-identical to computing each region separately, and that neighbouring rasters agree exactly along shared borders.
 
@@ -120,11 +139,11 @@ The **initial climate** is two fBm Perlin-noise maps, independent of the map: te
 
 | Step | Method |
 |---|---|
-| **Height** | The mean height of the patch's land, recorded by its terrain tile. Until the tile is computed, a typical height for the elevation zone type stands in (flat 70 m, lowland 140 m, hills 270 m, mountains 470 m: the medians of the default terrain), and the inspector says so |
+| **Height** | The mean height of the patch's land, recorded by its terrain tile. Until the tile is computed, a typical height for the elevation zone type stands in (flat 70 m, lowland 140 m, hills 270 m, mountains 470 m), and the inspector says so. These were the medians of the terrain at earlier defaults; at the current defaults the medians are about 80, 190, 330 and 580 m, so the stand-in runs a little low |
 | **Temperature** | The initial temperature minus a **cooling curve** over that height: T = T₀ − cooling(h). The curve is a monotone spline through 5 configurable points (height → °C cooler), drawn live in the panel; it continues along its last slope above the highest point. The default points give the standard atmosphere's 6.5 °C per km |
-| **Moisture** | The initial precipitation; in a **river-poor flat elevation zone** (site precipitation below *Flat: sparse river precipitation cutoff*) it is × 0.2 by default, so those zones favour **desert** (about two thirds of their patches, against a few percent elsewhere) |
-| **Classify** | Aridity m = P / (20·T + 140), Köppen's dryness threshold for evenly spread rain. A thermal belt (ice below −10 °C, tundra to −3, boreal to 3, temperate to 18, then tropical) × a moisture class (m < 0.5 cold or hot desert, 0.5–1 steppe or scrub, 1–2 woodland or savanna, then forest and, from m ≥ 6 temperate or ≥ 4 tropical, rainforest) picks one of 15 land biomes, from ice and tundra over taiga, temperate forests and grassland to hot desert, savanna and tropical rainforest |
-| **Mangrove** | An azonal override: a **coastal** patch (one of its cells borders an ocean patch) in a **flat or lowland** elevation zone becomes **mangrove** when its temperature after the height cooling is at least *Mangrove: min temperature* (20 °C) and its aridity at least *Mangrove: min aridity* (0.5, so desert coasts stay bare). Never inland and never in hills or mountains; about 5 % of coastal patches at the defaults. Zoomed far out (elevation zones only) there is no mangrove |
+| **Moisture** | The initial precipitation; in a **river-poor flat elevation zone** (site precipitation below *Flat: sparse river precipitation cutoff*) it is × 0.2 by default, so those zones favour **desert** (about half of their patches, against about 1 % elsewhere) |
+| **Classify** | Aridity m = P / (20·T + 140), Köppen's dryness threshold for evenly spread rain (never below 40 mm, for cold air). A thermal belt (ice below −10 °C, tundra to −3, boreal to 3, temperate to 18, then tropical) × a moisture class (m < 0.5 cold or hot desert, 0.5–1 steppe or scrub, 1–2 woodland or savanna, then forest and, from m ≥ 6 temperate or ≥ 4 tropical, rainforest) picks one of 15 land biomes, from ice and tundra over taiga, temperate forests and grassland to hot desert, savanna and tropical rainforest |
+| **Mangrove** | An azonal override: a **coastal** patch (one of its cells borders an ocean patch) in a **flat or lowland** elevation zone becomes **mangrove** when its temperature after the height cooling is at least *Mangrove: min temperature* (20 °C) and its aridity at least *Mangrove: min aridity* (0.5, so desert coasts stay bare). Never inland and never in hills or mountains; about 4 % of coastal patches at the defaults. Zoomed far out (elevation zones only) there is no mangrove |
 
 **Colour by → Biomes** shows them in colours that look like the land (sand, dry grass, olive scrub, forest greens, grey tundra, white ice), slightly varied per patch. The biome view computes the terrain like the height view; zoomed far out each elevation zone shows the biome at its site. The inspector lists the biome with every input: belt, moisture class, aridity, height (exact or estimated), the temperature before and after the height cooling, the precipitation (and the dry-flat factor), whether it borders the ocean (and why it is or is not mangrove), and the biome the patch would have at sea level.
 
@@ -134,11 +153,16 @@ A **supernatural map** is a third noise layer for fantasy game play: how strong 
 
 ### Resources
 
-For each patch a set of resources are calcutated (Ore, Minirals, Fish, Wood, Farmable land etc.)
+**Not done yet**; this is the next step of the [roadmap](#roadmap). The plan: every patch gets a set of resources (ore, minerals, fish, wood, farmland and so on) as a pure function of the seed and the patch, like everything else on the map.
 
-Not done yet. Research: [patch-resources.md](docs/research/patch-resources.md) (catalogue keyed to the map's fields, including lakes, mangrove and the supernatural map) and [game-resources-and-trade.md](docs/research/game-resources-and-trade.md) (a game resource set).
+The research is in place:
 
-### City Locations
+- [patch-resources.md](docs/research/patch-resources.md): a catalogue keyed to the map's fields (biome, zone type, height, rivers, lakes, coast, mangrove, the supernatural map). Its design notes split resources into **potentials** (a suitability score every patch has: crops, timber, pasture, fish) and **deposits** (rare hashed point resources: ores, stone, salt), and propose a bedrock class per elevation zone to place the deposits.
+- [game-resources-and-trade.md](docs/research/game-resources-and-trade.md): a game layer of 37 resources in seven groups on top of the catalogue, for settlements, prices and trade.
+
+Until the layer exists, the resources factor of the [city locations](#city-locations) uses biome and zone-type tables from the first note.
+
+### City locations
 
 Every region gets a list of about **20 potential city and town locations**, each with a combined **viability score** (0–100). This is the map-level part ("Tier M") of [settlement-siting.md](docs/research/settlement-siting.md) in a first, simpler form: a ranked list of scored sites, not yet a full settlement hierarchy with populations.
 
@@ -158,9 +182,9 @@ Every land patch of the region is a candidate and gets five factor scores, each 
 
 **Display → City & town locations** (`C`) draws them: cities as diamonds, towns as dots, coloured by viability (purple = poor, orange, pale yellow = excellent), with the score next to each when zoomed in. The **Location viability** slider hides every location below a score. The inspector shows a location's rank, score, the five factors with the terms behind each, and what stands out about it ("river mouth", "sheltered harbour", "central place", …); over any other land patch it shows the same breakdown and why it is not a location.
 
-Not done yet: the settlement hierarchy and populations, fall lines and bridging points (they need the river bed heights), and refining the spot on the height raster (the note's "Tier T"). Roads, river routes and sea lanes between the locations are the [trade network](#trade-network).
+Not done yet: the settlement hierarchy and populations, fall lines and bridging points (they need the river bed heights), and refining the spot on the height raster (the note's "Tier T"). Roads, river routes and sea lanes between the locations are the [travel network](#travel-network).
 
-### Trade network
+### Travel network
 
 A **travel network** connects the cities and towns that are on show (those at or above the **Location viability** slider; zoomed far out, where only the cities are drawn, only the cities). Travel goes three ways:
 
@@ -182,15 +206,16 @@ Not done yet: trade itself (goods, prices, flows, see [game-resources-and-trade.
 
 ### Evaluating the map
 
-- **Colour by:** map (elevation zone types), land & ocean, **ocean genesis** (lone seed, linked seed, link chain, growth pass), **merged cells**, regions, elevation zones, patches, the hierarchy (region hue × elevation zone lightness × patch shading), **biomes** (one per patch), and **height** (hypsometric tint and hillshade). A **Hillshade** overlay works on any colour mode.
+- **Colour by**, in menu order (keys `1`–`9`): map (elevation zone types), **biomes** (one per patch), land & ocean, **ocean genesis** (lone seed, linked seed, link chain, growth pass), **merged cells**, regions, elevation zones, patches, the hierarchy (region hue × elevation zone lightness × patch shading), and as the tenth **height** (hypsometric tint and hillshade; reach it with `]` or the menu). A **Hillshade** overlay works on any colour mode.
 - **3D landscape** (`T`): a WebGL2 height mesh over the current view, draped with the 2D map (rivers and borders included). Drag to orbit, scroll to zoom, Shift- or right-drag to pan. Vertical exaggeration is a setting.
 - **Overlays:** the noise maps (temperature, precipitation, prosperity, supernatural), each 50 % transparent with a legend bar; pixel-exact region, elevation zone and patch borders and the coastline; rivers (width from flow), attractor points (unreached in red) and river roots; lakes; **city and town locations** with a viability slider; the **travel network** between them (roads, river routes, sea lanes; straight lines or following the terrain); ocean seeds and links, growth arrows, merge arrows, sites per level, and a kilometre grid with the origin marked.
 - **Inspector:** hover or click a point to see its region (owned elevation zones, seeds, links, merges), elevation zone (genesis, merged group, neighbours, owned patches), patch, its **biome** (with the temperature, precipitation, height and aridity that picked it) the river under the cursor (flow here, whole river, root, the ocean elevation zone it drains into) and the lake under the cursor (size, area, the river's flow, host patch); every patch says whether it may hold a lake, or why not; the **location** under the cursor, or the patch as a site (viability score and its five factors). Click pins the elevation zone and patch.
 - **Ruler:** Shift+drag or `M` measures a straight-line distance, with travel days for a horse (32–48 km/day), a marching legion (24–32) and a long-distance hiker (16–24).
 - **In view:** ocean share, cell counts, elevation zones per region, patches per elevation zone, seeds and links, ocean elevation zones by genesis, merged groups, rivers and attractors reached, render time, cache size, and a determinism fingerprint of a fixed window around the origin.
-- **Sharing:** the URL hash also holds the camera. 10 presets and PNG export. Patches smaller than ~3 px are skipped automatically.
+- **Statistics** (collapsed by default): how the map is spread, to spot under-represented biomes while tuning. The share of land per biome (in legend order or largest first, with biomes under 1 % of the land flagged as rare and missing ones listed), the share of each elevation zone type against its weight, a thermal belt × moisture class grid, and min / mean / max with histograms for temperature, precipitation and height; click a min or max to go there. Taken over the current view or over a fixed 2 048 km square at the origin, so that parameter changes compare like with like. Heights come only from tiles that are already computed.
+- **Sharing:** the URL hash also holds the camera, and **Share link** copies it. 10 presets, PNG export of the current view, and **Reset** (all parameters back to the defaults, keeping the seed). Patches smaller than ~3 px are skipped automatically (**Detail** → always full detail turns that off).
 
-Keyboard: `+`/`−` zoom · `0`/`H` origin · arrows pan · `R` random seed · `1`–`9` or `[`/`]` colour mode · `T` 3D landscape · `B` elevation zone borders · `N` patch borders · `L` links · `W` growth · `J` merges · `V` rivers · `S` sites · `G` grid · `C` city and town locations · `P` travel network · `M` measure · `Esc` unpin · `?` help.
+Keyboard: `+`/`−` zoom · `0`/`H` origin · arrows pan · `R` random seed · `1`–`9` colour mode (the first nine) · `[`/`]` previous / next colour mode · `T` 3D landscape · `B` elevation zone borders · `N` patch borders · `L` links · `W` growth · `J` merges · `V` rivers on / off · `S` sites (cycles the levels) · `G` grid · `C` city and town locations · `P` travel network · `M` measure · `Esc` unpin · `?` help.
 
 **Code map** (`sandboxes/sandbox4/`):
 
@@ -205,12 +230,18 @@ src/world/     level (stateless warped lattice Voronoi, Gabriel neighbours),
                terrain (river profiles and the per-tile height pipeline, mean height per patch),
                terrain.worker (height tiles computed off the main thread),
                climate (initial temperature and precipitation maps, prosperity and supernatural maps),
-               biomes (height cooling curve, dry flat zones, aridity × thermal belt → biome per patch, coastal mangrove)
-src/render/    per-pixel raster source with borders per level, vector overlays and ruler,
+               biomes (height cooling curve, dry flat zones, aridity × thermal belt → biome per patch, coastal mangrove),
+               mapstats (time-sliced statistics over a rectangle: biomes, zone types, climate, heights)
+src/render/    source (per-pixel raster source with borders per level, the colour modes),
+               overlays (vector overlays: rivers, lakes, locations, travel network, seeds, arrows, grid, ruler),
+               climate (raster sources and colour ramps of the four noise-map overlays),
                view3d (WebGL2 mesh, draped texture, orbit camera)
-src/ui/        legend, level box, inspector, view statistics
-src/params.ts  parameter schema and presets
-tests/         nearest-site and neighbour checks, determinism and order independence, ocean and merge rules,
+src/ui/        widgets (legend, level box, inspector, "In view" statistics, ruler readout),
+               mapstats (the Statistics section)
+src/main.ts    the page: state and URL, panels, camera, render loop, terrain worker, keyboard
+src/params.ts  parameter schema, presets, and the mapping from parameters to each model's settings
+tests/         fixture (the frozen parameter baseline the tests run on),
+               world (nearest-site and neighbour checks, determinism and order independence, ocean and merge rules),
                rivers (attractor placement, every attractor reached, roots at ocean elevation zone points, flow conservation),
                terrain (monotone beds, drainage of every cell, burnt-in rivers, seamless tiles, determinism),
                zones (zone type picks and weights), climate (ranges, independence, supernatural feature size),
@@ -218,8 +249,20 @@ tests/         nearest-site and neighbour checks, determinism and order independ
                        coastal patches, mangrove only on warm, not-desert coasts of flat and lowland zones),
                lakes (only eligible land of their own region, on a river that runs through them, smooth outlines, sizes, no overlaps, frequency, varied shapes, determinism),
                locations (about 20 per region, scores from five factors, own-region land off the border, spacing, order independence, weights, viability threshold),
-               travel (one connected network, one owner per link, routes from place to place, roads off mountains and deserts, boats only from coasts and navigable rivers, order independence, threshold and cities-only)
+               travel (one connected network, one owner per link, routes from place to place, roads off mountains and deserts, boats only from coasts and navigable rivers, order independence, threshold and cities-only),
+               mapstats (every sample accounted for, the same in time slices as in one go, sampling stride, heights only from computed tiles)
 ```
+
+### Exported data
+
+Two scripts run the generator outside the browser, at the default seed and settings, and write the result to `docs/` as JSON, for use by other tools and as a reference of what the generator produces. Both are deterministic: the same defaults give the same file.
+
+| Command | Writes | Described in |
+|---|---|---|
+| `npm run export-map` (10 to 20 s) | `docs/map-default-structure.json`: Region → ElevationZone → BiomePatch for the four regions that meet at the origin, with type, biome, climate and exact mean height per patch | [docs/map-structure.md](docs/map-structure.md) |
+| `npm run export-network` (about 12 s) | `docs/network-default-structure.json`: the travel network of those four regions and the twelve around them as a graph, with cities and towns as nodes and roads, river routes and sea lanes as weighted links | [docs/network-structure.md](docs/network-structure.md) |
+
+A node's `key` in the network file is the key of its patch in the map file. `docs/map-structure.json` is a small hand-written sample of the map structure, not generator output. Run both scripts again after changing `defaults.json` or the generator; nothing checks that the committed files are current.
 
 ## Research
 

@@ -199,7 +199,7 @@ link's weight can reflect a slightly different biome than the one listed.
 
 ## How the network is built
 
-The source is `sandboxes/sandbox4/src/world/travel.ts`; the README section "Trade network"
+The source is `sandboxes/sandbox4/src/world/travel.ts`; the README section "Travel network"
 has the design reasoning.
 
 1. **Cost grid.** Every region gets a 2 km grid of its own cells: land (with the road cost

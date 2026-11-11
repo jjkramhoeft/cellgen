@@ -86,7 +86,7 @@ export const SECTIONS: Section[] = withDefaults.sections([
         max: 20000,
         step: 10,
         unit: ' mm/yr',
-        help: 'A flat elevation zone whose point (site) gets less initial precipitation than this is river-poor: every one of its patches then gets only 0 or 1 river attractor (50/50) instead of "Attractors / patch". 0 = off. The default makes about a third of the flat zones river-poor. Rebuilds only the rivers.',
+        help: 'A flat elevation zone whose point (site) gets less initial precipitation than this is river-poor: every one of its patches then gets only 0 or 1 river attractor (50/50) instead of "Attractors / patch". 0 = off. The default makes about three quarters of the flat zones river-poor. Rebuilds only the rivers.',
       },
     ],
   },

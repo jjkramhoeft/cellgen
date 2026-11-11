@@ -205,8 +205,9 @@ export interface BiomeParams {
 
 /**
  * Typical mean patch height per elevation zone type (index = ELEVATION_ZONE_TYPES
- * order), metres: the medians measured on the default terrain (1 km cells, two seeds).
- * Only used until the patch's terrain tile is computed.
+ * order), metres: the medians measured on the terrain at earlier defaults (1 km cells,
+ * two seeds). At the defaults of 2026-11-11 the medians are about 80 / 190 / 330 / 580 m.
+ * Used until the patch's terrain tile is computed, and by the locations and travel costs.
  */
 export const TYPICAL_HEIGHT = [0, 70, 140, 270, 470];
 
