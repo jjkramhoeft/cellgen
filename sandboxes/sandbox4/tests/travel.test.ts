@@ -33,9 +33,9 @@ function setup(over: Params = {}, seed = SEED) {
 const block = (w: World, half: number, margin = 0) => World.cellsIn(w.regionLevel, -half, -half, half, half, margin);
 
 /** What must be identical between two computations of a region. */
-const digest = (rt: RegionTravel) => rt.edges.map((e) => [e.a.sub, e.b.sub, e.mode, e.cost, e.length, e.major, ...e.parts.map((q) => [q.mode, [...q.pts], [...q.runs]])]);
+const digest = (rt: RegionTravel) => rt.edges.map((e) => [e.a.patch, e.b.patch, e.mode, e.cost, e.length, e.major, ...e.parts.map((q) => [q.mode, [...q.pts], [...q.runs]])]);
 
-const pairKey = (e: TravelEdge) => `${Math.min(e.a.sub, e.b.sub)}:${Math.max(e.a.sub, e.b.sub)}:${e.mode === 'road' ? 'road' : 'water'}`;
+const pairKey = (e: TravelEdge) => `${Math.min(e.a.patch, e.b.patch)}:${Math.max(e.a.patch, e.b.patch)}:${e.mode === 'road' ? 'road' : 'water'}`;
 
 const MOUNTAINS = ELEVATION_ZONE_TYPES.findIndex((t) => t.id === 'mountains');
 const FLAT = ELEVATION_ZONE_TYPES.findIndex((t) => t.id === 'flat');
@@ -57,7 +57,7 @@ describe('travel network', { timeout: 240_000 }, () => {
       expect(rt.region).toBe(r);
       for (const e of rt.edges) {
         n++;
-        expect(e.a.sub).not.toBe(e.b.sub);
+        expect(e.a.patch).not.toBe(e.b.patch);
         for (const l of [e.a, e.b]) {
           expect(l.score).toBeGreaterThanOrEqual(MIN);
           // the very location of its region's list
@@ -83,14 +83,14 @@ describe('travel network', { timeout: 240_000 }, () => {
       parent.set(a, r);
       return r;
     };
-    for (const r of all) for (const l of tr.shown(r)) parent.set(l.sub, l.sub);
-    for (const e of edges()) if (parent.has(e.a.sub) && parent.has(e.b.sub)) parent.set(find(e.a.sub), find(e.b.sub));
+    for (const r of all) for (const l of tr.shown(r)) parent.set(l.patch, l.patch);
+    for (const e of edges()) if (parent.has(e.a.patch) && parent.has(e.b.patch)) parent.set(find(e.a.patch), find(e.b.patch));
     const sizes = new Map<number, number>();
     let n = 0;
     for (const r of inner) {
       for (const l of tr.shown(r)) {
         n++;
-        sizes.set(find(l.sub), (sizes.get(find(l.sub)) ?? 0) + 1);
+        sizes.set(find(l.patch), (sizes.get(find(l.patch)) ?? 0) + 1);
       }
     }
     expect(n).toBeGreaterThan(60);
@@ -100,14 +100,14 @@ describe('travel network', { timeout: 240_000 }, () => {
 
   it('is sparse: a few links per place, not one to every neighbour', () => {
     const deg = new Map<number, number>();
-    for (const e of edges()) for (const l of [e.a, e.b]) deg.set(l.sub, (deg.get(l.sub) ?? 0) + 1);
+    for (const e of edges()) for (const l of [e.a, e.b]) deg.set(l.patch, (deg.get(l.patch) ?? 0) + 1);
     let n = 0;
     let sum = 0;
     for (const r of inner) {
       for (const l of tr.shown(r)) {
         n++;
-        sum += deg.get(l.sub) ?? 0;
-        expect(deg.get(l.sub) ?? 0).toBeLessThanOrEqual(12);
+        sum += deg.get(l.patch) ?? 0;
+        expect(deg.get(l.patch) ?? 0).toBeLessThanOrEqual(12);
       }
     }
     // measured ≈ 3.8
@@ -208,7 +208,7 @@ describe('travel network', { timeout: 240_000 }, () => {
           const d = Math.hypot(part.pts[i + 2] - part.pts[i], part.pts[i + 3] - part.pts[i + 1]);
           road += d;
           if (elevationZoneType(c.elevationZone, false) === MOUNTAINS) roadMountain += d;
-          if (HARSH.has(bio.ofSub(c.sub).biome)) roadHarsh += d;
+          if (HARSH.has(bio.ofPatch(c.patch).biome)) roadHarsh += d;
         }
       }
     }
@@ -223,7 +223,7 @@ describe('travel network', { timeout: 240_000 }, () => {
           const c = w.cellAt((g.i0 + i + 0.5) * CELL, (g.j0 + j + 0.5) * CELL, true);
           land++;
           if (elevationZoneType(c.elevationZone, false) === MOUNTAINS) mountain++;
-          if (HARSH.has(bio.ofSub(c.sub).biome)) harsh++;
+          if (HARSH.has(bio.ofPatch(c.patch).biome)) harsh++;
         }
       }
     }

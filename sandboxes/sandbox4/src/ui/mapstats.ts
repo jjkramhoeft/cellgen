@@ -124,10 +124,10 @@ export function renderMapStats(host: HTMLElement, s: MapStats | null, sort: Biom
   const kv = (k: string, v: string, title = '') => (html += `<div class="kv"${title ? ` title="${esc(title)}"` : ''}><span>${esc(k)}</span><b>${v}</b></div>`);
 
   kv('Area', `${km(rect.x1 - rect.x0)} × ${km(rect.y1 - rect.y0)}`, 'The rectangle the statistics are taken over');
-  kv('Land / ocean', `${pct(s.land / all)} / ${pct(s.ocean / all)}`, 'Share of the sampled subbiome cells');
+  kv('Land / ocean', `${pct(s.land / all)} / ${pct(s.ocean / all)}`, 'Share of the sampled patch cells');
   kv('Regions', int(s.regions), 'Distinct regions met by the samples');
   kv('Elevation zones', int(s.zones), 'Distinct (merged) elevation zones met by the samples');
-  kv('Subbiomes', int(s.subs), 'Distinct (merged) subbiomes met by the samples');
+  kv('Patches', int(s.patches), 'Distinct (merged) patches met by the samples');
 
   // ---------------------------------------------------------------- biomes
   const landBiomes = BIOMES.map((b, k) => ({ b, k })).filter(({ k }) => k !== OCEAN_BIOME);
@@ -137,11 +137,11 @@ export function renderMapStats(host: HTMLElement, s: MapStats | null, sort: Biom
     return {
       name: b.name,
       rgb: b.rgb,
-      count: s.biomeSubs[k],
+      count: s.biomePatches[k],
       share,
       ref: even,
       flag: s.biomeSamples[k] === 0 ? 'none' : share < RARE_SHARE ? 'rare' : undefined,
-      title: `${b.name}: ${int(s.biomeSubs[k])} subbiomes, ${pct(share)} of the land (≈ ${int((s.biomeSamples[k] * s.sampleArea) / 1e6)} km²)`,
+      title: `${b.name}: ${int(s.biomePatches[k])} patches, ${pct(share)} of the land (≈ ${int((s.biomeSamples[k] * s.sampleArea) / 1e6)} km²)`,
     };
   });
   if (sort === 'share') rows = rows.slice().sort((a, b) => b.share - a.share);
@@ -149,7 +149,7 @@ export function renderMapStats(host: HTMLElement, s: MapStats | null, sort: Biom
     `<div class="sub ms-sub">Biomes <span class="ms-seg">` +
     `<button data-sort="legend" class="${sort === 'legend' ? 'on' : ''}" title="Legend order: cold to hot, dry to wet">legend</button>` +
     `<button data-sort="share" class="${sort === 'share' ? 'on' : ''}" title="Largest share first">share</button></span></div>`;
-  html += `<div class="ms-note">${s.stride > 1 ? `Subbiomes sampled (1 in ${int(s.stride ** 2)})` : 'Subbiomes'} · share of land. Tick: an even share (${pct(even)}).</div>`;
+  html += `<div class="ms-note">${s.stride > 1 ? `Patches sampled (1 in ${int(s.stride ** 2)})` : 'Patches'} · share of land. Tick: an even share (${pct(even)}).</div>`;
   html += hist(rows, `Even share: ${pct(even)} of the land each`);
   const missing = rows.filter((r) => r.flag === 'none').map((r) => r.name);
   const rare = rows.filter((r) => r.flag === 'rare').map((r) => r.name);
@@ -196,9 +196,9 @@ export function renderMapStats(host: HTMLElement, s: MapStats | null, sort: Biom
   html += `<div class="sub ms-sub">Climate &amp; height</div>`;
   html +=
     `<table class="ms-table"><thead><tr><th></th><th>min</th><th>mean</th><th>max</th></tr></thead><tbody>` +
-    rangeRow('Temp. sea level', '°C', s.t0, 1, 'Initial temperature at the subbiome sites, land and ocean') +
+    rangeRow('Temp. sea level', '°C', s.t0, 1, 'Initial temperature at the patch sites, land and ocean') +
     rangeRow('Temp. land', '°C', s.t, 1, 'Land temperature after the height cooling (what the biomes use)') +
-    rangeRow('Precip. initial', 'mm', s.p0, 0, 'Initial precipitation at the subbiome sites, mm per year, land and ocean') +
+    rangeRow('Precip. initial', 'mm', s.p0, 0, 'Initial precipitation at the patch sites, mm per year, land and ocean') +
     rangeRow('Precip. land', 'mm', s.p, 0, 'Land precipitation after the sparse-flat dryness (what the biomes use), mm per year') +
     rangeRow('Height land', 'm', s.height, 0, 'Land heights of the computed terrain rasters') +
     rangeRow('Ocean floor', 'm', s.depth, 0, 'Ocean heights of the computed terrain rasters') +
@@ -216,11 +216,11 @@ export function renderMapStats(host: HTMLElement, s: MapStats | null, sort: Biom
 
   // ---------------------------------------------------------------- biome inputs
   html += `<div class="sub ms-sub">Biome inputs</div>`;
-  kv('Exact heights', pct(s.exactHeight / land), 'Land samples whose subbiome height came from a computed terrain tile; the rest use a typical height for their elevation zone type');
+  kv('Exact heights', pct(s.exactHeight / land), 'Land samples whose patch height came from a computed terrain tile; the rest use a typical height for their elevation zone type');
   kv('Height changed biome', pct(s.shifted / land), 'Land samples whose biome differs from the one the sea-level temperature would give');
   kv('Sparse flat (drier)', pct(s.sparse / land), 'Land samples in river-poor flat elevation zones, whose precipitation is reduced');
   kv('Terrain coverage', pct(s.coverage), 'Share of the area with a computed height map');
 
-  html += `<p class="muted small ms-foot">${int(s.samples)} samples${s.stride > 1 ? ` · 1 in ${int(s.stride ** 2)} subbiome cells` : ''} · ${s.ms.toFixed(0)} ms</p>`;
+  html += `<p class="muted small ms-foot">${int(s.samples)} samples${s.stride > 1 ? ` · 1 in ${int(s.stride ** 2)} patch cells` : ''} · ${s.ms.toFixed(0)} ms</p>`;
   host.innerHTML = html;
 }

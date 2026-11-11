@@ -24,10 +24,10 @@ const setup = (over: Partial<BiomeParams> = {}, withTerrain = false) => {
   return { w, rv, cl, t, b: new Biomes(w, rv, cl, t, { ...toBiomeParams(d), ...over }) };
 };
 
-/** The (merged) subbiomes under a grid over a square around the origin. */
-function subsAround(w: World, half: number, step: number): number[] {
+/** The (merged) patches under a grid over a square around the origin. */
+function patchesAround(w: World, half: number, step: number): number[] {
   const out = new Set<number>();
-  for (let y = -half; y < half; y += step) for (let x = -half; x < half; x += step) out.add(w.cellAt(x, y, true).sub);
+  for (let y = -half; y < half; y += step) for (let x = -half; x < half; x += step) out.add(w.cellAt(x, y, true).patch);
   return [...out];
 }
 
@@ -112,14 +112,14 @@ describe('cooling curve', () => {
   });
 });
 
-describe('biomes of the subbiomes', { timeout: 60_000 }, () => {
-  it('gives every land subbiome a land biome and every ocean subbiome the ocean', () => {
+describe('biomes of the patches', { timeout: 60_000 }, () => {
+  it('gives every land patch a land biome and every ocean patch the ocean', () => {
     const { w, b } = setup();
     let land = 0;
     let ocean = 0;
-    for (const s of subsAround(w, 400_000, 4000)) {
-      const info = b.ofSub(s);
-      if (w.subCell(s).ocean) {
+    for (const s of patchesAround(w, 400_000, 4000)) {
+      const info = b.ofPatch(s);
+      if (w.patchCell(s).ocean) {
         ocean++;
         expect(info.biome).toBe(OCEAN_BIOME);
       } else {
@@ -131,26 +131,26 @@ describe('biomes of the subbiomes', { timeout: 60_000 }, () => {
     expect(ocean).toBeGreaterThan(50);
   });
 
-  it('is a pure function of the seed, the parameters and the subbiome', () => {
+  it('is a pure function of the seed, the parameters and the patch', () => {
     const a = setup().b;
     const c = setup().b;
-    const subs = subsAround(a.world, 300_000, 6000);
+    const patches = patchesAround(a.world, 300_000, 6000);
     // read the second one in reverse order, so caching cannot matter
-    const fromC = new Map([...subs].reverse().map((s) => [s, c.ofSub(s)]));
-    for (const s of subs) expect(a.ofSub(s)).toEqual(fromC.get(s));
+    const fromC = new Map([...patches].reverse().map((s) => [s, c.ofPatch(s)]));
+    for (const s of patches) expect(a.ofPatch(s)).toEqual(fromC.get(s));
   });
 
-  it('reads the climate at the subbiome’s site and cools it with its height', () => {
+  it('reads the climate at the patch’s site and cools it with its height', () => {
     const { w, cl, b } = setup(perKm(5));
-    for (const s of subsAround(w, 300_000, 9000)) {
-      const info = b.ofSub(s);
+    for (const s of patchesAround(w, 300_000, 9000)) {
+      const info = b.ofPatch(s);
       if (info.ocean) continue;
-      const site = w.sub(w.subCell(s).sub);
+      const site = w.patch(w.patchCell(s).patch);
       expect(info.t0).toBe(cl.temperatureAt(site.x, site.y));
       expect(info.p0).toBe(cl.precipitationAt(site.x, site.y));
       // no terrain: the typical height of the elevation zone type stands in
       expect(info.heightExact).toBe(false);
-      expect(info.height).toBe(TYPICAL_HEIGHT[elevationZoneType(w.subCell(s).elevationZone, false)]);
+      expect(info.height).toBe(TYPICAL_HEIGHT[elevationZoneType(w.patchCell(s).elevationZone, false)]);
       expect(info.cooling).toBeCloseTo((5 * info.height) / 1000, 9);
       expect(info.t).toBe(info.t0 - info.cooling);
       if (info.seaLevel !== MANGROVE_BIOME) expect(info.seaLevel).toBe(classify(info.t0, info.p).biome);
@@ -158,19 +158,19 @@ describe('biomes of the subbiomes', { timeout: 60_000 }, () => {
   });
 
   it('a steeper cooling curve turns high ground colder (more tundra, ice and taiga)', () => {
-    const cold = (b: Biomes, subs: number[]) => subs.filter((s) => ['ice', 'tundra', 'taiga'].includes(id(b.ofSub(s).biome))).length;
+    const cold = (b: Biomes, patches: number[]) => patches.filter((s) => ['ice', 'tundra', 'taiga'].includes(id(b.ofPatch(s).biome))).length;
     const { w, rv, cl } = setup();
-    const subs = subsAround(w, 800_000, 8000);
+    const patches = patchesAround(w, 800_000, 8000);
     const base = toBiomeParams(testParams());
     const flat = new Biomes(w, rv, cl, null, { ...base, ...perKm(0), sparseDry: 1 });
     const steep = new Biomes(w, rv, cl, null, { ...base, ...perKm(12), sparseDry: 1 });
-    expect(cold(steep, subs)).toBeGreaterThan(cold(flat, subs));
-    for (const s of subs) expect(steep.ofSub(s).belt).toBeLessThanOrEqual(flat.ofSub(s).belt);
+    expect(cold(steep, patches)).toBeGreaterThan(cold(flat, patches));
+    for (const s of patches) expect(steep.ofPatch(s).belt).toBeLessThanOrEqual(flat.ofPatch(s).belt);
   });
 
   it('river-poor (sparse) flat zones are drier and favour desert', () => {
     const { w, rv, cl } = setup();
-    const subs = subsAround(w, 1_200_000, 6000);
+    const patches = patchesAround(w, 1_200_000, 6000);
     const wet = new Biomes(w, rv, cl, null, { ...toBiomeParams(testParams()), sparseDry: 1 });
     const dry = new Biomes(w, rv, cl, null, toBiomeParams(testParams()));
     const desert = (k: number) => id(k) === 'hotDesert' || id(k) === 'coldDesert';
@@ -179,10 +179,10 @@ describe('biomes of the subbiomes', { timeout: 60_000 }, () => {
     let desertDry = 0;
     let desertElsewhere = 0;
     let elsewhere = 0;
-    for (const s of subs) {
-      const a = wet.ofSub(s);
-      const c = dry.ofSub(s);
-      expect(c.sparse).toBe(!c.ocean && rv.isSparseFlat(w.subCell(s).elevationZone));
+    for (const s of patches) {
+      const a = wet.ofPatch(s);
+      const c = dry.ofPatch(s);
+      expect(c.sparse).toBe(!c.ocean && rv.isSparseFlat(w.patchCell(s).elevationZone));
       if (c.ocean) continue;
       if (c.sparse) {
         sparse++;
@@ -197,73 +197,73 @@ describe('biomes of the subbiomes', { timeout: 60_000 }, () => {
       }
     }
     expect(sparse).toBeGreaterThan(300);
-    // at the defaults most sparse flat subbiomes are desert, against a few percent elsewhere
+    // at the defaults most sparse flat patches are desert, against a few percent elsewhere
     expect(desertDry / sparse).toBeGreaterThan(0.5);
     expect(desertDry).toBeGreaterThan(3 * desertWet);
     expect(desertElsewhere / elsewhere).toBeLessThan(0.1);
   });
 
-  it('takes the subbiome’s mean land height from its terrain tile once it is computed', () => {
+  it('takes the patch’s mean land height from its terrain tile once it is computed', () => {
     const { w, t, b } = setup({}, true);
     const tile = t!.getTile(packKey(0, 0));
-    expect(tile.subKeys.length).toBeGreaterThan(50);
-    expect(tile.subH.length).toBe(tile.subKeys.length);
-    // the tile's means are the means of the subbiomes' owned land cells (cropping keeps them all)
+    expect(tile.patchKeys.length).toBeGreaterThan(50);
+    expect(tile.patchH.length).toBe(tile.patchKeys.length);
+    // the tile's means are the means of the patches' owned land cells (cropping keeps them all)
     const sum = new Map<number, number>();
     const cnt = new Map<number, number>();
     for (let j = 0; j < tile.ny; j++) {
       for (let i = 0; i < tile.nx; i++) {
         const q = j * tile.nx + i;
         if (tile.cls[q] !== LAND || !ownsRegion(tile, regionAt(tile, q))) continue;
-        const s = w.cellAt(tile.x0 + i * tile.res, tile.y0 + j * tile.res, true).sub;
+        const s = w.cellAt(tile.x0 + i * tile.res, tile.y0 + j * tile.res, true).patch;
         sum.set(s, (sum.get(s) ?? 0) + tile.h[q]);
         cnt.set(s, (cnt.get(s) ?? 0) + 1);
       }
     }
-    expect(sum.size).toBe(tile.subKeys.length);
-    for (let n = 0; n < tile.subKeys.length; n++) {
-      const s = tile.subKeys[n];
-      expect(tile.subH[n]).toBeCloseTo(sum.get(s)! / cnt.get(s)!, 2);
-      const info = b.ofSub(s);
+    expect(sum.size).toBe(tile.patchKeys.length);
+    for (let n = 0; n < tile.patchKeys.length; n++) {
+      const s = tile.patchKeys[n];
+      expect(tile.patchH[n]).toBeCloseTo(sum.get(s)! / cnt.get(s)!, 2);
+      const info = b.ofPatch(s);
       expect(info.heightExact).toBe(true);
-      expect(info.height).toBe(Math.max(0, tile.subH[n]));
+      expect(info.height).toBe(Math.max(0, tile.patchH[n]));
       expect(info.t).toBe(info.t0 - b.cooling(info.height));
     }
   });
 
-  it('switches an estimated subbiome to its exact height when the tile arrives', () => {
+  it('switches an estimated patch to its exact height when the tile arrives', () => {
     const { w, t, b } = setup({}, true);
     const rk = packKey(0, 0);
-    const land = subsAround(w, 200_000, 4000).find((s) => {
-      const c = w.subCell(s);
+    const land = patchesAround(w, 200_000, 4000).find((s) => {
+      const c = w.patchCell(s);
       return !c.ocean && t!.tileOf(c.region) === t!.tileOf(rk);
     })!;
     expect(land).toBeDefined();
-    expect(b.ofSub(land).heightExact).toBe(false);
+    expect(b.ofPatch(land).heightExact).toBe(false);
     t!.getTile(t!.tileOf(rk));
-    expect(b.ofSub(land).heightExact).toBe(true);
+    expect(b.ofPatch(land).heightExact).toBe(true);
   });
 });
 
 describe('mangrove', { timeout: 60_000 }, () => {
-  /** Brute force: does a raw subbiome of the merged root border an ocean subbiome? */
+  /** Brute force: does a raw patch of the merged root border an ocean patch? */
   const coastal = (w: World, root: number) => {
     const members = new Set<number>([root]);
     const stack = [root];
     while (stack.length) {
       const s = stack.pop()!;
-      for (const n of w.subNbrs(w.sub(s))) if (!members.has(n) && w.subRoot(n) === root) members.add(n), stack.push(n);
+      for (const n of w.patchNbrs(w.patch(s))) if (!members.has(n) && w.patchRoot(n) === root) members.add(n), stack.push(n);
     }
-    for (const m of members) for (const n of w.subNbrs(w.sub(m))) if (w.subCell(n).ocean) return true;
+    for (const m of members) for (const n of w.patchNbrs(w.patch(m))) if (w.patchCell(n).ocean) return true;
     return false;
   };
 
-  it('a coastal subbiome is one whose cells border an ocean subbiome', () => {
+  it('a coastal patch is one whose cells border an ocean patch', () => {
     const { w, b } = setup();
     let coast = 0;
-    for (const s of subsAround(w, 400_000, 4000)) {
-      const info = b.ofSub(s);
-      expect(info.coastal).toBe(!info.ocean && coastal(w, w.subCell(s).sub));
+    for (const s of patchesAround(w, 400_000, 4000)) {
+      const info = b.ofPatch(s);
+      expect(info.coastal).toBe(!info.ocean && coastal(w, w.patchCell(s).patch));
       if (info.coastal) coast++;
     }
     expect(coast).toBeGreaterThan(100);
@@ -274,10 +274,10 @@ describe('mangrove', { timeout: 60_000 }, () => {
     const p = b.p;
     const zonesSeen = new Set<string>();
     let mangrove = 0;
-    for (const s of subsAround(w, 1_200_000, 6000)) {
-      const info = b.ofSub(s);
+    for (const s of patchesAround(w, 1_200_000, 6000)) {
+      const info = b.ofPatch(s);
       const eligible = info.coastal && MANGROVE_ZONES.has(info.zoneType) && info.t >= p.mangroveT && info.aridity >= p.mangroveM;
-      expect(info.biome === MANGROVE_BIOME, `sub ${s}`).toBe(eligible);
+      expect(info.biome === MANGROVE_BIOME, `patch ${s}`).toBe(eligible);
       if (info.biome !== MANGROVE_BIOME) continue;
       mangrove++;
       zonesSeen.add(ELEVATION_ZONE_TYPES[info.zoneType].id);
@@ -293,12 +293,12 @@ describe('mangrove', { timeout: 60_000 }, () => {
 
   it('is absent when too cold, appears on more coasts when allowed drier, and never zoomed out', () => {
     const { w, rv, cl } = setup();
-    const subs = subsAround(w, 800_000, 8000);
+    const patches = patchesAround(w, 800_000, 8000);
     const base = toBiomeParams(testParams());
-    const count = (b: Biomes) => subs.filter((s) => b.ofSub(s).biome === MANGROVE_BIOME).length;
+    const count = (b: Biomes) => patches.filter((s) => b.ofPatch(s).biome === MANGROVE_BIOME).length;
     expect(count(new Biomes(w, rv, cl, null, { ...base, mangroveT: 60 }))).toBe(0);
     expect(count(new Biomes(w, rv, cl, null, { ...base, mangroveM: 0 }))).toBeGreaterThanOrEqual(count(new Biomes(w, rv, cl, null, base)));
     const b = new Biomes(w, rv, cl, null, { ...base, mangroveT: -100, mangroveM: 0 });
-    for (const s of subs) expect(b.ofZone(w.subCell(s).elevationZoneRaw).biome).not.toBe(MANGROVE_BIOME);
+    for (const s of patches) expect(b.ofZone(w.patchCell(s).elevationZoneRaw).biome).not.toBe(MANGROVE_BIOME);
   });
 });

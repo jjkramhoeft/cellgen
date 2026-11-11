@@ -22,9 +22,9 @@ function landRegions(w: World, n = 6): number[] {
 }
 
 describe('space-colonization rivers', () => {
-  it('places attractors only in inland land subbiomes drawn in the region, perSub per subbiome', () => {
+  it('places attractors only in inland land patches drawn in the region, perPatch per patch', () => {
     const w = world();
-    const rv = new Rivers(w, rp({ perSub: 10, flatSparseCutoff: 0 }));
+    const rv = new Rivers(w, rp({ perPatch: 10, flatSparseCutoff: 0 }));
     const r = landRegions(w, 1)[0];
     const { ax, ay } = rv.attractors(r);
     expect(ax.length).toBeGreaterThan(100);
@@ -32,9 +32,9 @@ describe('space-colonization rivers', () => {
     let eligible = 0;
     for (const b of rv.regionElevationZones(r)) {
       if (w.elevationZoneCell(b).ocean) continue;
-      for (const s of w.elevationZoneSubs(w.elevationZone(b))) {
-        const c = w.subCell(s);
-        if (!c.ocean && c.region === r && !rv.isCoastSub(s)) eligible++;
+      for (const s of w.elevationZonePatches(w.elevationZone(b))) {
+        const c = w.patchCell(s);
+        if (!c.ocean && c.region === r && !rv.isCoastPatch(s)) eligible++;
       }
     }
     expect(ax.length).toBe(eligible * 10);
@@ -45,7 +45,7 @@ describe('space-colonization rivers', () => {
     }
   });
 
-  it('gives the subbiomes of a river-poor (dry) flat elevation zone only 0 or 1 attractor', () => {
+  it('gives the patches of a river-poor (dry) flat elevation zone only 0 or 1 attractor', () => {
     const w = world();
     const regions = landRegions(w, 12);
     const count = (rv: Rivers) => regions.reduce((n, r) => n + rv.attractors(r).ax.length, 0);
@@ -65,23 +65,23 @@ describe('space-colonization rivers', () => {
     const again = new Rivers(w, rp());
     for (const z of flatZones) expect(again.isSparseFlat(z)).toBe(def.isSparseFlat(z));
     // cutoff 0: none sparse; a huge cutoff: every flat zone (and only flat zones) sparse
-    const none = new Rivers(w, rp({ perSub: 10, flatSparseCutoff: 0 }));
-    const all = new Rivers(w, rp({ perSub: 10, flatSparseCutoff: 1e9 }));
+    const none = new Rivers(w, rp({ perPatch: 10, flatSparseCutoff: 0 }));
+    const all = new Rivers(w, rp({ perPatch: 10, flatSparseCutoff: 1e9 }));
     for (const z of flatZones) {
       expect(none.isSparseFlat(z)).toBe(false);
       expect(all.isSparseFlat(z)).toBe(true);
     }
     expect(count(all)).toBeLessThan(count(none));
-    // per region: perSub for every eligible subbiome outside sparse zones, plus 0 or 1 for each inside one
+    // per region: perPatch for every eligible patch outside sparse zones, plus 0 or 1 for each inside one
     for (const r of regions) {
       let dense = 0;
       let sparse = 0;
       for (const b of all.regionElevationZones(r)) {
         const bc = w.elevationZoneCell(b);
         if (bc.ocean) continue;
-        for (const s of w.elevationZoneSubs(w.elevationZone(b))) {
-          const c = w.subCell(s);
-          if (c.ocean || c.region !== r || all.isCoastSub(s)) continue;
+        for (const s of w.elevationZonePatches(w.elevationZone(b))) {
+          const c = w.patchCell(s);
+          if (c.ocean || c.region !== r || all.isCoastPatch(s)) continue;
           if (all.isSparseFlat(bc.elevationZone)) sparse++;
           else dense++;
         }
@@ -185,10 +185,10 @@ describe('space-colonization rivers', () => {
       rr.roots.forEach((k, t) => {
         const o = w.elevationZone(rr.rootOcean[t]);
         expect(w.elevationZoneCell(o.key).ocean).toBe(true);
-        // at the elevation zone's site, or (when the site sits on a sliver of land) at an ocean subbiome site of it
+        // at the elevation zone's site, or (when the site sits on a sliver of land) at an ocean patch site of it
         const atSite = rr.x[k] === o.x && rr.y[k] === o.y;
-        const atSub = w.elevationZoneSubs(o).some((s) => w.sub(s).x === rr.x[k] && w.sub(s).y === rr.y[k]);
-        expect(atSite || atSub).toBe(true);
+        const atPatch = w.elevationZonePatches(o).some((s) => w.patch(s).x === rr.x[k] && w.patch(s).y === rr.y[k]);
+        expect(atSite || atPatch).toBe(true);
         expect(w.cellAt(rr.x[k], rr.y[k], true).ocean).toBe(true);
         // the ocean elevation zone touches land
         expect(w.elevationZoneNbrs(o).some((n) => !w.elevationZoneCell(n).ocean)).toBe(true);

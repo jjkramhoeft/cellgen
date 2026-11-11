@@ -10,7 +10,8 @@
     "preview": "vite preview",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "new-sandbox": "node scripts/new-sandbox.mjs"
+    "new-sandbox": "node scripts/new-sandbox.mjs",
+    "export-map": "node scripts/export-map.mjs"
   },
   "devDependencies": {
     "@types/node": "^24.19.2",

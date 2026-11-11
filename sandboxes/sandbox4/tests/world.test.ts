@@ -199,7 +199,7 @@ describe('world', () => {
   });
 
   it('keeps merges on one side of the coast and inside the parent elevation zone', () => {
-    const w = new World(base({ elevationZoneMergeMin: 4, elevationZoneMergeMax: 6, subMergeMin: 3, subMergeMax: 5 }));
+    const w = new World(base({ elevationZoneMergeMin: 4, elevationZoneMergeMax: 6, patchMergeMin: 3, patchMergeMax: 5 }));
     let bm = 0;
     for (const b of elevationZonesNear(w, 300000)) {
       const t = w.elevationZoneTarget(b);
@@ -210,20 +210,20 @@ describe('world', () => {
     }
     expect(bm).toBeGreaterThan(10);
     let sm = 0;
-    for (const s of World.cellsIn(w.subLevel, -60000, -60000, 60000, 60000, 0)) {
-      const t = w.subTarget(s);
+    for (const s of World.cellsIn(w.patchLevel, -60000, -60000, 60000, 60000, 0)) {
+      const t = w.patchTarget(s);
       if (t < 0) continue;
       sm++;
-      expect(w.elevationZoneRoot(w.sub(t).elevationZone)).toBe(w.elevationZoneRoot(w.sub(s).elevationZone));
+      expect(w.elevationZoneRoot(w.patch(t).elevationZone)).toBe(w.elevationZoneRoot(w.patch(s).elevationZone));
     }
     expect(sm).toBeGreaterThan(5);
   });
 
-  it('nests: a subbiome cell reports the merged elevation zone and region of its merged site', () => {
+  it('nests: a patch cell reports the merged elevation zone and region of its merged site', () => {
     const w = new World(base());
     for (let t = 0; t < 300; t++) {
       const c = w.cellAt(((t * 7919) % 400) * 1000 - 200000, ((t * 6271) % 400) * 1000 - 200000, true);
-      const owner = w.sub(c.sub).elevationZone;
+      const owner = w.patch(c.patch).elevationZone;
       expect(c.elevationZone).toBe(w.elevationZoneRoot(owner));
       expect(c.region).toBe(w.elevationZone(c.elevationZone).region);
       expect(c.ocean).toBe(w.ocean(c.elevationZone));
@@ -252,7 +252,7 @@ describe('world', () => {
 
 describe('params', () => {
   it('round-trips through the URL', () => {
-    const p = { ...testParams(), 'ez.warp': 0.5, 'oc.passes': 3, 'sub.nest': false };
+    const p = { ...testParams(), 'ez.warp': 0.5, 'oc.passes': 3, 'patch.nest': false };
     const back = decodeState(`#${encodeState('abc', p, ALL_DEFS)}`, ALL_DEFS, 'x');
     expect(back?.seed).toBe('abc');
     expect(back?.params).toEqual(p);
@@ -262,11 +262,11 @@ describe('params', () => {
     for (const pr of PRESETS) {
       const wp = toWorldParams({ ...testParams(), ...pr.params }, 1);
       expect(wp.elevationZoneSize).toBeLessThan(wp.regionSize);
-      expect(wp.subSize).toBeLessThan(wp.elevationZoneSize);
+      expect(wp.patchSize).toBeLessThan(wp.elevationZoneSize);
       for (const k of Object.keys(pr.params)) expect(ALL_DEFS.some((d) => d.key === k), k).toBe(true);
     }
-    const wp = toWorldParams({ ...testParams(), 'reg.size': 32, 'ez.size': 128, 'sub.size': 32 }, 1);
+    const wp = toWorldParams({ ...testParams(), 'reg.size': 32, 'ez.size': 128, 'patch.size': 32 }, 1);
     expect(wp.elevationZoneSize).toBeLessThan(wp.regionSize);
-    expect(wp.subSize).toBeLessThan(wp.elevationZoneSize);
+    expect(wp.patchSize).toBeLessThan(wp.elevationZoneSize);
   });
 });

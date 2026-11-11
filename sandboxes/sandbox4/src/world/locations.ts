@@ -3,7 +3,7 @@
  * this is its map-level "Tier M" in a first, simpler form).
  *
  * For one region (as drawn, like the rivers and lakes):
- *   Candidates  every land subbiome (merged) drawn in the region. Each gets five factor
+ *   Candidates  every land patch (merged) drawn in the region. Each gets five factor
  *               scores in [0, 1], from the map alone (no terrain tiles):
  *                 resources   food of its catchment (farmland by biome and zone type, river
  *                             irrigation in dry land; itself and its neighbours), fresh
@@ -25,13 +25,13 @@
  *   Selection   candidates need a score above 0 and must not touch another region's land
  *               (so locations keep apart across region borders without reading the
  *               neighbour). First up to `cities` cities: the best scores, at least two
- *               subbiome steps inside the region and CITY_SPACING x the spacing apart.
+ *               patch steps inside the region and CITY_SPACING x the spacing apart.
  *               Then towns, best first, each at least the spacing from every location
  *               chosen so far. When that leaves fewer than `count` locations, the spacing
- *               is relaxed step by step (down to one subbiome) and the towns are picked
+ *               is relaxed step by step (down to one patch) and the towns are picked
  *               again. Regions with little habitable land end up with fewer.
- *   Spot        on the river where one runs through the subbiome (its mouth, or where it
- *               is largest, but not in a lake), otherwise the subbiome's site.
+ *   Spot        on the river where one runs through the patch (its mouth, or where it
+ *               is largest, but not in a lake), otherwise the patch's site.
  *
  * Deterministic and order-independent: everything is read from the region's own rivers
  * and lakes and from pure functions of the map; sums run in key order, ties break on a
@@ -65,30 +65,30 @@ export interface LocationParams {
   weights: Record<Factor, number>;
 }
 
-/** A land subbiome of a region with everything that went into its viability score. */
+/** A land patch of a region with everything that went into its viability score. */
 export interface Candidate {
-  /** subbiome (merged root), its region and (merged) elevation zone */
-  sub: number;
+  /** patch (merged root), its region and (merged) elevation zone */
+  patch: number;
   region: number;
   zone: number;
   /** index into ELEVATION_ZONE_TYPES, index into BIOMES */
   zoneType: number;
   biome: number;
-  /** the spot: on the subbiome's river when it has one, otherwise its site; metres */
+  /** the spot: on the patch's river when it has one, otherwise its site; metres */
   x: number;
   y: number;
   /** the spot is on a river */
   onRiver: boolean;
-  /** subbiome steps to the nearest subbiome that touches another region's land (0 = touches one; NO_BORDER = the region has no land border) */
+  /** patch steps to the nearest patch that touches another region's land (0 = touches one; NO_BORDER = the region has no land border) */
   depth: number;
   coast: boolean;
   /** on the coast of an enclosed bay */
   harbour: boolean;
   /** share of the neighbours that are ocean */
   oceanFrac: number;
-  /** area of the largest lake placed in the subbiome, m² (0 = none) */
+  /** area of the largest lake placed in the patch, m² (0 = none) */
   lake: number;
-  /** largest river in the subbiome, at its mouth here, and the smaller branch of its largest confluence: subbiomes drained upstream (flow / attractors per subbiome) */
+  /** largest river in the patch, at its mouth here, and the smaller branch of its largest confluence: patches drained upstream (flow / attractors per patch) */
   river: number;
   mouth: number;
   confluence: number;
@@ -132,9 +132,9 @@ export interface RegionLocations {
   region: number;
   /** the chosen locations, best score first */
   list: Location[];
-  /** every land subbiome of the region, by key order, and by subbiome key */
+  /** every land patch of the region, by key order, and by patch key */
   candidates: Candidate[];
-  bySub: Map<number, Candidate>;
+  byPatch: Map<number, Candidate>;
   /** candidates that may hold a location (score above 0, not on a land border) */
   eligible: number;
   /** the least distance between two locations the selection ended up using, metres */
@@ -142,14 +142,14 @@ export interface RegionLocations {
   ms: number;
 }
 
-/** Depth of every subbiome in a region with no land border (an island). */
+/** Depth of every patch in a region with no land border (an island). */
 export const NO_BORDER = 99;
-/** Cities keep this x the spacing from each other, and lie at least this many subbiome steps inside the region. */
+/** Cities keep this x the spacing from each other, and lie at least this many patch steps inside the region. */
 export const CITY_SPACING = 2.5;
 export const CITY_DEPTH = 2;
-/** The spacing is relaxed by this factor per round, down to one subbiome size. */
+/** The spacing is relaxed by this factor per round, down to one patch size. */
 const RELAX = 0.85;
-/** A river is navigable / large from this many subbiomes drained upstream. */
+/** A river is navigable / large from this many patches drained upstream. */
 export const NAVIGABLE = 20;
 export const BIG_RIVER = 80;
 /** One day of travel on open flat land, km: the distance scale of the central-place term. */
@@ -159,7 +159,7 @@ const RIVER_COST = 0.4;
 /** The central-place term reaches 1 at this share of an ideal region (a disc of farmland, seen from its centre). */
 const CENTRAL_FULL = 0.55;
 
-/** A site that lies outside its own (warped) cell is moved: points up to one subbiome size away, in this many rings of 8 directions. */
+/** A site that lies outside its own (warped) cell is moved: points up to one patch size away, in this many rings of 8 directions. */
 const SPOT_RINGS = 4;
 const SPOT_DIRS = [
   [1, 0],
@@ -266,11 +266,11 @@ export class Locations {
     return r;
   }
 
-  /** The candidate of the subbiome at a point, when its region is already computed. */
+  /** The candidate of the patch at a point, when its region is already computed. */
   candidateAt(x: number, y: number): Candidate | null {
     const c = this.world.cellAt(x, y, true);
     if (c.ocean) return null;
-    return this.cache.get(c.region)?.bySub.get(c.sub) ?? null;
+    return this.cache.get(c.region)?.byPatch.get(c.patch) ?? null;
   }
 
   /** The nearest location with at least `minScore` within `maxDist` metres (only regions already computed are searched). */
@@ -301,18 +301,18 @@ export class Locations {
     const t0 = performance.now();
     const w = this.world;
     const P = this.p;
-    const S = w.subLevel.size;
+    const S = w.patchLevel.size;
 
-    // ---- the region's land subbiomes (merged roots, key order) and their raw members
+    // ---- the region's land patches (merged roots, key order) and their raw members
     const members = new Map<number, number[]>();
     for (const b of this.rivers.regionElevationZones(rkey)) {
       if (w.elevationZoneCell(b).ocean) continue;
-      for (const s of w.elevationZoneSubs(w.elevationZone(b))) {
-        const c = w.subCell(s);
+      for (const s of w.elevationZonePatches(w.elevationZone(b))) {
+        const c = w.patchCell(s);
         if (c.ocean || c.region !== rkey) continue;
-        const list = members.get(c.sub);
+        const list = members.get(c.patch);
         if (list) list.push(s);
-        else members.set(c.sub, [s]);
+        else members.set(c.patch, [s]);
       }
     }
     const roots = [...members.keys()].sort((a, b) => a - b);
@@ -323,19 +323,19 @@ export class Locations {
     // ---- neighbours: own land (indices), ocean, other regions' land; enclosed bays
     const land: number[][] = [];
     const oceanFrac = new Float64Array(n);
-    /** ocean neighbours (merged subbiomes) */
+    /** ocean neighbours (merged patches) */
     const seaNbrs = new Int32Array(n);
     const coast = new Uint8Array(n);
     const harbour = new Uint8Array(n);
     const border = new Uint8Array(n);
     const bayMemo = new Map<number, boolean>();
-    /** is this raw ocean subbiome mostly enclosed by land (at least 3 land neighbours, and more land than ocean ones)? */
+    /** is this raw ocean patch mostly enclosed by land (at least 3 land neighbours, and more land than ocean ones)? */
     const isBay = (o: number): boolean => {
       let v = bayMemo.get(o);
       if (v === undefined) {
-        const nb = w.subNbrs(w.sub(o));
+        const nb = w.patchNbrs(w.patch(o));
         let l = 0;
-        for (const q of nb) if (!w.subCell(q).ocean) l++;
+        for (const q of nb) if (!w.patchCell(q).ocean) l++;
         v = l >= 3 && 2 * l > nb.length;
         bayMemo.set(o, v);
       }
@@ -346,16 +346,16 @@ export class Locations {
       const sea = new Set<number>();
       const foreign = new Set<number>();
       for (const s of members.get(roots[i])!.slice().sort((a, b) => a - b)) {
-        for (const q of w.subNbrs(w.sub(s))) {
-          const qc = w.subCell(q);
-          if (qc.sub === roots[i]) continue;
+        for (const q of w.patchNbrs(w.patch(s))) {
+          const qc = w.patchCell(q);
+          if (qc.patch === roots[i]) continue;
           if (qc.ocean) {
-            sea.add(qc.sub);
+            sea.add(qc.patch);
             if (isBay(q)) harbour[i] = 1;
           } else if (qc.region === rkey) {
-            const j = index.get(qc.sub);
+            const j = index.get(qc.patch);
             if (j !== undefined) own.add(j);
-          } else foreign.add(qc.sub);
+          } else foreign.add(qc.patch);
         }
       }
       land.push([...own].sort((a, b) => a - b));
@@ -366,7 +366,7 @@ export class Locations {
       border[i] = foreign.size ? 1 : 0;
     }
 
-    // ---- depth: subbiome steps from the land border of the region (breadth first)
+    // ---- depth: patch steps from the land border of the region (breadth first)
     const depth = new Int32Array(n).fill(NO_BORDER);
     let front: number[] = [];
     for (let i = 0; i < n; i++) {
@@ -388,11 +388,11 @@ export class Locations {
       front = next;
     }
 
-    // ---- lakes: the largest lake of each subbiome
+    // ---- lakes: the largest lake of each patch
     const regionLakes: Lake[] = this.lakes.get(rkey).lakes;
     const lakeArea = new Float64Array(n);
     for (const l of regionLakes) {
-      const i = index.get(l.sub);
+      const i = index.get(l.patch);
       if (i !== undefined && l.area > lakeArea[i]) lakeArea[i] = l.area;
     }
     const inLake = (x: number, y: number): boolean => {
@@ -402,7 +402,7 @@ export class Locations {
 
     // ---- rivers: size, mouths, confluences, heads of navigation, and the spot on the river
     const rr = this.rivers.get(rkey);
-    const perSub = Math.max(1, this.rivers.p.perSub);
+    const perPatch = Math.max(1, this.rivers.p.perPatch);
     const river = new Float64Array(n);
     const mouth = new Float64Array(n);
     const conf = new Float64Array(n);
@@ -411,42 +411,42 @@ export class Locations {
     const spot = new Int32Array(n).fill(-1);
     const spotFlow = new Int32Array(n);
     const spotMouth = new Uint8Array(n);
-    /** subbiome index of each node on the region's own land (−1 otherwise) */
-    const nodeSub = new Int32Array(rr.n).fill(-1);
+    /** patch index of each node on the region's own land (−1 otherwise) */
+    const nodePatch = new Int32Array(rr.n).fill(-1);
     for (let k = 0; k < rr.n; k++) {
       if (rr.parent[k] < 0 || rr.wet[k]) continue;
       const c = w.cellAt(rr.x[k], rr.y[k], true);
       if (c.ocean || c.region !== rkey) continue;
-      const i = index.get(c.sub);
-      if (i !== undefined) nodeSub[k] = i;
+      const i = index.get(c.patch);
+      if (i !== undefined) nodePatch[k] = i;
     }
     // the two largest flows among each node's children on the region's land
     const kid1 = new Int32Array(rr.n);
     const kid2 = new Int32Array(rr.n);
     for (let k = 0; k < rr.n; k++) {
       const p = rr.parent[k];
-      if (p < 0 || nodeSub[k] < 0) continue;
+      if (p < 0 || nodePatch[k] < 0) continue;
       const f = rr.flow[k];
       if (f > kid1[p]) {
         kid2[p] = kid1[p];
         kid1[p] = f;
       } else if (f > kid2[p]) kid2[p] = f;
     }
-    const navFlow = NAVIGABLE * perSub;
-    /** navigable river links between two subbiomes (pairs of indices) */
+    const navFlow = NAVIGABLE * perPatch;
+    /** navigable river links between two patches (pairs of indices) */
     const riverLinks: number[] = [];
     for (let k = 0; k < rr.n; k++) {
-      const i = nodeSub[k];
+      const i = nodePatch[k];
       if (i < 0) continue;
       const f = rr.flow[k];
-      const a = f / perSub;
+      const a = f / perPatch;
       const p = rr.parent[k];
       if (a > river[i]) river[i] = a;
       const atMouth = rr.parent[p] < 0 || rr.wet[p] === 1;
       if (atMouth && a > mouth[i]) mouth[i] = a;
-      if (kid2[k] / perSub > conf[i]) conf[i] = kid2[k] / perSub;
+      if (kid2[k] / perPatch > conf[i]) conf[i] = kid2[k] / perPatch;
       if (f >= navFlow && kid1[k] < navFlow) head[i] = 1;
-      if (f >= navFlow && nodeSub[p] >= 0 && nodeSub[p] !== i) riverLinks.push(i, nodeSub[p]);
+      if (f >= navFlow && nodePatch[p] >= 0 && nodePatch[p] !== i) riverLinks.push(i, nodePatch[p]);
       // the spot: a mouth beats any other node, then the larger flow, then the smaller index
       const better = atMouth ? !spotMouth[i] || f > spotFlow[i] : !spotMouth[i] && f > spotFlow[i];
       if (better && !inLake(rr.x[k], rr.y[k])) {
@@ -456,7 +456,7 @@ export class Locations {
       }
     }
 
-    // ---- per-subbiome climate and biome (zone-typical heights), food, travel cost
+    // ---- per-patch climate and biome (zone-typical heights), food, travel cost
     const zt = new Int32Array(n);
     const biome = new Int32Array(n);
     const zone = new Float64Array(n);
@@ -467,21 +467,21 @@ export class Locations {
     const sx = new Float64Array(n);
     const sy = new Float64Array(n);
     for (let i = 0; i < n; i++) {
-      const b = this.biomes.ofSub(roots[i]);
+      const b = this.biomes.ofPatch(roots[i]);
       zt[i] = b.zoneType;
       biome[i] = b.biome;
-      zone[i] = w.subCell(roots[i]).elevationZone;
+      zone[i] = w.patchCell(roots[i]).elevationZone;
       temp[i] = b.t;
       arid[i] = b.aridity;
       belt[i] = b.belt;
       const irrigation = b.aridity < 1 ? IRRIGATION * sat(river[i] / BIG_RIVER) : 0;
       foodHere[i] = sat((FARM[b.biome] * FARM_ZONE[b.zoneType] + irrigation) / FARM_FULL);
-      const s = w.sub(roots[i]);
+      const s = w.patch(roots[i]);
       sx[i] = s.x;
       sy[i] = s.y;
     }
 
-    // ---- central places: how much of the region's food is within reach of each subbiome
+    // ---- central places: how much of the region's food is within reach of each patch
     // (Hansen accessibility over the travel graph: land between neighbours, navigable rivers)
     const adj: number[][] = land.map(() => []);
     const cost: number[][] = land.map(() => []);
@@ -501,9 +501,9 @@ export class Locations {
       adj[j].push(i);
       cost[j].push(c);
     }
-    const subKm2 = (S / 1000) * (S / 1000);
+    const patchKm2 = (S / 1000) * (S / 1000);
     const weight = new Float64Array(n);
-    for (let i = 0; i < n; i++) weight[i] = foodHere[i] * members.get(roots[i])!.length * subKm2;
+    for (let i = 0; i < n; i++) weight[i] = foodHere[i] * members.get(roots[i])!.length * patchKm2;
     // an ideal region: a disc of full farmland of the region's area, seen from its centre
     const reach = w.regionLevel.size / 1000 / Math.sqrt(Math.PI) / DAY_KM;
     const ideal = 2 * Math.PI * DAY_KM * DAY_KM * (dlog(1 + reach) + 1 / (1 + reach) - 1);
@@ -554,11 +554,11 @@ export class Locations {
         y = rr.y[spot[i]];
         onRiver = true;
       } else {
-        const ok = (px: number, py: number) => w.cellAt(px, py, true).sub === root && !inLake(px, py);
+        const ok = (px: number, py: number) => w.cellAt(px, py, true).patch === root && !inLake(px, py);
         if (!ok(x, y)) {
           // border warp can push a site out of its own cell (or a lake may cover it): try the
           // other members' sites, then points around the sites, nearest first
-          const sites = members.get(root)!.map((s) => w.sub(s));
+          const sites = members.get(root)!.map((s) => w.patch(s));
           let found = false;
           for (let ring = 0; ring <= SPOT_RINGS && !found; ring++) {
             for (const m of sites) {
@@ -640,7 +640,7 @@ export class Locations {
       if (food >= 0.7) features.push('rich farmland');
 
       candidates.push({
-        sub: root,
+        patch: root,
         region: rkey,
         zone: zone[i],
         zoneType: zt[i],
@@ -679,8 +679,8 @@ export class Locations {
     }
 
     // ---- selection: cities first, then towns, both greedy by score with a least distance
-    const tie = (c: Candidate) => hash4(w.p.seed, ST_LOC, keyI(c.sub), keyJ(c.sub));
-    const order = candidates.filter((c) => c.score > 0 && c.depth >= 1).sort((a, b) => b.score - a.score || tie(a) - tie(b) || a.sub - b.sub);
+    const tie = (c: Candidate) => hash4(w.p.seed, ST_LOC, keyI(c.patch), keyJ(c.patch));
+    const order = candidates.filter((c) => c.score > 0 && c.depth >= 1).sort((a, b) => b.score - a.score || tie(a) - tie(b) || a.patch - b.patch);
     const far = (c: Candidate, others: Candidate[], d: number) => {
       for (const o of others) if ((o.x - c.x) * (o.x - c.x) + (o.y - c.y) * (o.y - c.y) < d * d) return false;
       return true;
@@ -704,11 +704,11 @@ export class Locations {
       spacing = Math.max(S, spacing * RELAX);
     }
     const list: Location[] = picked
-      .sort((a, b) => b.score - a.score || tie(a) - tie(b) || a.sub - b.sub)
+      .sort((a, b) => b.score - a.score || tie(a) - tie(b) || a.patch - b.patch)
       .map((c, k) => ({ ...c, rank: k + 1, kind: isCity.has(c) ? 'city' : 'town' }));
 
-    const bySub = new Map<number, Candidate>();
-    for (const c of candidates) bySub.set(c.sub, c);
-    return { region: rkey, list, candidates, bySub, eligible: order.length, spacing, ms: performance.now() - t0 };
+    const byPatch = new Map<number, Candidate>();
+    for (const c of candidates) byPatch.set(c.patch, c);
+    return { region: rkey, list, candidates, byPatch, eligible: order.length, spacing, ms: performance.now() - t0 };
   }
 }

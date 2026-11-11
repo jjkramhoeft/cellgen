@@ -13,7 +13,7 @@
  *            ridges, as in the height map. A road pays for the slope of every step
  *            (1 + (slope / 5 %)²) and for the height itself.
  *   Water    ocean cells (dearer right at the shore, so lanes keep clear of capes) and the
- *            navigable rivers (NAVIGABLE subbiomes drained, as for the locations), stamped
+ *            navigable rivers (NAVIGABLE patches drained, as for the locations), stamped
  *            on the grid as links between the cells each river segment crosses.
  *
  * Network (Travel, per region; needs the locations and grids of the 3 × 3 regions around):
@@ -183,24 +183,24 @@ export class TravelGrid {
     const t0 = performance.now();
     const w = this.world;
     const G = CELL;
-    const S = w.subLevel.size;
+    const S = w.patchLevel.size;
 
-    // ---- bounding box: the sites of the region's subbiomes plus their reach
+    // ---- bounding box: the sites of the region's patches plus their reach
     let bx0 = Infinity;
     let by0 = Infinity;
     let bx1 = -Infinity;
     let by1 = -Infinity;
     if (w.p.nest) {
       for (const b of this.rivers.regionElevationZones(rkey)) {
-        for (const s of w.elevationZoneSubs(w.elevationZone(b))) {
-          const sd = w.sub(s);
+        for (const s of w.elevationZonePatches(w.elevationZone(b))) {
+          const sd = w.patch(s);
           if (sd.x < bx0) bx0 = sd.x;
           if (sd.x > bx1) bx1 = sd.x;
           if (sd.y < by0) by0 = sd.y;
           if (sd.y > by1) by1 = sd.y;
         }
       }
-      const m = 1.5 * S + w.subLevel.warpReach + G;
+      const m = 1.5 * S + w.patchLevel.warpReach + G;
       bx0 -= m;
       by0 -= m;
       bx1 += m;
@@ -255,7 +255,7 @@ export class TravelGrid {
         bKind[q] = LAND;
         land++;
         const type = elevationZoneType(c.elevationZone, false);
-        bCost[q] = ZONE_COST[type] * BIOME_COST[this.biomes.ofSub(c.sub).biome];
+        bCost[q] = ZONE_COST[type] * BIOME_COST[this.biomes.ofPatch(c.patch).biome];
         bSteep[q] = ter.hillOf(type) * ter.p.hill * ter.reliefAt(x, y);
       }
     }
@@ -328,7 +328,7 @@ export class TravelGrid {
     }
 
     // ---- navigable rivers: a link wherever a segment passes from one cell into the next (downstream)
-    const navFlow = NAVIGABLE * Math.max(1, this.rivers.p.perSub);
+    const navFlow = NAVIGABLE * Math.max(1, this.rivers.p.perPatch);
     const links: number[] = [];
     const seen = new Set<number>();
     for (let k = 0; k < rr.n; k++) {
@@ -666,7 +666,7 @@ export class Travel {
       }
       return best;
     };
-    const portReach = Math.ceil((1.5 * this.world.subLevel.size) / G);
+    const portReach = Math.ceil((1.5 * this.world.patchLevel.size) / G);
     for (let n = 0; n < M; n++) {
       const l = nodes[n];
       const Q = nearest(l.x, l.y, 2, (q) => kind[q] === LAND && srcL[q] < 0);

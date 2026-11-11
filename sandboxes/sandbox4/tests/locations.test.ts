@@ -36,7 +36,7 @@ function landRegions(w: World, n: number): number[] {
 
 const dist = (a: Location, b: Location) => Math.sqrt((a.x - b.x) ** 2 + (a.y - b.y) ** 2);
 /** What must be identical between two computations of a region. */
-const digest = (rl: RegionLocations) => rl.list.map((l) => [l.sub, l.kind, l.rank, l.score, l.x, l.y, ...FACTORS.map((k) => l[k])]);
+const digest = (rl: RegionLocations) => rl.list.map((l) => [l.patch, l.kind, l.rank, l.score, l.x, l.y, ...FACTORS.map((k) => l[k])]);
 
 describe('city and town locations', { timeout: 120_000 }, () => {
   it('gives every region with enough habitable land about 20 locations, cities among them', () => {
@@ -50,8 +50,8 @@ describe('city and town locations', { timeout: 120_000 }, () => {
       expect(rl.list.length).toBeLessThanOrEqual(want);
       const nCities = rl.list.filter((l) => l.kind === 'city').length;
       expect(nCities).toBeLessThanOrEqual(Number(p['loc.cities']));
-      // a region short of locations has used up its eligible subbiomes or relaxed the spacing all the way
-      if (rl.list.length < want) expect(rl.eligible < want || rl.spacing === w.subLevel.size).toBe(true);
+      // a region short of locations has used up its eligible patches or relaxed the spacing all the way
+      if (rl.list.length < want) expect(rl.eligible < want || rl.spacing === w.patchLevel.size).toBe(true);
       if (rl.eligible >= 3 * want) {
         regions++;
         if (rl.list.length === want) full++;
@@ -88,8 +88,8 @@ describe('city and town locations', { timeout: 120_000 }, () => {
         expect(l.rank).toBe(k + 1);
         expect(l.score).toBeGreaterThan(0);
         if (k > 0) expect(l.score).toBeLessThanOrEqual(rl.list[k - 1].score);
-        // a location is its subbiome's candidate
-        expect(rl.bySub.get(l.sub)!.score).toBe(l.score);
+        // a location is its patch's candidate
+        expect(rl.byPatch.get(l.patch)!.score).toBe(l.score);
       });
     }
     expect(n).toBeGreaterThan(800);
@@ -100,15 +100,15 @@ describe('city and town locations', { timeout: 120_000 }, () => {
     let n = 0;
     for (const r of landRegions(w, 10)) {
       const rl = loc.get(r);
-      const subs = new Set<number>();
+      const patches = new Set<number>();
       for (const l of rl.list) {
         const c = w.cellAt(l.x, l.y, true);
         expect(c.ocean).toBe(false);
         expect(c.region).toBe(r);
-        expect(c.sub).toBe(l.sub);
+        expect(c.patch).toBe(l.patch);
         expect(l.depth).toBeGreaterThanOrEqual(l.kind === 'city' ? CITY_DEPTH : 1);
-        expect(subs.has(l.sub)).toBe(false);
-        subs.add(l.sub);
+        expect(patches.has(l.patch)).toBe(false);
+        patches.add(l.patch);
         n++;
       }
       const cities = rl.list.filter((l) => l.kind === 'city');
@@ -175,16 +175,16 @@ describe('city and town locations', { timeout: 120_000 }, () => {
       expect(rl.list.filter((l) => l.kind === 'city').length).toBeLessThanOrEqual(2);
       expect(none.loc.get(r).list).toEqual([]);
     }
-    // more locations asked for than fit at the spacing: the spacing is relaxed, never below one subbiome
+    // more locations asked for than fit at the spacing: the spacing is relaxed, never below one patch
     const many = setup({ 'loc.count': 60, 'loc.spacing': 40 });
     const [r] = landRegions(many.w, 1);
     const rl = many.loc.get(r);
     expect(rl.spacing).toBeLessThan(40000);
-    expect(rl.spacing).toBeGreaterThanOrEqual(many.w.subLevel.size);
+    expect(rl.spacing).toBeGreaterThanOrEqual(many.w.patchLevel.size);
     expect(rl.list.length).toBeGreaterThan(20);
   });
 
-  it('favours water, trade features and farmland over the average subbiome', () => {
+  it('favours water, trade features and farmland over the average patch', () => {
     const { w, loc } = setup();
     const chosen: Location[] = [];
     let all = 0;
@@ -222,11 +222,11 @@ describe('city and town locations', { timeout: 120_000 }, () => {
     expect(kept.length).toBeLessThan(list.length);
     expect(kept.every((l) => l.score >= mid)).toBe(true);
     expect(viable(list, 101)).toEqual([]);
-    // lookups: the nearest location honours the threshold, the candidate of a point is its subbiome's
+    // lookups: the nearest location honours the threshold, the candidate of a point is its patch's
     const top = list[0];
-    expect(loc.nearest(top.x + 100, top.y, 500)?.sub).toBe(top.sub);
+    expect(loc.nearest(top.x + 100, top.y, 500)?.patch).toBe(top.patch);
     expect(loc.nearest(top.x + 100, top.y, 500, top.score + 1)).toBeNull();
-    expect(loc.candidateAt(top.x, top.y)?.sub).toBe(top.sub);
+    expect(loc.candidateAt(top.x, top.y)?.patch).toBe(top.patch);
   });
 
   it('uses only bit-exact maths', () => {

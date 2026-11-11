@@ -2,7 +2,7 @@
  * Sandbox 4 · Terrain (a three-level base map plus a height map and a 3D view).
  *
  * Generation: an unbounded world (metres) of three nested Voronoi levels — regions,
- * elevation zones, subbiomes — with ocean seeds / links / growth and random merges
+ * elevation zones, patches — with ocean seeds / links / growth and random merges
  * (src/world). Everything is a lazily memoised pure function of seed + parameters.
  *
  * Display: a progressive per-pixel raster (shared RasterLayer) with pixel-exact
@@ -124,7 +124,7 @@ let biomeSort: BiomeSort = 'legend';
 let hover: { x: number; y: number } | null = null;
 let pinned: { x: number; y: number } | null = null;
 let pinElevationZone = -1;
-let pinSub = -1;
+let pinPatch = -1;
 let measuring = false;
 let ruler: { ax: number; ay: number; bx: number; by: number } | null = null;
 const timings = { render: 0 };
@@ -314,22 +314,22 @@ function onParam(key: string, value: ParamValue): void {
 
 function resetSection(s: Section): void {
   const d = defaults();
-  const patch: Params = {};
-  for (const def of s.params) patch[def.key] = d[def.key];
-  setParams(patch);
+  const delta: Params = {};
+  for (const def of s.params) delta[def.key] = d[def.key];
+  setParams(delta);
 }
 
-function setParams(patch: Params): void {
+function setParams(delta: Params): void {
   const before = params;
-  params = { ...params, ...patch };
+  params = { ...params, ...delta };
   leftPanel.sync(params);
   viewPanel.sync(params);
   renderPlots();
-  const gen = Object.keys(patch).some((k) => GEN_KEYS.has(k) && before[k] !== params[k]);
+  const gen = Object.keys(delta).some((k) => GEN_KEYS.has(k) && before[k] !== params[k]);
   if (gen) regenerate();
   else {
     // river settings rebuild only the rivers (and the terrain on them), never the map
-    const changed = (keys: Set<string>) => Object.keys(patch).some((k) => keys.has(k) && before[k] !== params[k]);
+    const changed = (keys: Set<string>) => Object.keys(delta).some((k) => keys.has(k) && before[k] !== params[k]);
     // the precipitation map thins the rivers of dry flat zones
     const riv = changed(RIVER_KEYS) || changed(PRECIP_KEYS);
     if (riv) rivers = new Rivers(world, toRiverParams(params, seedFromText(seedText)));
@@ -389,7 +389,7 @@ function newBiomes(): void {
 
 /**
  * Lakes on the current world and rivers. They read only the sea-level biome of each
- * subbiome, so they get a Biomes without terrain: the lakes never change as tiles arrive.
+ * patch, so they get a Biomes without terrain: the lakes never change as tiles arrive.
  */
 function newLakes(): void {
   lakes = new Lakes(world, rivers, new Biomes(world, rivers, climate, null, toBiomeParams(params)), toLakeParams(params));
@@ -588,12 +588,12 @@ function prepareTerrain(deadline: number): number {
 
 function refreshPins(): void {
   if (!pinned) {
-    pinElevationZone = pinSub = -1;
+    pinElevationZone = pinPatch = -1;
     return;
   }
   const c = world.cellAt(pinned.x, pinned.y, true);
   pinElevationZone = c.elevationZone;
-  pinSub = c.sub;
+  pinPatch = c.patch;
 }
 
 function viewOpts(): ViewOpts {
@@ -601,11 +601,11 @@ function viewOpts(): ViewOpts {
     mode: str(params, 'view.color') as ViewMode,
     regEdges: params['view.regEdges'] === true,
     zoneEdges: params['view.zoneEdges'] === true,
-    subEdges: params['view.subEdges'] === true,
+    patchEdges: params['view.patchEdges'] === true,
     coast: params['view.coast'] === true,
     lod: str(params, 'view.lod') as 'auto' | 'full',
     pinElevationZone,
-    pinSub,
+    pinPatch,
     hillshade: params['view.hillshade'] === true,
   };
 }
@@ -738,7 +738,7 @@ function jumpTo(x: number, y: number): void {
 }
 
 function detailOn(): boolean {
-  return str(params, 'view.lod') === 'full' || world.subLevel.size * cam.zoom * (window.devicePixelRatio || 1) >= DETAIL_PX;
+  return str(params, 'view.lod') === 'full' || world.patchLevel.size * cam.zoom * (window.devicePixelRatio || 1) >= DETAIL_PX;
 }
 
 // ------------------------------------------------------------------ render loop
@@ -1106,10 +1106,10 @@ function endPointer(e: PointerEvent): void {
         invalidate();
       }
     } else if (drag.moved <= 3 && e.type === 'pointerup') {
-      // click: pin the elevation zone and subbiome under the cursor (click it again to release)
+      // click: pin the elevation zone and patch under the cursor (click it again to release)
       const [wx, wy] = screenToWorld(cam, vp, ...local(e));
       const c = world.cellAt(wx, wy, true);
-      if (pinned && c.elevationZone === pinElevationZone && c.sub === pinSub) pinned = null;
+      if (pinned && c.elevationZone === pinElevationZone && c.patch === pinPatch) pinned = null;
       else pinned = { x: wx, y: wy };
       refreshPins();
       viewChanged();
@@ -1292,7 +1292,7 @@ window.addEventListener('keydown', (e) => {
       break;
     case 'n':
     case 'N':
-      toggle('view.subEdges');
+      toggle('view.patchEdges');
       break;
     case 'l':
     case 'L':

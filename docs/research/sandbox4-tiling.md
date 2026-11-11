@@ -17,7 +17,7 @@ The bit-equality check is a test in `tests/terrain.test.ts`. Part 2 (2D render t
 
 | Layer | Already local? | Change needed for tiles |
 |---|---|---|
-| World: regions, biomes, subbiomes, oceans, merges (`world.ts`, `level.ts`) | Yes. A pure function of the point, memoised, and independent of exploration order (`tests/world.test.ts`). | **None.** |
+| World: regions, biomes, patches, oceans, merges (`world.ts`, `level.ts`) | Yes. A pure function of the point, memoised, and independent of exploration order (`tests/world.test.ts`). | **None.** |
 | Rivers (`rivers.ts`) | Yes. Computed per region, a pure function of the region. | **None** to the algorithm. A tile is 16 region computes. |
 | Terrain (`terrain.ts`) | Per region, with a large halo. | **Yes.** One raster per tile instead of per region (see below). The result is bit-identical. |
 | 2D map raster (`render/source.ts`, `shared/render/raster.ts`) | No. Every camera change re-renders the whole viewport. | **Yes.** This is where panning actually costs time. |

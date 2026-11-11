@@ -13,18 +13,18 @@ import { sample, type Terrain } from '../world/terrain';
 import { ELEVATION_ZONE_TYPES, elevationZoneType, OCEAN_ZONE } from '../world/zones';
 import { BIOMES, type Biomes } from '../world/biomes';
 
-export type ViewMode = 'map' | 'biomes' | 'landsea' | 'genesis' | 'merges' | 'regions' | 'elevationZones' | 'subbiomes' | 'hierarchy' | 'height';
+export type ViewMode = 'map' | 'biomes' | 'landsea' | 'genesis' | 'merges' | 'regions' | 'elevationZones' | 'patches' | 'hierarchy' | 'height';
 
 export interface ViewOpts {
   mode: ViewMode;
   regEdges: boolean;
   zoneEdges: boolean;
-  subEdges: boolean;
+  patchEdges: boolean;
   coast: boolean;
-  /** 'auto' skips the subbiome level when subbiomes are under ~3 px */
+  /** 'auto' skips the patch level when patches are under ~3 px */
   lod: 'auto' | 'full';
   pinElevationZone: number;
-  pinSub: number;
+  pinPatch: number;
   /** shade by the height map (always on for 'height') */
   hillshade: boolean;
 }
@@ -94,9 +94,9 @@ export function colorOf(c: Cell, mode: ViewMode, biomes: Biomes | null = null): 
     case 'biomes': {
       if (c.ocean) return colorOf(c, 'map');
       if (!biomes) return FLAT_LAND;
-      // one colour per biome, a little lighter / darker per subbiome so the cells still read
-      const f = c.sub >= 0 ? jitterF(keyHash(c.sub, 9), 0.05) : 1;
-      return scale(BIOME_PX[biomes.indexOf(c.sub, c.elevationZoneRaw)], f);
+      // one colour per biome, a little lighter / darker per patch so the cells still read
+      const f = c.patch >= 0 ? jitterF(keyHash(c.patch, 9), 0.05) : 1;
+      return scale(BIOME_PX[biomes.indexOf(c.patch, c.elevationZoneRaw)], f);
     }
     case 'landsea':
     case 'height': // until the height raster is ready
@@ -111,8 +111,8 @@ export function colorOf(c: Cell, mode: ViewMode, biomes: Biomes | null = null): 
       const base = cached('b', c.elevationZone, () => packRGB(hashColor(keyHash(c.elevationZone, 4))));
       return c.ocean ? mix(scale(base, 0.5), 20, 50, 100, 0.45) : base;
     }
-    case 'subbiomes': {
-      const k = c.sub >= 0 ? c.sub : c.elevationZone;
+    case 'patches': {
+      const k = c.patch >= 0 ? c.patch : c.elevationZone;
       const base = cached('s', k, () => packRGB(hashColor(keyHash(k, 5))));
       return c.ocean ? mix(scale(base, 0.5), 20, 50, 100, 0.45) : base;
     }
@@ -122,7 +122,7 @@ export function colorOf(c: Cell, mode: ViewMode, biomes: Biomes | null = null): 
       const bh = keyHash(c.elevationZone, 4);
       const light = 0.42 + ((bh >>> 4) % 100) / 400;
       let px = packRGB(hsl(hue, 0.5, light));
-      if (c.sub >= 0) px = scale(px, jitterF(keyHash(c.sub, 5), 0.07));
+      if (c.patch >= 0) px = scale(px, jitterF(keyHash(c.patch, 5), 0.07));
       return c.ocean ? scale(px, 0.42) : px;
     }
     case 'merges': {
@@ -131,8 +131,8 @@ export function colorOf(c: Cell, mode: ViewMode, biomes: Biomes | null = null): 
         const h = keyHash(c.elevationZone, 6);
         px = packRGB(hsl((18 + (h % 34)) / 360, 0.75, c.ocean ? 0.38 : 0.55));
       }
-      if (c.subMerged && c.sub >= 0) {
-        const h = keyHash(c.sub, 7);
+      if (c.patchMerged && c.patch >= 0) {
+        const h = keyHash(c.patch, 7);
         const y = hsl((50 + (h % 20)) / 360, 0.85, 0.62);
         px = mix(px, y[0], y[1], y[2], c.elevationZoneMerged ? 0.35 : 0.7);
       }
@@ -141,21 +141,21 @@ export function colorOf(c: Cell, mode: ViewMode, biomes: Biomes | null = null): 
     default: {
       // map: elevation zone types
       if (c.ocean) {
-        const f = jitterF(keyHash(c.elevationZone, 8), 0.07) * (c.sub >= 0 ? jitterF(keyHash(c.sub, 9), 0.03) : 1);
+        const f = jitterF(keyHash(c.elevationZone, 8), 0.07) * (c.patch >= 0 ? jitterF(keyHash(c.patch, 9), 0.03) : 1);
         return packColor(OCEAN_RGB[0] * f, OCEAN_RGB[1] * f, OCEAN_RGB[2] * f);
       }
       const t = ELEVATION_ZONE_TYPES[elevationZoneType(c.elevationZone, false)].rgb;
-      const f = c.sub >= 0 ? jitterF(keyHash(c.sub, 9), 0.08) : 1;
+      const f = c.patch >= 0 ? jitterF(keyHash(c.patch, 9), 0.08) : 1;
       return packColor(t[0] * f, t[1] * f, t[2] * f);
     }
   }
 }
 
 export function viewKey(v: ViewOpts): string {
-  return `${v.mode}|${+v.regEdges}${+v.zoneEdges}${+v.subEdges}${+v.coast}|${v.lod}|${v.pinElevationZone}|${v.pinSub}|${+v.hillshade}`;
+  return `${v.mode}|${+v.regEdges}${+v.zoneEdges}${+v.patchEdges}${+v.coast}|${v.lod}|${v.pinElevationZone}|${v.pinPatch}|${+v.hillshade}`;
 }
 
-/** Subbiomes are classified when at least this many raster pixels wide. */
+/** Patches are classified when at least this many raster pixels wide. */
 export const DETAIL_PX = 3;
 
 /** Hypsometric tint: stops (metres → colour) for land, and sea depth shades. */
@@ -198,18 +198,18 @@ const SHADE_EXAG = 4;
  * terrain tiles its heights came from), so the map re-renders when either changes.
  */
 export function mapSource(world: World, genKey: string, v: ViewOpts, terrain: Terrain | null = null, terrainVer = 0, biomes: Biomes | null = null, biomeKey = ''): RasterSource {
-  const S = world.subLevel.size;
+  const S = world.patchLevel.size;
   const B = world.elevationZoneLevel.size;
   const R = world.regionLevel.size;
   return {
     key: `${genKey}|${viewKey(v)}|t${terrain && (v.hillshade || v.mode === 'height') ? terrainVer : '-'}|b${v.mode === 'biomes' ? biomeKey : '-'}`,
     create() {
       let cols = 0;
-      let sub = new Float64Array(0);
+      let patch = new Float64Array(0);
       let zone = new Float64Array(0);
       let reg = new Float64Array(0);
       let oc = new Uint8Array(0);
-      let pSub = new Float64Array(0);
+      let pPatch = new Float64Array(0);
       let pZone = new Float64Array(0);
       /** region keys of the REGION_THICK rows above (regUp[0] = the row just above) */
       let regUp: Float64Array<ArrayBuffer>[] = [];
@@ -222,11 +222,11 @@ export function mapSource(world: World, genKey: string, v: ViewOpts, terrain: Te
       return (_py, wy, wx0, dwx, n, out, off) => {
         if (n !== cols) {
           cols = n;
-          sub = new Float64Array(n);
+          patch = new Float64Array(n);
           zone = new Float64Array(n);
           reg = new Float64Array(n);
           oc = new Uint8Array(n);
-          pSub = new Float64Array(n);
+          pPatch = new Float64Array(n);
           pZone = new Float64Array(n);
           regUp = Array.from({ length: REGION_THICK }, () => new Float64Array(n));
           pOc = new Uint8Array(n);
@@ -237,13 +237,13 @@ export function mapSource(world: World, genKey: string, v: ViewOpts, terrain: Te
         }
         const detail = v.lod === 'full' || S / dwx >= DETAIL_PX;
         // borders fade out before they would turn the map into a mesh
-        const subEdges = v.subEdges && detail && S / dwx >= 8;
+        const patchEdges = v.patchEdges && detail && S / dwx >= 8;
         const zoneEdges = v.zoneEdges && B / dwx >= 8;
         const regEdges = v.regEdges && R / dwx >= 5;
         const useH = terrain !== null && (v.hillshade || v.mode === 'height');
         for (let c = 0; c < n; c++) {
           const cell = world.cellAt(wx0 + c * dwx, wy, detail, tmp);
-          sub[c] = cell.sub;
+          patch[c] = cell.patch;
           zone[c] = cell.elevationZone;
           reg[c] = cell.region;
           oc[c] = cell.ocean ? 1 : 0;
@@ -288,15 +288,15 @@ export function mapSource(world: World, genKey: string, v: ViewOpts, terrain: Te
           if (regEdge && dash) px = REGION_EDGE;
           else if (v.coast && ((l && oc[c - 1] !== oc[c]) || (u && pOc[c] !== oc[c]))) px = COAST;
           else if (zoneEdges && ((l && zone[c - 1] !== zone[c]) || (u && pZone[c] !== zone[c]))) px = scale(px, 0.5);
-          else if (subEdges && ((l && sub[c - 1] !== sub[c]) || (u && pSub[c] !== sub[c]))) px = scale(px, 0.8);
+          else if (patchEdges && ((l && patch[c - 1] !== patch[c]) || (u && pPatch[c] !== patch[c]))) px = scale(px, 0.8);
           // pinned outlines on top
           if (v.pinElevationZone >= 0) {
             const inB = zone[c] === v.pinElevationZone;
             if ((l && (zone[c - 1] === v.pinElevationZone) !== inB) || (u && (pZone[c] === v.pinElevationZone) !== inB)) px = packColor(253, 231, 37);
           }
-          if (v.pinSub >= 0 && detail) {
-            const inS = sub[c] === v.pinSub;
-            if ((l && (sub[c - 1] === v.pinSub) !== inS) || (u && (pSub[c] === v.pinSub) !== inS)) px = packColor(90, 230, 255);
+          if (v.pinPatch >= 0 && detail) {
+            const inS = patch[c] === v.pinPatch;
+            if ((l && (patch[c - 1] === v.pinPatch) !== inS) || (u && (pPatch[c] === v.pinPatch) !== inS)) px = packColor(90, 230, 255);
           }
           out[off + c] = px;
         }
@@ -305,9 +305,9 @@ export function mapSource(world: World, genKey: string, v: ViewOpts, terrain: Te
         const th = pH;
         pH = hRow;
         hRow = th;
-        let t = pSub;
-        pSub = sub;
-        sub = t;
+        let t = pPatch;
+        pPatch = patch;
+        patch = t;
         t = pZone;
         pZone = zone;
         zone = t;

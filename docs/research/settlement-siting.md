@@ -15,17 +15,17 @@
 
 | Hook | File, lines | What it gives a settlement pass |
 |---|---|---|
-| Map hierarchy | `src/world/world.ts` L1–35; defaults `reg.size` 128, `ez.size` 32, `sub.size` 8 (`defaults.json`) | Regions own zones, zones own subbiomes, all by site. Each lattice cell has one site, so the mean cell area is exactly size², and a region holds 16 zones and 256 subbiomes on average |
-| Region, zone, subbiome records | `world.ts` L89–140; `region()` L239; `elevationZoneSubs()` L502; `sub()` L534; `subNbrs()` L547 (Gabriel neighbours); `subCell()` L608; `cellAt()` L623 | Candidate sets, adjacency for catchments and travel graphs, and drawn region and zone per subbiome |
-| Ocean sourcing radius | `world.ts` L280–317 (`source`), L348–364 (`sourceRadius`, `baseFlags`) | Ocean needs the sources of a (2·(`oc.range`+5)+1)² block of regions. That cost is already paid by `subCell().ocean`, so it does not add to the settlement pass |
+| Map hierarchy | `src/world/world.ts` L1–35; defaults `reg.size` 128, `ez.size` 32, `patch.size` 8 (`defaults.json`) | Regions own zones, zones own patches, all by site. Each lattice cell has one site, so the mean cell area is exactly size², and a region holds 16 zones and 256 patches on average |
+| Region, zone, patch records | `world.ts` L89–140; `region()` L239; `elevationZonePatches()` L502; `patch()` L534; `patchNbrs()` L547 (Gabriel neighbours); `patchCell()` L608; `cellAt()` L623 | Candidate sets, adjacency for catchments and travel graphs, and drawn region and zone per patch |
+| Ocean sourcing radius | `world.ts` L280–317 (`source`), L348–364 (`sourceRadius`, `baseFlags`) | Ocean needs the sources of a (2·(`oc.range`+5)+1)² block of regions. That cost is already paid by `patchCell().ocean`, so it does not add to the settlement pass |
 | Zone types | `src/world/zones.ts` L27–33 (weights 5/6/1/1), L45–53 (`elevationZoneType`) | Relief class per zone: flat, lowland, hills, mountains |
-| Rivers per region | `src/world/rivers.ts` L1–37 (header), L137–169 (`RegionRivers`), L237 (`isCoastSub`), L249 (`regionElevationZones`), L272 (`isSparseFlat`), L279–325 (`attractors`), L859–860 (flow summed upstream) | Node positions, parent links, `flow` (attractors reached upstream), `wet` (node over sea), roots. **Rivers never enter another region's land** (L21–26), so mouths, confluences and heads of navigation are region-local |
+| Rivers per region | `src/world/rivers.ts` L1–37 (header), L137–169 (`RegionRivers`), L237 (`isCoastPatch`), L249 (`regionElevationZones`), L272 (`isSparseFlat`), L279–325 (`attractors`), L859–860 (flow summed upstream) | Node positions, parent links, `flow` (attractors reached upstream), `wet` (node over sea), roots. **Rivers never enter another region's land** (L21–26), so mouths, confluences and heads of navigation are region-local |
 | River beds | `src/world/terrain.ts` L412–420 (`bed`) | Bed height per river node, "a pure function of the region (its rivers and the map)". This needs no height tile, and it gives river gradients for fall lines |
 | Floodplain width | `terrain.ts` L278–288 (`flood` spline), L575–576 (`× √(flow/100)`) | Floodplain half-width from bed height. Used to find the lowest bridging point |
-| Height tiles | `terrain.ts` L208–236 (`TerrainTile`), L371–382 (`subHeight`), L936–942 (`subOf`), L985–987 (`E`, `src`: "bed / coast height the cell's path starts from"), L1178–1195 (per-subbiome mean height loop) | Exact heights, plus height above the nearest river bed (h − src, a HAND-like value, §3.5). Available only after a tile is computed, which takes about 1 s per 2×2 regions in a worker |
-| Worker | `src/world/terrain.worker.ts` L34–64 | Tiles are posted with a transfer list, so new per-subbiome arrays can ride along |
+| Height tiles | `terrain.ts` L208–236 (`TerrainTile`), L371–382 (`patchHeight`), L936–942 (`patchOf`), L985–987 (`E`, `src`: "bed / coast height the cell's path starts from"), L1178–1195 (per-patch mean height loop) | Exact heights, plus height above the nearest river bed (h − src, a HAND-like value, §3.5). Available only after a tile is computed, which takes about 1 s per 2×2 regions in a worker |
+| Worker | `src/world/terrain.worker.ts` L34–64 | Tiles are posted with a transfer list, so new per-patch arrays can ride along |
 | Climate | `src/world/climate.ts` L95–107; `prosperityAt` L105–107 | T₀ and P per point. `prosperityAt` is a noise placeholder "for later use (settlements, roads)". A settlement potential can replace it |
-| Biomes | `src/world/biomes.ts` L88–94 (belts), L111 (`dryThreshold`), L134 (`classify`), L194 (`TYPICAL_HEIGHT`), L247–260 (`ofSub`), L278 (`info`) | Biome, belt and aridity per subbiome. They are **exact once the tile exists and an estimate before**, which matters for determinism (§6.1) |
+| Biomes | `src/world/biomes.ts` L88–94 (belts), L111 (`dryThreshold`), L134 (`classify`), L194 (`TYPICAL_HEIGHT`), L247–260 (`ofPatch`), L278 (`info`) | Biome, belt and aridity per patch. They are **exact once the tile exists and an estimate before**, which matters for determinism (§6.1) |
 | Deterministic maths | `shared/core/dmath.ts` L1–8, L31 (`dexp`); `shared/core/hash.ts` L37 (`hash4`); `shared/core/heap.ts` L1–15 (ties on the smaller value) | Bit-exact exp for Tobler's function; hashes for tie-breaking; a deterministic heap for Dijkstra |
 | Prosperity overlay | `src/main.ts` L119, L319, L367 | Where a settlement-potential view would plug in |
 
@@ -33,9 +33,9 @@
 
 | Hook | File, lines | What it gives a settlement pass |
 |---|---|---|
-| Lakes | `src/world/lakes.ts` L1–39 (header), L57–82 (`Lake`), L189 (`get`), L237 (`lakeAt`); commit `4766597` | River-fed lakes per region, after the rivers and on them, each with a host subbiome (`Lake.sub`), area and the river's flow. Like the rivers they are region-local and do not depend on the terrain tiles, so they are safe for Tier M (§6.1). Fresh water, fish and a lakeshore site |
+| Lakes | `src/world/lakes.ts` L1–39 (header), L57–82 (`Lake`), L189 (`get`), L237 (`lakeAt`); commit `4766597` | River-fed lakes per region, after the rivers and on them, each with a host patch (`Lake.patch`), area and the river's flow. Like the rivers they are region-local and do not depend on the terrain tiles, so they are safe for Tier M (§6.1). Fresh water, fish and a lakeshore site |
 | Mangrove | `src/world/biomes.ts` L23–28, L85, L343; commit `dc52798` | Biome `mangrove` on warm, not-desert coasts of flat and lowland zones (T ≥ 20 °C, m ≥ 0.5). Tidal swamp: little farmland, hard going, but fish and timber |
-| Coast per merged subbiome | `src/world/biomes.ts` L238 (`BiomeInfo.coastal`), L298–321 (`isCoastal`) | The `coast` feature (§6.3) for a merged subbiome, already cached with its biome |
+| Coast per merged patch | `src/world/biomes.ts` L238 (`BiomeInfo.coastal`), L298–321 (`isCoastal`) | The `coast` feature (§6.3) for a merged patch, already cached with its biome |
 | Tests | `tests/fixture.ts` (`testParams`, frozen baseline); `tests/world.test.ts` L74 (order independence); `tests/terrain.test.ts` L127, L158, L200 (seamless, per-region, deterministic) | Patterns for the settlement tests in §6.12 |
 | Ruler | `README.md` L131 | Horse 32–48 km/day, legion 24–32, hiker 16–24 |
 
@@ -45,10 +45,10 @@
 
 Seven findings shape the design.
 
-1. **Site and situation are different questions at different scales.** *Situation* means which part of the region has the food, water and routes. *Site* means which exact spot inside it is dry, flat, defensible and next to the water. In the repo, situation is a subbiome-level question (8 km), answerable from the map. Site is a raster question (1 km), answerable only from the height tile. §6 keeps the two apart: choices never depend on whether a tile has been computed.
+1. **Site and situation are different questions at different scales.** *Situation* means which part of the region has the food, water and routes. *Site* means which exact spot inside it is dry, flat, defensible and next to the water. In the repo, situation is a patch-level question (8 km), answerable from the map. Site is a raster question (1 km), answerable only from the height tile. §6 keeps the two apart: choices never depend on whether a tile has been computed.
 2. **Agriculture explains where people are; trade explains where cities are.** Henderson et al. 2018 find that for early-developing countries the agricultural variables add more than 6 times the explanatory power of the trade variables for the distribution of economic activity (HSSW). Bosker & Buringh find that, for which locations in Europe became cities in 800–1800, a **navigable river** was the main positive geographic effect: about +6 percentage points on an unconditional chance of about 12 %. Rugged terrain lowered the chance (BB). Bleakley & Lin find that portage sites on the US fall line are 50–110 % denser today (BL). Cooley's 1894 rule: "Population and wealth tend to collect wherever there is a break in transportation" (COOL, p. 76). So the score should be **food catchment × water × (1 + trade bonus)**: multiplicative necessities and a bounded trade multiplier.
-3. **The repo's hierarchy is Christaller's K = 4 system, two orders per level.** In the K = 4 (traffic) principle, market-area spacings double per order: 4, 8, 16, 32, 64, 128, 256 km (CHEN, Table 1, after Christaller 1966) [partially verified]. The defaults (8 km subbiomes, 32 km zones, 128 km regions) are exactly orders 2, 4 and 6. K = 4 also predicts 16 lower areas per area two orders up, which is the repo's 16 subbiomes per zone and 16 zones per region (§5.2). The design uses this directly: 1 city, 3 second-rank towns and 12 market towns per region, and 1 town and 3 market villages per zone.
-4. **The 8 km subbiome is a farming catchment.** Its mean area is 64 km², a circle of radius 4.5 km. That matches the 1-hour, ~5 km catchment that site-catchment analysis assigns to farming sites (VFH) [partially verified]. It also matches the 2–4 km farm-to-field drop-off reported from Chisholm (CHIS) [unverified]. A zone (~1,000 km², radius ~18 km) matches Bosker & Buringh's 20 km "one-day round trip" (BB, fn. 26) and Bracton's market rule of 6⅔ miles (10.7 km) between markets (BLACK).
+3. **The repo's hierarchy is Christaller's K = 4 system, two orders per level.** In the K = 4 (traffic) principle, market-area spacings double per order: 4, 8, 16, 32, 64, 128, 256 km (CHEN, Table 1, after Christaller 1966) [partially verified]. The defaults (8 km patches, 32 km zones, 128 km regions) are exactly orders 2, 4 and 6. K = 4 also predicts 16 lower areas per area two orders up, which is the repo's 16 patches per zone and 16 zones per region (§5.2). The design uses this directly: 1 city, 3 second-rank towns and 12 market towns per region, and 1 town and 3 market villages per zone.
+4. **The 8 km patch is a farming catchment.** Its mean area is 64 km², a circle of radius 4.5 km. That matches the 1-hour, ~5 km catchment that site-catchment analysis assigns to farming sites (VFH) [partially verified]. It also matches the 2–4 km farm-to-field drop-off reported from Chisholm (CHIS) [unverified]. A zone (~1,000 km², radius ~18 km) matches Bosker & Buringh's 20 km "one-day round trip" (BB, fn. 26) and Bracton's market rule of 6⅔ miles (10.7 km) between markets (BLACK).
 5. **Generators use the same recipe with different constants.**
    - Azgaar scores each cell by biome habitability + normalised river flux and confluence × 250 − elevation + coast, estuary and safe-harbour bonuses, then places capitals greedily with a quadtree minimum distance (AZ).
    - O'Leary scores by √flux minus the sum of 0.02/d over existing cities and takes the argmax repeatedly (OL).
@@ -56,7 +56,7 @@ Seven findings shape the design.
    - Civilization IV adds +200 for hills and +40 for a river or fresh water (CIV4).
    
    None of them is order-independent on an infinite map. All rely on a global greedy pass.
-6. **A global greedy pass does not fit a lazy map, but a per-owner one does.** Rivers never cross region borders, and the terrain puts a ridge along them (`terrain.ts` header, step 2). Region borders are therefore drainage divides, where real towns rarely sit. That makes a cheap, exactly local rule defensible: towns and cities need a minimum **border depth** in subbiome steps. Selection then becomes an ordinary greedy non-maximum suppression *inside* one region, which is order-independent by construction (§5.3, §6.5).
+6. **A global greedy pass does not fit a lazy map, but a per-owner one does.** Rivers never cross region borders, and the terrain puts a ridge along them (`terrain.ts` header, step 2). Region borders are therefore drainage divides, where real towns rarely sit. That makes a cheap, exactly local rule defensible: towns and cities need a minimum **border depth** in patch steps. Selection then becomes an ordinary greedy non-maximum suppression *inside* one region, which is order-independent by construction (§5.3, §6.5).
 7. **Sizes follow from catchments if every order takes the same urban share.** With K = 4 nesting, if each centre of order k houses a fixed share *a* of its market area's population, each order is 4 times larger than the one below. That is Zipf's law with exponent 1 (§6.7). The trade multiplier then spreads the sizes. Gabaix 1999 explains exponent ≈ 1 from proportional growth (GAB). Soo finds national exponents averaging about 1.1 (SOO).
 
 ---
@@ -69,17 +69,17 @@ The textbook split is between **site**, the physical ground a settlement stands 
 
 | Factor | What it means | Source | Map signal in sandbox4 |
 |---|---|---|---|
-| **Water supply** | Perennial river, spring, well or lake within short carrying distance | General; the top variable in archaeological predictive models (§3.2) [unverified as a general statement] | River node or a lake in the subbiome (`Lake.sub`, `lakes.ts`); aridity m = P/(20T+140) (`biomes.ts` L111) as a proxy for wells and springs |
+| **Water supply** | Perennial river, spring, well or lake within short carrying distance | General; the top variable in archaeological predictive models (§3.2) [unverified as a general statement] | River node or a lake in the patch (`Lake.patch`, `lakes.ts`); aridity m = P/(20T+140) (`biomes.ts` L111) as a proxy for wells and springs |
 | **Wet point / dry point** | Dry areas favour wet points (oasis, river); wet areas favour dry points (terrace, levee, island above floods) | [unverified: textbook concept] | Aridity × river; HAND (h − src, §3.5) |
 | **Floodplain vs terrace** | Fields on the floodplain, houses on the first terrace above flood level | HAND classes: 0–5 m above the drainage is near-surface water table, 5–15 m shallow, > 15 m deep (NOB via GRASS r.hand) [partially verified] | `terrain.ts` L986 `src` gives the base height of each cell's drainage path |
 | **Defensibility** | Hilltop, spur between two rivers (confluence), meander loop, island, peninsula | Civ IV gives a hill city site +200 (CIV4 L2170). Civ V gives hills in ring 1 a strategic value of 3 (CIV5 L1011–1052). Emilien et al. score "geographical domination" (EMI §4) | Zone type; relative height (TPI); confluence; peninsula (mostly ocean neighbours) |
 | **River crossing / ford / lowest bridging point** | Where a land route crosses a river: wadeable, narrow or firm-banked; the lowest bridge on a river collects all coastwise land traffic | [unverified: textbook concept, e.g. London, the lowest bridging point of the Thames] | First node upstream from the mouth where the floodplain is narrow (`terrain.ts` L575–576) |
 | **Confluence** | Two navigable or fertile valleys meet; it is also a defensive spur | Azgaar adds confluence flux to river flux (AZ L41) | Node with two children whose upstream drainage is large |
 | **Head of navigation / fall line** | Boats must stop and unload (break of bulk); falls provide water power | Britannica: the fall line marks the head of navigation; Trenton, Philadelphia, Baltimore, Washington, Richmond and Augusta lie on it (BRIT-FL). Bleakley & Lin: portage sites are 50–110 % denser today, an effect that persists after controls (BL) | Upstream end of the navigable river; a knickpoint in bed slope (`bed()`); a river leaving hills or mountains into a lowland or flat zone |
-| **Natural harbour, sheltered bay** | Protected water, ideally with a navigable river behind it | Henderson et al. include natural harbours among the trade variables (HSSW). Azgaar counts a "safe harbour" when a land cell has exactly one adjacent water cell, +20 (AZ) | Coastal subbiome next to an ocean subbiome that is mostly enclosed by land |
+| **Natural harbour, sheltered bay** | Protected water, ideally with a navigable river behind it | Henderson et al. include natural harbours among the trade variables (HSSW). Azgaar counts a "safe harbour" when a land cell has exactly one adjacent water cell, +20 (AZ) | Coastal patch next to an ocean patch that is mostly enclosed by land |
 | **Estuary / river mouth** | Sea and river traffic meet: the classic break of bulk | Cooley (COOL); Azgaar +15 for a coastal cell with a river (AZ L1191); EU4 gives estuaries +10 trade power (`game-resources-and-trade.md` §2.1) | River node where `wet` switches from 1 to 0 |
 | **Mountain pass approach / gap town** | Foot of a pass, or a gap through a ridge | [unverified: textbook concept] | Low point on a region border between two land regions (needs heights: Tier T, §6.6) |
-| **Agricultural catchment** | Enough fields within a walk to feed the settlement | Vita-Finzi & Higgs (§2.2) | Food density × subbiome area |
+| **Agricultural catchment** | Enough fields within a walk to feed the settlement | Vita-Finzi & Higgs (§2.2) | Food density × patch area |
 
 ### 2.2 Catchments: how far people walk to their fields
 
@@ -92,8 +92,8 @@ The textbook split is between **site**, the physical ground a settlement stands 
 
 | Map unit | Mean area | Equal-area radius | Real analogue |
 |---|---|---|---|
-| Subbiome (8 km) | 64 km² | 4.5 km | Farming catchment of 1 h / 5 km (VFH) |
-| 1-ring of subbiomes | ~450 km² | ~12 km | Bracton's ⅓-day market reach (10.7 km) |
+| Patch (8 km) | 64 km² | 4.5 km | Farming catchment of 1 h / 5 km (VFH) |
+| 1-ring of patches | ~450 km² | ~12 km | Bracton's ⅓-day market reach (10.7 km) |
 | Zone (32 km) | 1,024 km² | 18 km | Half a day's walk, a 20 km round trip (BB) |
 | Region (128 km) | 16,384 km² | 72 km | 2–3 days on foot, 1.5–2 days on a horse (`README.md` L131) |
 
@@ -191,7 +191,7 @@ The city score in §6.4 takes the **maximum** of a centrality term and a gateway
 W(S) ≈ 6 / (1 + a + a²/2 + a³/6 + a⁴/24)          (+ − × ÷ only)
 ```
 
-This is the Taylor series of e^a in the denominator. It is strictly positive and decreasing in |S + 0.05|. Its relative error is under 0.4 % for a ≤ 1 (|S| up to about 0.24) and about 25 % at a = 3.5 (S = 1), where W is under 0.2 km/h either way. That is my own calculation, not a sourced value. On the 8 km subbiome graph the slopes are mostly below 0.05, so Naismith's linear rule is good enough. Tobler, through `dexp`, is for 1 km raster paths.
+This is the Taylor series of e^a in the denominator. It is strictly positive and decreasing in |S + 0.05|. Its relative error is under 0.4 % for a ≤ 1 (|S| up to about 0.24) and about 25 % at a = 3.5 (S = 1), where W is under 0.2 km/h either way. That is my own calculation, not a sourced value. On the 8 km patch graph the slopes are mostly below 0.05, so Naismith's linear rule is good enough. Tobler, through `dexp`, is for 1 km raster paths.
 
 **Mode costs for goods.** Freight cost per km follows `game-resources-and-trade.md` §4.2: sea 1, river downstream 2–3, river upstream 4–6, road 10–20, trackless land 20–40. A **mode change costs a fixed transshipment charge**. That charge is what makes break-of-bulk points attract cities in a routing model (COOL).
 
@@ -201,7 +201,7 @@ This is the Taylor series of e^a in the denominator. It is strictly positive and
 - **Reilly 1931, breaking point.** The boundary between the market areas of towns A and B lies at d_A = D / (1 + √(P_B/P_A)) from A. It follows from inverse-square attraction and needs only √ (REI) [partially verified].
 - **Huff 1963.** Pᵢⱼ = Aⱼ^α Dᵢⱼ^−β / Σₖ Aₖ^α Dᵢₖ^−β. With α = 1 and β = 2 it is bit-exact (HUFF) [partially verified: Wikipedia form].
 
-**Design note.** Hansen accessibility over a region's subbiome graph gives the "centrality" of a candidate city, and Reilly's breaking point can assign zones to towns. Both are region-local.
+**Design note.** Hansen accessibility over a region's patch graph gives the "centrality" of a candidate city, and Reilly's breaking point can assign zones to towns. Both are region-local.
 
 ### 3.5 Height above the nearest drainage (HAND)
 
@@ -297,7 +297,7 @@ The domination function is + − × ÷ only. §6.6 uses it for defence in site r
 
 | Ingredient | Azgaar | O'Leary | Civ V | Civ IV | Emilien | This design (§6) |
 |---|---|---|---|---|---|---|
-| Food or biome catchment | Habitability (cell only) | — | Ring-weighted yields | Tile yields in radius | — | Food density × subbiome area, with rings by level |
+| Food or biome catchment | Habitability (cell only) | — | Ring-weighted yields | Tile yields in radius | — | Food density × patch area, with rings by level |
 | River | Flux + confluence ×250 | √flux | +15 % | +40, tile +10 | Water distance | Water gate + navigable river, mouth, confluence, head of navigation, bridge |
 | Coast and harbour | +5, harbour +20, estuary +15 | — | +40 % | Water-tile terms | — | Harbour, mouth (gateway) |
 | Elevation and defence | −(h−50)/5 | — | Hills +3 | Hills +200 | Domination | Small bonus; ruggedness not rewarded for cities |
@@ -329,22 +329,22 @@ In K = 4 (CHEN Table 1; KING §3.1.7) [partially verified], spacings are 4·2^(k
 | Christaller order (K = 4, 4 km base) | Spacing | Repo level | Count per region | Name used here |
 |---|---|---|---|---|
 | 1 | 4 km | — (sub-cell hamlets) | ~1,024 | hamlet (not placed) |
-| 2 | 8 km | **subbiome** | 256 | village |
-| 3 | 16 km | 4 subbiomes | 64 (48 new) | market village |
+| 2 | 8 km | **patch** | 256 | village |
+| 3 | 16 km | 4 patches | 64 (48 new) | market village |
 | 4 | 32 km | **elevation zone** | 16 (12 new) | market town |
 | 5 | 64 km | 4 zones | 4 (3 new) | county town |
 | 6 | 128 km | **region** | 1 | city |
 
-So per zone the ideal is **1 market town + 3 market villages + 12 villages** (16 subbiomes). Per region it is **1 city + 3 county towns + 12 market towns** (16 zones). These are ideal counts. Merges (2–4 per level), ocean and uninhabitable land lower them. They are caps, not quotas. This holds whenever `ez.size / sub.size = reg.size / ez.size = 4`. For other ratios r, the order-3 and order-5 counts per area become r² − 1 instead of 3 + 12 [Design note].
+So per zone the ideal is **1 market town + 3 market villages + 12 villages** (16 patches). Per region it is **1 city + 3 county towns + 12 market towns** (16 zones). These are ideal counts. Merges (2–4 per level), ocean and uninhabitable land lower them. They are caps, not quotas. This holds whenever `ez.size / patch.size = reg.size / ez.size = 4`. For other ratios r, the order-3 and order-5 counts per area become r² − 1 instead of 3 + 12 [Design note].
 
 Lösch's city-rich and city-poor sectors (§2.5) and the Bosker & Buringh 20–100 km attraction (§2.4) both argue against forcing exact counts. Thresholds (§6.5) decide whether a slot is filled.
 
 ### 5.3 Ownership and tie-breaking
 
-- **A site belongs to the owner that contains it.** The village belongs to the subbiome, the town to the (merged) zone of its subbiome, the city to the **drawn** region of its subbiome (`subCell().region`). The rivers use the drawn region too (`rivers.ts` L243–260).
+- **A site belongs to the owner that contains it.** The village belongs to the patch, the town to the (merged) zone of its patch, the city to the **drawn** region of its patch (`patchCell().region`). The rivers use the drawn region too (`rivers.ts` L243–260).
 - **Total order.** Sort by score descending, then `hash4(seed, ST_SETTLE, keyI(s), keyJ(s))`, then key. Floating-point ties are rare but must not depend on iteration order.
-- **Sum in a fixed order.** Every Σ over subbiomes uses lattice-sorted keys, as `regionElevationZones` sorts its result (`rivers.ts` L258), so the float results are bit-identical.
-- **Cross-owner spacing without lookups.** A region border is a drainage divide with a ridge (`terrain.ts` header, step 2; rivers never cross it, `rivers.ts` L21–26). Requiring **border depth** ≥ d (subbiome steps to the nearest subbiome of another *land* region) for towns and cities keeps them about 2·d·sub.size apart across borders without reading the neighbour's results. Sea is open: ocean subbiomes of other regions do not count.
+- **Sum in a fixed order.** Every Σ over patches uses lattice-sorted keys, as `regionElevationZones` sorts its result (`rivers.ts` L258), so the float results are bit-identical.
+- **Cross-owner spacing without lookups.** A region border is a drainage divide with a ridge (`terrain.ts` header, step 2; rivers never cross it, `rivers.ts` L21–26). Requiring **border depth** ≥ d (patch steps to the nearest patch of another *land* region) for towns and cities keeps them about 2·d·patch.size apart across borders without reading the neighbour's results. Sea is open: ocean patches of other regions do not count.
 
 ---
 
@@ -354,50 +354,50 @@ Lösch's city-rich and city-poor sectors (§2.5) and the Bosker & Buringh 20–1
 
 | Tier | Decides | Inputs | Available | Rule |
 |---|---|---|---|---|
-| **M (map)** | Which subbiomes hold a village, market village, town, county town or city; their rank and population | World, zone types, coast, region rivers, river beds (`bed()`), climate, **height-estimated** biome | At any zoom, without height tiles | A pure function of (seed, params, region), using only the region's own rivers and beds |
-| **T (terrain)** | The exact point inside the chosen subbiome (1 km raster cell); a pass-foot flag | Height tile: h, HAND (h − src), slope, relative height | After the region's tile exists | **Never changes a Tier M choice.** It only moves the point inside its subbiome |
+| **M (map)** | Which patches hold a village, market village, town, county town or city; their rank and population | World, zone types, coast, region rivers, river beds (`bed()`), climate, **height-estimated** biome | At any zoom, without height tiles | A pure function of (seed, params, region), using only the region's own rivers and beds |
+| **T (terrain)** | The exact point inside the chosen patch (1 km raster cell); a pass-foot flag | Height tile: h, HAND (h − src), slope, relative height | After the region's tile exists | **Never changes a Tier M choice.** It only moves the point inside its patch |
 
-**Why not use exact heights in Tier M?** `Biomes.ofSub` returns an estimate until the tile arrives and exact values after (`biomes.ts` L247–260). A city choice that read it would change when the user zooms in, breaking "same map in any order" (`README.md`, base map). Tier M therefore always uses the zone type's typical height (`TYPICAL_HEIGHT`, `biomes.ts` L194) through a forced-estimate entry point (§6.11). The price is that a few subbiomes near a belt threshold are scored with a different biome than the one drawn. **Open question 1** (§6.14) proposes a fix.
+**Why not use exact heights in Tier M?** `Biomes.ofPatch` returns an estimate until the tile arrives and exact values after (`biomes.ts` L247–260). A city choice that read it would change when the user zooms in, breaking "same map in any order" (`README.md`, base map). Tier M therefore always uses the zone type's typical height (`TYPICAL_HEIGHT`, `biomes.ts` L194) through a forced-estimate entry point (§6.11). The price is that a few patches near a belt threshold are scored with a different biome than the one drawn. **Open question 1** (§6.14) proposes a fix.
 
-### 6.2 Candidates: subbiomes, refined on the raster
+### 6.2 Candidates: patches, refined on the raster
 
-Recommendation: **the candidate is the subbiome** (Tier M), refined to a **raster cell** (Tier T).
+Recommendation: **the candidate is the patch** (Tier M), refined to a **raster cell** (Tier T).
 
-- The 256 subbiomes per region make an O(n log n) selection trivial. The 16,384 raster cells per region would need the tile.
-- The subbiome is the farming catchment (§2.2), so its food is the village's food.
-- River features (mouth, confluence, head of navigation, bridge) are points. Each is attached to the subbiome containing the node (`world.cellAt(x, y, true).sub`). The rivers already classify every node this way to set `wet` (`rivers.ts` L862).
+- The 256 patches per region make an O(n log n) selection trivial. The 16,384 raster cells per region would need the tile.
+- The patch is the farming catchment (§2.2), so its food is the village's food.
+- River features (mouth, confluence, head of navigation, bridge) are points. Each is attached to the patch containing the node (`world.cellAt(x, y, true).patch`). The rivers already classify every node this way to set `wet` (`rivers.ts` L862).
 
-### 6.3 Per-subbiome features (Tier M)
+### 6.3 Per-patch features (Tier M)
 
 Notation:
 
-- For a land subbiome s (merged root), R is its drawn region and z its (merged) zone.
-- S² is the mean subbiome area in km² (`sub.size`²; 64).
-- `perSub` is `riv.points` (10).
-- **a = flow / perSub** is the number of inland subbiomes upstream, a drainage-area proxy (× S² km²). In a river-poor flat zone each subbiome has 0 or 1 attractor (`rivers.ts` L294–296), so *a* is low there. That fits low discharge.
+- For a land patch s (merged root), R is its drawn region and z its (merged) zone.
+- S² is the mean patch area in km² (`patch.size`²; 64).
+- `perPatch` is `riv.points` (10).
+- **a = flow / perPatch** is the number of inland patches upstream, a drainage-area proxy (× S² km²). In a river-poor flat zone each patch has 0 or 1 attractor (`rivers.ts` L294–296), so *a* is low there. That fits low discharge.
 
 | Feature | Formula (+ − × ÷ √, comparisons) | Source of data |
 |---|---|---|
 | `zt` | `elevationZoneType(cell.elevationZone, false)` | `zones.ts` L45 |
 | `T, P, m, belt, biome` | `info(..., h = NaN)`: T = T₀ − cooling(TYPICAL_HEIGHT[zt]); m = P / max(40, 20T + 140) | `biomes.ts` L278 |
-| `coast` | `rivers.isCoastSub(s)`, or `BiomeInfo.coastal` for the merged subbiome | `rivers.ts` L237; `biomes.ts` L238 (at `397f779`) |
-| `lake` | the largest `Lake` with `sub = s` in `lakes.get(R)`: its area, or 0 | `lakes.ts` L57–82, L189 (at `397f779`) |
-| `oceanFrac` | ocean Gabriel neighbours / all Gabriel neighbours | `world.subNbrs` |
-| `harbour` | coast and some adjacent ocean subbiome o has landFrac(o) ≥ 0.5 (an enclosed bay) → 1; coast only → 0.4; else 0 | analogue of Azgaar `harbor === 1` |
+| `coast` | `rivers.isCoastPatch(s)`, or `BiomeInfo.coastal` for the merged patch | `rivers.ts` L237; `biomes.ts` L238 (at `397f779`) |
+| `lake` | the largest `Lake` with `patch = s` in `lakes.get(R)`: its area, or 0 | `lakes.ts` L57–82, L189 (at `397f779`) |
+| `oceanFrac` | ocean Gabriel neighbours / all Gabriel neighbours | `world.patchNbrs` |
+| `harbour` | coast and some adjacent ocean patch o has landFrac(o) ≥ 0.5 (an enclosed bay) → 1; coast only → 0.4; else 0 | analogue of Azgaar `harbor === 1` |
 | `aMax` | max *a* over dry nodes in s | `RegionRivers.flow`, `wet` |
 | `aMouth` | *a* at a dry node whose parent is wet or a root (the river crosses the coast) | `parent`, `wet` |
 | `aConf` | max over nodes in s of the **second-largest** *a* among its dry children (both branches matter) | `parent` (children by inverse scan) |
 | `head` | node with a ≥ A_nav whose children all have a < A_nav (the last navigable node) → 1 | |
 | `fall` | navigable node (a ≥ A_nav) where the upstream bed slope ≥ κ × the downstream bed slope (a knickpoint), **or** where the river passes from a hills or mountains zone into a flat or lowland zone → 1 | `terrain.bed(R)`, zone types |
 | `bridge` | on each river with aMouth ≥ A_nav: the first node upstream from the mouth where floodplain half-width × √(flow / 100) ≤ W_bridge → 1 | `terrain.flood`, `bed`; `terrain.ts` L575–576 |
-| `depth` | BFS steps over the region's subbiome graph from the subbiomes that touch another land region (those have depth 0) | `subNbrs`, `subCell().region` |
+| `depth` | BFS steps over the region's patch graph from the patches that touch another land region (those have depth 0) | `patchNbrs`, `patchCell().region` |
 
 Defaults (new `set.*` parameters, §6.11):
 
 | Parameter | Default | Meaning |
 |---|---|---|
-| A_nav | 30 subbiomes (≈ 1,900 km²) | Navigable by river boats |
-| A_big | 120 subbiomes (≈ 7,700 km²) | Large river |
+| A_nav | 30 patches (≈ 1,900 km²) | Navigable by river boats |
+| A_big | 120 patches (≈ 7,700 km²) | Large river |
 | κ | 3 | Knickpoint slope ratio |
 | W_bridge | 150 m | Floodplain half-width a bridge can span |
 
@@ -405,18 +405,18 @@ The real thresholds depend on runoff. These are design values.
 
 ### 6.4 Score terms
 
-All terms are in [0, 1] unless noted. `sat(x) = min(1, max(0, x))`. `ramp(x, x0, x1) = sat((x − x0)/(x1 − x0))`. `trap(x, a, b, c, d)` is the ECOCROP trapezoid (`subbiome-resources.md` §7.1).
+All terms are in [0, 1] unless noted. `sat(x) = min(1, max(0, x))`. `ramp(x, x0, x1) = sat((x − x0)/(x1 − x0))`. `trap(x, a, b, c, d)` is the ECOCROP trapezoid (`patch-resources.md` §7.1).
 
 | Term | Formula | Real factor (§2) | Notes |
 |---|---|---|---|
 | **K** food density, people/km² | `K_biome[biome] × K_zone[zt] + irrig + fish`. Irrigation: `irrig = (m < 1) ? K_irr × sat(aMax / A_big) : 0`, the wet point in dry land. Fish: `fish = 2 × coast + 1 × (aMax ≥ A_nav) + 1 × (lake > 0)` | Catchment (VFH); densities §2.7 | Replace by Σ potentials × yields once the resource layer exists (`game-resources-and-trade.md` §5.8 step 1) |
-| **P_v** village catchment, people | `K × S²` | The subbiome is the 1 h catchment | |
-| **W** water (necessity) | `max(sat(aMax / 2), ramp(m, 0.5, 1.5), 0.5 × coast, 1 × (lake > 0))` | Water supply | Any stream with 2+ subbiomes upstream, or a humid climate, or the coast (brackish: half) |
+| **P_v** village catchment, people | `K × S²` | The patch is the 1 h catchment | |
+| **W** water (necessity) | `max(sat(aMax / 2), ramp(m, 0.5, 1.5), 0.5 × coast, 1 × (lake > 0))` | Water supply | Any stream with 2+ patches upstream, or a humid climate, or the coast (brackish: half) |
 | **C** climate comfort (necessity) | `trap(T, −8, 4, 24, 34)` | Cold and heat limits | Polar belt → 0. Aridity is already in W and K |
 | **M** material and fuel | `0.5 × build + 0.5 × max(fuel, 1 − need)`. `build = max(wood[biome], stoneZ[zt], clay)`, `clay = (zt ∈ {flat, lowland} and aMax ≥ 1) ? 0.8 : 0.3`. `need = [1, 1, 0.8, 0.5, 0.1][belt]` | Building material and fuel (`game-resources-and-trade.md` §5.5) | `wood` from biome, `stoneZ` = [_, 0.2, 0.3, 0.8, 1] |
 | **D** defence | `max(Dz[zt], 0.5 × (oceanFrac ≥ 0.5), 0.4 × (aConf ≥ A_nav / 2))`, with Dz = [_, 0, 0.1, 0.6, 0.7] | Hill, peninsula, confluence spur | A bonus only. Ruggedness is not rewarded for cities (BB) |
 | **X** trade (gateway) | Items xᵢ·wᵢ: mouth `sat(aMouth / A_big)·1.0`; harbour `harbour·0.6`; navigable `ramp(aMax, A_nav, A_big)·0.5`; head or fall `max(head, fall)·0.6`; confluence `sat(aConf / A_nav)·0.4`; bridge `bridge·0.3`; coast `coast·0.2`. `X = max_i + 0.25 × (Σ_i − max_i)`, at most about 2 | Break of bulk (COOL), navigable river (BB), portage and fall line (BL), harbour (HSSW) | Diminishing returns: one dominant feature plus a quarter of the rest |
-| **Acc** centrality, region level | `Σ_t P_v(t) / (1 + c(s, t) / c₀)²` over the region's subbiomes t, ÷ Σ P_v(t). c is the least travel cost (§6.8) and c₀ = one day | Hansen (HAN); Christaller's central place | Computed only for the top ~8 town candidates (8 Dijkstras on ~256 nodes) |
+| **Acc** centrality, region level | `Σ_t P_v(t) / (1 + c(s, t) / c₀)²` over the region's patches t, ÷ Σ P_v(t). c is the least travel cost (§6.8) and c₀ = one day | Hansen (HAN); Christaller's central place | Computed only for the top ~8 town candidates (8 Dijkstras on ~256 nodes) |
 
 **Design calibration tables.** These are not sourced. Anchors: Domesday England at about 10/km² in 1086 and about 25/km² in 1300; hunter-gatherers below 1/km² (§2.7).
 
@@ -448,9 +448,9 @@ city(s)    = W · C · (0.7 + 0.3·M) · (1 + 0.1·D) · max(Acc(s), γ_g · X /
 
 ### 6.5 Selection
 
-All of this happens inside one region R (drawn land subbiomes, lattice-sorted). Ranking uses the total order of §5.3.
+All of this happens inside one region R (drawn land patches, lattice-sorted). Ranking uses the total order of §5.3.
 
-1. **Villages (order 2).** Every land subbiome with `village(s) ≥ τ_v` (default 50 people) gets one. Below that the land holds dispersed farms, camps or herders, flagged `sparse`.
+1. **Villages (order 2).** Every land patch with `village(s) ≥ τ_v` (default 50 people) gets one. Below that the land holds dispersed farms, camps or herders, flagged `sparse`.
 2. **Market towns (order 4).** Candidates are villages with `depth ≥ 1`. Sort by `market` and go through them greedily. Accept s if its zone has no town yet and no accepted town lies within r₄ = 0.6 × 2 × `ez.size`/2 = 19 km (0.6 × the K = 4 spacing of 32 km). A zone gets a town only if `a × P_zone ≥ τ_t` (default 300 people), the Christaller threshold. Steppe and desert zones may get none, and can carry a "seasonal fair" flag instead (Skinner's periodic markets).
 3. **Market villages (order 3).** Within each zone, in `market` order, accept up to 3 more villages (K = 4: 4 − 1). Each must be at least r₃ = 0.6 × 16 km ≈ 9.6 km from every accepted order-3 and order-4 centre in R. That is close to Bracton's 10.7 km. `depth ≥ 0`, since the Tier T inset (§6.6) keeps them at least about 3 km from any other village.
 4. **City (order 6).** Candidates are towns with `depth ≥ 2`. Take the argmax of `city(s)`. If `a × P_region × (1 + X) < τ_c` (default 5,000), the region has **no city**: its best town is a "regional centre". If R has no habitable land, nothing is placed.
@@ -460,13 +460,13 @@ All of this happens inside one region R (drawn land subbiomes, lattice-sorted). 
 
 **Cross-border spacing.**
 
-- Towns have depth ≥ 1 and cities depth ≥ 2. Across a border, towns are at least about 1–2 × `sub.size` (8–16 km) apart and cities at least about 3–4 × `sub.size` apart.
+- Towns have depth ≥ 1 and cities depth ≥ 2. Across a border, towns are at least about 1–2 × `patch.size` (8–16 km) apart and cities at least about 3–4 × `patch.size` apart.
 - The town distance is below r₄. This is a deliberate relaxation: the border is a ridge.
 - **Variant B** (optional, k = 1). A depth-1 town candidate is dropped if a neighbouring region's **raw top-1** town candidate (computed from that region's own features, not its final result) lies within r₄ and ranks higher. Using raw, not final, candidates avoids chains (A suppresses B, which would have suppressed C) and keeps the dependency to the 1-ring. It costs the neighbours' rivers.
 
 ### 6.6 Site refinement on the raster (Tier T)
 
-This step runs per region inside the tile computation (worker), after the fill, over the cells of each chosen subbiome (`subOf`, `terrain.ts` L936). Cells within 1 cell of the subbiome border are excluded. With 1 km cells that keeps sites at least about 3 km apart across subbiome borders.
+This step runs per region inside the tile computation (worker), after the fill, over the cells of each chosen patch (`patchOf`, `terrain.ts` L936). Cells within 1 cell of the patch border are excluded. With 1 km cells that keeps sites at least about 3 km apart across patch borders.
 
 ```
 hand(q)   = h[q] − src[q]                                     terrain.ts L986
@@ -483,7 +483,7 @@ site(q)   = wet · dry · flat · (1 + wD · sat(dom / 30)) · (1 + wA · anchor
 - In arid belts (m < 0.5), set `dry = 1`: there the wet point is the point.
 - **Pass foot** (optional flag). On each border shared with another land region, find the lowest own border cell. If it is at least 150 m below the mean border height there, flag the nearest chosen town as "pass town" and give it a small population bonus at the next Tier T read. It never changes Tier M.
 
-Output: a few typed arrays added to `TerrainTile`, which the worker can transfer: `setSub: Float64Array`, `setX`, `setY: Float32Array`, `setFlags: Uint8Array`.
+Output: a few typed arrays added to `TerrainTile`, which the worker can transfer: `setPatch: Float64Array`, `setX`, `setY: Float32Array`, `setFlags: Uint8Array`.
 
 ### 6.7 Population and the rank-size check
 
@@ -504,14 +504,14 @@ Example: a temperate region at about 20/km² holds about 330,000 people. Its cit
 
 ### 6.8 Travel cost model
 
-The graph has one node per land subbiome, with Gabriel edges (`world.subNbrs`), plus water edges. It is used for Acc (§6.4), market-area assignment (§6.7) and later roads (`README.md` "Trade network").
+The graph has one node per land patch, with Gabriel edges (`world.patchNbrs`), plus water edges. It is used for Acc (§6.4), market-area assignment (§6.7) and later roads (`README.md` "Trade network").
 
 | Edge | Time (h), for travel days | Freight (cost units), for prices | Notes |
 |---|---|---|---|
 | Land a → b | `d / 5 + max(0, h_b − h_a) / 600` (Naismith), `× rough[zt] × veg[biome]` | `d × 25 × rough × veg` | `h` = TYPICAL_HEIGHT in Tier M (bed height where a river is present). rough = [_, 1, 1, 1.3, 2]; veg 1, forest 1.3, rainforest 2, mangrove 2 [Design] |
 | Land, undirected | `d / 5 + \|Δh\| / 1200` | as above | Ascent split evenly over both directions; Langmuir descent is ignored |
 | River downstream / upstream (both ends on a node chain with a ≥ A_nav) | `d / 6` / `d / 3` | `d × 2.5` / `d × 5` | `game-resources-and-trade.md` §4.2 ratios |
-| Sea (coastal s to coastal t through ocean subbiomes) | `d / 6` | `d × 1` | Path over the ocean subbiome graph inside the k-ring |
+| Sea (coastal s to coastal t through ocean patches) | `d / 6` | `d × 1` | Path over the ocean patch graph inside the k-ring |
 | Mode change (land ↔ river ↔ sea) | + 2 h | + 50 (≈ 2 km of land freight) | Transshipment: makes break-of-bulk points central (COOL) |
 
 - c₀ = 8 h (one travel day).
@@ -524,7 +524,7 @@ The graph has one node per land subbiome, with Gabriel edges (`world.subNbrs`), 
 
 | Step (§5.8 there) | Reads | Locality |
 |---|---|---|
-| 1. Subbiome potentials, deposits | Climate, zone, biome (estimated) | Subbiome |
+| 1. Patch potentials, deposits | Climate, zone, biome (estimated) | Patch |
 | 2–3. **Settlement Tier M** (this note): villages, towns, city, populations | Step 1 + own rivers and beds | Region (k = 0) |
 | 4a. Prices, Model A | Supply and demand (demand = Σ pop × need) of the k-ring | k = 1 → needs settlement of 3 × 3 regions |
 | 4b. Flows, Model B, rounds 1–3 | Prices of neighbours | k ≤ 3 |
@@ -539,7 +539,7 @@ The graph has one node per land subbiome, with Gabriel edges (`world.subNbrs`), 
 ```ts
 // src/world/settlements.ts (new)
 export type Order = 2 | 3 | 4 | 5 | 6;
-export interface Settlement { sub: number; zone: number; order: Order; pop: number; score: number; x: number; y: number; flags: number }
+export interface Settlement { patch: number; zone: number; order: Order; pop: number; score: number; x: number; y: number; flags: number }
 export interface RegionSettlements { region: number; list: Settlement[]; potential: number }
 
 export class Settlements {
@@ -555,14 +555,14 @@ export class Settlements {
 
   private compute(rkey: number): RegionSettlements {
     const w = this.world, P = this.p;
-    const subs = this.landSubs(rkey);                   // drawn in rkey, merged roots, sorted by key
+    const patches = this.landPatches(rkey);                   // drawn in rkey, merged roots, sorted by key
     const rr = this.rivers.get(rkey), bed = this.terrain.bed(rkey);
-    const riv = riverFeatures(w, rr, bed, this.terrain.flood, P);   // Map<sub, {aMax,aMouth,aConf,head,fall,bridge}>
-    const depth = borderDepth(w, subs, rkey);           // BFS from subs touching another land region
-    const f = subs.map((s) => this.features(s, riv.get(s), depth.get(s)!));  // §6.3–6.4, estimate-height biome
+    const riv = riverFeatures(w, rr, bed, this.terrain.flood, P);   // Map<patch, {aMax,aMouth,aConf,head,fall,bridge}>
+    const depth = borderDepth(w, patches, rkey);           // BFS from patches touching another land region
+    const f = patches.map((s) => this.features(s, riv.get(s), depth.get(s)!));  // §6.3–6.4, estimate-height biome
     const tie = (s: number) => hash4(w.p.seed, ST_SETTLE, keyI(s), keyJ(s));
     const byScore = (k: 'village' | 'market' | 'city') => (a: Feat, b: Feat) =>
-      b[k] - a[k] || tie(a.sub) - tie(b.sub) || a.sub - b.sub;
+      b[k] - a[k] || tie(a.patch) - tie(b.patch) || a.patch - b.patch;
 
     const villages = f.filter((x) => x.village >= P.minVillage);
     // order 4: one town per zone, greedy NMS inside the region
@@ -581,7 +581,7 @@ export class Settlements {
     }
     // order 6: city among deep towns, by position (centrality or gateway)
     const acc = accessibility(w, f, towns.filter((t) => t.depth >= 2), P);   // Hansen, Dijkstra per candidate
-    for (const t of towns) t.city = t.W * t.C * (0.7 + 0.3 * t.M) * (1 + 0.1 * t.D) * Math.max(acc.get(t.sub) ?? 0, P.gGate * t.X / X_MAX);
+    for (const t of towns) t.city = t.W * t.C * (0.7 + 0.3 * t.M) * (1 + 0.1 * t.D) * Math.max(acc.get(t.patch) ?? 0, P.gGate * t.X / X_MAX);
     const city = towns.filter((t) => t.depth >= 2).sort(byScore('city'))[0];
     // order 5: up to 3 county towns, NMS from the city
     // populations: market areas by nearest centre on the travel graph, pop_k = a · P(A_k) · (1 + γX)
@@ -597,10 +597,10 @@ Tier T, in `Terrain.compute` after the fill: for each owned region, call `settle
 | Change | Where |
 |---|---|
 | New module `Settlements` (Tier M) and `refineSites` (Tier T) | `sandboxes/sandbox4/src/world/settlements.ts` (new) |
-| Forced-estimate biome entry point, so Tier M never reads tile heights | `biomes.ts`: a public `estimateSub(skey)` that calls `info(..., NaN)` (L278) |
+| Forced-estimate biome entry point, so Tier M never reads tile heights | `biomes.ts`: a public `estimatePatch(skey)` that calls `info(..., NaN)` (L278) |
 | Children of river nodes, mouth, confluence, head and bridge detection | `settlements.ts` `riverFeatures()`, from `RegionRivers` (`rivers.ts` L137–169) and `Terrain.bed` (L412) and `flood` (L279) |
-| Per-subbiome tile stats and refined sites | `terrain.ts`: next to the subbiome mean loop (L1178–1195), add the HAND, slope and domination pass for chosen subbiomes. Extend `TerrainTile` (L208–236) with `setSub`, `setX`, `setY`, `setFlags`. Add the buffers to the worker transfer list (`terrain.worker.ts` L64) |
-| Parameters (`set.urban`, `set.navSubs`, `set.bigSubs`, `set.minVillage`, `set.minTown`, `set.minCity`, `set.r3`, `set.r4`, `set.r5`, `set.gateway`) | `src/params.ts` schema + `defaults.json` (the README requires both) + `tests/fixture.ts` BASELINE if the tests pin them |
+| Per-patch tile stats and refined sites | `terrain.ts`: next to the patch mean loop (L1178–1195), add the HAND, slope and domination pass for chosen patches. Extend `TerrainTile` (L208–236) with `setPatch`, `setX`, `setY`, `setFlags`. Add the buffers to the worker transfer list (`terrain.worker.ts` L64) |
+| Parameters (`set.urban`, `set.navPatches`, `set.bigPatches`, `set.minVillage`, `set.minTown`, `set.minCity`, `set.r3`, `set.r4`, `set.r5`, `set.gateway`) | `src/params.ts` schema + `defaults.json` (the README requires both) + `tests/fixture.ts` BASELINE if the tests pin them |
 | Settlement potential replacing the prosperity noise | `climate.ts` L105–107 stays as a fallback; `main.ts` L119, L319, L367 switch the overlay source |
 | Overlay and inspector (symbols by order, population, the dominant X term: "river mouth", "fall line", …) | `src/render/` overlays, `src/ui/` inspector |
 | Cache trimming | `World.trim`-style limit, as `Rivers.get` does (`rivers.ts` L226–235) |
@@ -608,20 +608,20 @@ Tier T, in `Terrain.compute` after the fill: for each owned region, call `settle
 ### 6.12 Tests (`sandboxes/sandbox4/tests/settlements.test.ts`, with `testParams()`)
 
 1. **Pure and order-independent.** Compute the settlements of a 4 × 4 region window in two orders (row-major, then spiral), clearing the World, Rivers and Settlements caches in between. The results must be identical, the same pattern as `world.test.ts` L74.
-2. **Tier contract.** For a region, the Tier M list is identical before and after its terrain tile is computed. Tier T moves each site only within its subbiome (`world.cellAt(x, y, true).sub === s.sub`).
+2. **Tier contract.** For a region, the Tier M list is identical before and after its terrain tile is computed. Tier T moves each site only within its patch (`world.cellAt(x, y, true).patch === s.patch`).
 3. **Locality.** The settlements of R do not change when neighbouring regions' rivers are or are not in the cache. A spy on `Rivers.get` checks that only R is requested in variant A.
 4. **Nesting and caps.**
    - Every town, county town and city is also a village.
    - At most 1 town and 3 market villages per zone.
    - At most 1 city and 3 county towns per region.
    - Every region with `P_region × a ≥ τ_c` has exactly one city.
-5. **Spacing.** Within a region: towns ≥ r₄ apart, market centres ≥ r₃, county towns and the city ≥ r₅. Across a window: towns ≥ 1 × `sub.size` apart and cities ≥ 3 × `sub.size`.
+5. **Spacing.** Within a region: towns ≥ r₄ apart, market centres ≥ r₃, county towns and the city ≥ r₅. Across a window: towns ≥ 1 × `patch.size` apart and cities ≥ 3 × `patch.size`.
 6. **Geography sanity**, on the frozen baseline:
    - At least 60 % of cities have X > 0 (coast, navigable river or confluence) (BB, HSSW).
    - No village where W = 0 or C = 0.
    - Village density is higher in temperate forest than in taiga.
 7. **Rank-size.** On an 8 × 8 region window, the OLS slope of log pop on log rank for orders ≥ 3 lies in [−1.4, −0.8].
-8. **Feature detectors on synthetic rivers.** A hand-built `RegionRivers` with a known mouth, a two-branch confluence and a slope step must yield those features in the right subbiomes.
+8. **Feature detectors on synthetic rivers.** A hand-built `RegionRivers` with a known mouth, a two-branch confluence and a slope step must yield those features in the right patches.
 9. **Fingerprint.** A settlement fingerprint over a fixed window (`fingerprint` in `shared/core/hash.ts` L134), pinned to the baseline.
 10. **Bit-exactness lint.** `settlements.ts` contains no `Math.exp|log|pow|sin|cos|tan|hypot|cbrt` and no `**`. Use `x * x`, `Math.sqrt` and `dexp`.
 
@@ -634,10 +634,10 @@ These are not part of the settlement design, but they affect anything that reads
 
 ### 6.14 Open questions
 
-1. **Estimated vs exact biome.** Tier M scores with the zone-type typical height (§6.1). How often does that change a subbiome's belt or moisture class at the baseline? Two possible fixes: (a) a cheap height estimate that does not need the tile (bed heights + hillslope × distance to the river, from `bed()`), or (b) accept it and show both in the inspector.
+1. **Estimated vs exact biome.** Tier M scores with the zone-type typical height (§6.1). How often does that change a patch's belt or moisture class at the baseline? Two possible fixes: (a) a cheap height estimate that does not need the tile (bed heights + hillslope × distance to the river, from `bed()`), or (b) accept it and show both in the inspector.
 2. **Rivers at zoomed-out views.** Tier M needs `rivers.get` and `bed()` for every region in view. Is that affordable at the farthest zoom, or should cities appear only below some zoom level?
 3. **Variant A vs B** for cross-border town spacing (§6.5). Is the depth-1 relaxation visible on the map?
-4. **Navigability thresholds.** A_nav and A_big are in subbiome counts. Should they scale with precipitation (runoff), so desert rivers are not navigable at the same drainage area?
+4. **Navigability thresholds.** A_nav and A_big are in patch counts. Should they scale with precipitation (runoff), so desert rivers are not navigable at the same drainage area?
 5. **Pass towns** need two regions' heights. Is a Tier T flag enough, or should passes feed the travel graph (§6.8) as cheap land edges?
 6. **Christaller series.** Should the order names follow the 4 km series (used here) or the 7 km series (§2.5)? This only affects labels and r₃ defaults.
 7. **Resource coupling.** When the game layer exists, K becomes Σ potentials × yields. Should salt or iron access (`game-resources-and-trade.md` §5.5 rules 1–2) add to X, as a "salt road" town term?
@@ -662,7 +662,7 @@ These are not part of the settlement design, but they affect anything that reads
 |---|---|---|
 | Spacing per order (K = 4) | 8 / 16 / 32 / 64 / 128 km | CHEN, KING; repo sizes |
 | NMS radius | 0.6 × spacing (r₃ ≈ 9.6 km, r₄ ≈ 19 km, r₅ ≈ 38 km) | Bracton 10.7 km (BLACK); BB 20 km |
-| Border depth, town / city | 1 / 2 subbiome steps | §5.3 |
+| Border depth, town / city | 1 / 2 patch steps | §5.3 |
 | Urban share per order *a* | 0.035 (≈ 11 % urban in total) | BB, DEV |
 | Rank-size target | slope magnitude 0.8–1.4 | GAB, SOO, AUER |
 
@@ -729,7 +729,7 @@ These are not part of the settlement design, but they affect anything that reads
 ### 8.4 Repository
 
 - `sandboxes/sandbox4/src/world/{world,zones,climate,biomes,rivers,terrain,terrain.worker}.ts`, `shared/core/{dmath,hash,heap}.ts`, `sandboxes/sandbox4/tests/{fixture,world.test,terrain.test}.ts`, `sandboxes/sandbox4/defaults.json`, `README.md`, at commit `b94e28d` (lines as in the code table).
-- `docs/research/game-resources-and-trade.md` (§4.2 mode costs, §5.4 hierarchy, §5.5 thrive, §5.7 price and flow models, §5.8 generation order), `docs/research/subbiome-resources.md` (§7.1 potentials and trapezoid, §7.3 geology), `docs/research/biomes-and-climate.md` (bit-exactness), `docs/research/heightmap-from-biomes-and-rivers.md` (criterion C4).
+- `docs/research/game-resources-and-trade.md` (§4.2 mode costs, §5.4 hierarchy, §5.5 thrive, §5.7 price and flow models, §5.8 generation order), `docs/research/patch-resources.md` (§7.1 potentials and trapezoid, §7.3 geology), `docs/research/biomes-and-climate.md` (bit-exactness), `docs/research/heightmap-from-biomes-and-rivers.md` (criterion C4).
 
 ### 8.5 Not accessible on the research date
 

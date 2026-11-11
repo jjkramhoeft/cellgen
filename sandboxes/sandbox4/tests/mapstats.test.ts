@@ -35,7 +35,7 @@ describe('map statistics', { timeout: 60_000 }, () => {
     expect(s.biomeSamples[OCEAN_BIOME]).toBe(s.ocean);
     expect(s.zoneSamples[OCEAN_ZONE]).toBe(s.ocean);
     expect(sum(s.grid.flat())).toBe(s.land);
-    expect(s.subs).toBe(sum(s.biomeSubs));
+    expect(s.patches).toBe(sum(s.biomePatches));
     expect(s.zones).toBe(sum(s.zoneCount));
     expect(s.land).toBeGreaterThan(0);
     for (const d of [s.t0, s.p0, s.t, s.p]) {
@@ -72,7 +72,7 @@ describe('map statistics', { timeout: 60_000 }, () => {
     const job = new MapStatsJob(w, b, null, square(2_000_000));
     expect(job.stride).toBeGreaterThan(1);
     // only the constructor's arithmetic is checked here: running it would take a while
-    const cells = (Math.floor(2_000_000 / w.subLevel.size) - Math.floor(-2_000_000 / w.subLevel.size) + 1) ** 2;
+    const cells = (Math.floor(2_000_000 / w.patchLevel.size) - Math.floor(-2_000_000 / w.patchLevel.size) + 1) ** 2;
     expect(Math.ceil(Math.sqrt(cells / job.stride ** 2))).toBeLessThanOrEqual(Math.ceil(Math.sqrt(MAX_SAMPLES)) + 1);
   });
 

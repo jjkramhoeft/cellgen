@@ -3,8 +3,8 @@
  *
  * For one region (as drawn: an elevation zone merged into a neighbouring region's elevation zone belongs
  * to that region, see `regionElevationZones`):
- *   Attractors  every land, non-coastal subbiome drawn in the region gets `perSub`
- *               points, scattered inside the subbiome's cell.
+ *   Attractors  every land, non-coastal patch drawn in the region gets `perPatch`
+ *               points, scattered inside the patch's cell.
  *   Roots       one per ocean elevation zone that touches the region's land (a Gabriel
  *               neighbour of a land elevation zone it owns, or an ocean elevation zone it owns with a land
  *               neighbour). The root sits at the ocean elevation zone's point (its site), so each
@@ -82,8 +82,8 @@ export function coneCos(cone: ConeAngle): number {
 }
 
 export interface RiverParams {
-  /** attractors per eligible subbiome */
-  perSub: number;
+  /** attractors per eligible patch */
+  perPatch: number;
   /** growth step D, metres */
   step: number;
   /** influence radius dᵢ, metres */
@@ -121,12 +121,12 @@ export interface RiverParams {
    * `apical` × as many attractors as that child. 0 = off.
    */
   apical: number;
-  /** leave out subbiomes that touch the ocean */
+  /** leave out patches that touch the ocean */
   skipCoast: boolean;
   /**
    * Precipitation cutoff, mm per year: a flat elevation zone whose (merged root's) site
-   * gets less initial precipitation than this is river-poor, and each of its subbiomes
-   * gets 0 or 1 attractor (50/50) instead of `perSub`. 0 = off.
+   * gets less initial precipitation than this is river-poor, and each of its patches
+   * gets 0 or 1 attractor (50/50) instead of `perPatch`. 0 = off.
    */
   flatSparseCutoff: number;
   /** the climate maps the precipitation is read from (plain data: sent to the terrain worker) */
@@ -171,7 +171,7 @@ export interface RegionRivers {
 
 const ST_ATTR = 0x7e01;
 const ST_GROW = 0x7e02;
-const ST_SPARSE_SUB = 0x7e04;
+const ST_SPARSE_PATCH = 0x7e04;
 const FLAT_ZONE = ELEVATION_ZONE_TYPES.findIndex((t) => t.id === 'flat');
 const MAX_ITER = 6000;
 const MAX_NODES = 120000;
@@ -234,11 +234,11 @@ export class Rivers {
     return r;
   }
 
-  /** Is the subbiome next to a cell of the other kind (land vs ocean)? */
-  isCoastSub(skey: number): boolean {
+  /** Is the patch next to a cell of the other kind (land vs ocean)? */
+  isCoastPatch(skey: number): boolean {
     const w = this.world;
-    const oc = w.subCell(skey).ocean;
-    for (const n of w.subNbrs(w.sub(skey))) if (w.subCell(n).ocean !== oc) return true;
+    const oc = w.patchCell(skey).ocean;
+    for (const n of w.patchNbrs(w.patch(skey))) if (w.patchCell(n).ocean !== oc) return true;
     return false;
   }
 
@@ -276,11 +276,11 @@ export class Rivers {
     return this.climate.precipitationAt(z.x, z.y) < this.p.flatSparseCutoff;
   }
 
-  /** Attractor points of a region (land, non-coastal subbiomes drawn in the region). */
+  /** Attractor points of a region (land, non-coastal patches drawn in the region). */
   attractors(rkey: number): { ax: number[]; ay: number[] } {
     const w = this.world;
     const reg = w.region(rkey);
-    const L = w.subLevel;
+    const L = w.patchLevel;
     const rng = sfc32(hash4(w.p.seed, ST_ATTR, reg.i, reg.j));
     const ax: number[] = [];
     const ay: number[] = [];
@@ -288,22 +288,22 @@ export class Rivers {
       const bc = w.elevationZoneCell(b);
       if (bc.ocean) continue;
       const sparse = this.isSparseFlat(bc.elevationZone);
-      for (const s of w.elevationZoneSubs(w.elevationZone(b))) {
-        const sc = w.subCell(s);
+      for (const s of w.elevationZonePatches(w.elevationZone(b))) {
+        const sc = w.patchCell(s);
         if (sc.ocean || sc.region !== rkey) continue;
-        if (this.p.skipCoast && this.isCoastSub(s)) continue;
-        const sd = w.sub(s);
-        // a river-poor flat zone: 0 or 1 attractor per subbiome, from the subbiome's own hash
-        const count = sparse ? hash4(w.p.seed, ST_SPARSE_SUB, keyI(s), keyJ(s)) & 1 : this.p.perSub;
+        if (this.p.skipCoast && this.isCoastPatch(s)) continue;
+        const sd = w.patch(s);
+        // a river-poor flat zone: 0 or 1 attractor per patch, from the patch's own hash
+        const count = sparse ? hash4(w.p.seed, ST_SPARSE_PATCH, keyI(s), keyJ(s)) & 1 : this.p.perPatch;
         for (let k = 0; k < count; k++) {
-          // a random point inside the (warped) subbiome cell, on the region's land;
+          // a random point inside the (warped) patch cell, on the region's land;
           // fall back to the site, or drop the point when even that is outside
           let px = NaN;
           let py = NaN;
           for (let t = 0; t < 24; t++) {
             const qx = sd.x + (rng() - 0.5) * 1.6 * L.size;
             const qy = sd.y + (rng() - 0.5) * 1.6 * L.size;
-            // nested, every point of subbiome s is classified as s (checked above);
+            // nested, every point of patch s is classified as s (checked above);
             // otherwise the point itself must be the region's land
             if (L.query(qx, qy) === s && (w.p.nest || this.isOwnLand(rkey, qx, qy))) {
               px = qx;
@@ -588,11 +588,11 @@ export class Rivers {
         let px = o.x;
         let py = o.y;
         if (!w.cellAt(px, py, true).ocean) {
-          // coasts follow subbiome cells, so the elevation zone's site can fall on a sliver of
-          // land: use the closest ocean subbiome site of the elevation zone instead
+          // coasts follow patch cells, so the elevation zone's site can fall on a sliver of
+          // land: use the closest ocean patch site of the elevation zone instead
           let bd = Infinity;
-          for (const s of w.elevationZoneSubs(o)) {
-            const sd = w.sub(s);
+          for (const s of w.elevationZonePatches(o)) {
+            const sd = w.patch(s);
             const d2 = sq(sd.x - o.x) + sq(sd.y - o.y);
             if (d2 < bd && w.cellAt(sd.x, sd.y, true).ocean) {
               bd = d2;
@@ -621,8 +621,8 @@ export class Rivers {
     let kids = new Int32Array(cap);
     /** attractors pulling each node this iteration, and (main-stem dominance) pulls summed over a node's subtree */
     let cnt = new Int32Array(cap);
-    let sub = new Int32Array(cap);
-    let subStamp = new Int32Array(cap);
+    let patch = new Int32Array(cap);
+    let patchStamp = new Int32Array(cap);
     let iterations = 0;
     let bridges = 0;
     let blockedPasses = 0;
@@ -643,8 +643,8 @@ export class Rivers {
         kc.set(kids);
         kids = kc;
         cnt = new Int32Array(cap);
-        sub = new Int32Array(cap);
-        subStamp = new Int32Array(cap);
+        patch = new Int32Array(cap);
+        patchStamp = new Int32Array(cap);
       }
       touched.length = 0;
       for (let a = 0; a < A; a++) {
@@ -725,11 +725,11 @@ export class Rivers {
         for (const k of touched) {
           let m = k;
           for (let d = 0; d < APICAL_DEPTH && m >= 0; d++, m = par[m]) {
-            if (subStamp[m] !== iterations) {
-              subStamp[m] = iterations;
-              sub[m] = 0;
+            if (patchStamp[m] !== iterations) {
+              patchStamp[m] = iterations;
+              patch[m] = 0;
             }
-            sub[m] += cnt[k];
+            patch[m] += cnt[k];
           }
         }
       }
@@ -744,7 +744,7 @@ export class Rivers {
           // straight into it (flow without a visible channel), the farther ones turn to
           // other nodes. (Merely postponing it would only bring it back later as stubs.)
           const mc = firstChild[k];
-          const main = mc >= 0 && subStamp[mc] === iterations ? sub[mc] : 0;
+          const main = mc >= 0 && patchStamp[mc] === iterations ? patch[mc] : 0;
           if (cnt[k] < P.apical * main) {
             // only attractors within dᵢ pull k: they are in the 3×3 grid cells around it
             const ci = Math.floor(nx[k] / G);

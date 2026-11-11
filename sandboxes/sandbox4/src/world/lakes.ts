@@ -2,16 +2,16 @@
  * Lakes, placed per region after the rivers.
  *
  * For one region (as drawn, like the rivers: `Rivers.regionElevationZones`):
- *   Candidates  lakes come after the rivers and sit on them: every subbiome drawn in the
+ *   Candidates  lakes come after the rivers and sit on them: every patch drawn in the
  *               region that may hold a lake and has a river node in it (flow >=
  *               LAKE_MIN_FLOW, on land) gets one try, with chance `frequency`. The lake is
  *               centred on one of those nodes, so its river runs in and out of it. A
- *               subbiome may not hold a lake when it is
+ *               patch may not hold a lake when it is
  *                 · ocean, or in a mountains elevation zone,
  *                 · a desert: its biome at sea level is hot or cold desert. Sea level is
- *                   the warmest (so the most arid) the subbiome can be, so a subbiome that
+ *                   the warmest (so the most arid) the patch can be, so a patch that
  *                   is no desert there is no desert at any height either; the test needs
- *                   no terrain and never puts a lake in a subbiome the map shows as desert,
+ *                   no terrain and never puts a lake in a patch the map shows as desert,
  *                 · restricted: it lies in a river-poor ("sparse") flat elevation zone
  *                   (`Rivers.isSparseFlat`: the zone's site gets less initial precipitation
  *                   than the sparse river cutoff), the dry plains with few rivers.
@@ -26,7 +26,7 @@
  *   Clip        every ray is walked outwards from the centre and stops before the first
  *               point that is not lake-eligible land of this region (see `eligibleAt`),
  *               so a lake never crosses a region border, a mountains zone, the coast, a
- *               desert or a restricted subbiome (an ocean subbiome is never eligible).
+ *               desert or a restricted patch (an ocean patch is never eligible).
  *               Then neighbouring rays are tapered (they differ by at most TAPER x the
  *               radius) and rounded, only ever shortening them, so clipped sides bend in
  *               gently instead of in notches. A clipped lake whose size (the diameter
@@ -47,7 +47,7 @@ import type { World } from './world';
 import { ELEVATION_ZONE_TYPES, elevationZoneType } from './zones';
 
 export interface LakeParams {
-  /** chance that an eligible subbiome holds a lake, 0–1 */
+  /** chance that an eligible patch holds a lake, 0–1 */
   frequency: number;
   /** lake size bounds: diameter of a circle of the lake's area, metres */
   minSize: number;
@@ -58,8 +58,8 @@ export interface Lake {
   /** index within its region */
   id: number;
   region: number;
-  /** subbiome (merged root) the lake was placed in */
-  sub: number;
+  /** patch (merged root) the lake was placed in */
+  patch: number;
   /** the river node at the lake's centre (index into the region's RegionRivers) and its flow */
   node: number;
   flow: number;
@@ -84,7 +84,7 @@ export interface Lake {
 export interface RegionLakes {
   region: number;
   lakes: Lake[];
-  /** subbiomes with a river (a node of flow >= LAKE_MIN_FLOW) that may hold a lake */
+  /** patches with a river (a node of flow >= LAKE_MIN_FLOW) that may hold a lake */
   candidates: number;
   /** candidates that passed the frequency roll */
   tries: number;
@@ -94,7 +94,7 @@ export interface RegionLakes {
   ms: number;
 }
 
-/** Why a subbiome may not hold a lake (null = it may). */
+/** Why a patch may not hold a lake (null = it may). */
 export type LakeBlock = 'ocean' | 'mountains' | 'desert' | 'restricted' | null;
 
 /** Rays (outline vertices) per lake. */
@@ -167,7 +167,7 @@ export class Lakes {
   private blockCache = new Map<number, LakeBlock>();
 
   /**
-   * `biomes` supplies the climate at each subbiome's site (only its sea-level biome is
+   * `biomes` supplies the climate at each patch's site (only its sea-level biome is
    * read, so any Biomes of the current world, rivers and climate gives the same lakes).
    */
   constructor(world: World, rivers: Rivers, biomes: Biomes, p: LakeParams) {
@@ -196,11 +196,11 @@ export class Lakes {
     return r;
   }
 
-  /** Why a (raw or merged) subbiome may not hold a lake; null when it may. */
+  /** Why a (raw or merged) patch may not hold a lake; null when it may. */
   block(skey: number): LakeBlock {
     const w = this.world;
-    const c = w.subCell(skey);
-    const root = c.sub;
+    const c = w.patchCell(skey);
+    const root = c.patch;
     const hit = this.blockCache.get(root);
     if (hit !== undefined) return hit;
     let b: LakeBlock = null;
@@ -214,7 +214,7 @@ export class Lakes {
   }
 
   /**
-   * Restricted subbiomes: those of a river-poor flat elevation zone (merged root `zkey`;
+   * Restricted patches: those of a river-poor flat elevation zone (merged root `zkey`;
    * `Rivers.isSparseFlat`, the zones whose site gets less initial precipitation than the
    * sparse river cutoff). A zone split across regions is restricted in all of them.
    */
@@ -222,15 +222,15 @@ export class Lakes {
     return this.rivers.isSparseFlat(zkey);
   }
 
-  /** Is the subbiome a desert at sea level (its warmest, most arid height)? */
+  /** Is the patch a desert at sea level (its warmest, most arid height)? */
   private desertAtSeaLevel(root: number): boolean {
-    return DESERTS.has(this.biomes.ofSub(root).seaLevel);
+    return DESERTS.has(this.biomes.ofPatch(root).seaLevel);
   }
 
   /** May a lake of region `rkey` cover this point? */
   eligibleAt(rkey: number, x: number, y: number): boolean {
     const c = this.world.cellAt(x, y, true);
-    return c.region === rkey && !c.ocean && this.block(c.subRaw) === null;
+    return c.region === rkey && !c.ocean && this.block(c.patchRaw) === null;
   }
 
   /** The lake at a point, if any (only regions already computed are searched). */
@@ -243,8 +243,8 @@ export class Lakes {
   }
 
   /**
-   * River nodes of the region a lake may be centred on, by raw subbiome: on land of the
-   * region, not a root, flow >= LAKE_MIN_FLOW, in a subbiome that may hold a lake.
+   * River nodes of the region a lake may be centred on, by raw patch: on land of the
+   * region, not a root, flow >= LAKE_MIN_FLOW, in a patch that may hold a lake.
    */
   riverNodes(rkey: number): Map<number, number[]> {
     const w = this.world;
@@ -253,10 +253,10 @@ export class Lakes {
     for (let k = 0; k < rr.n; k++) {
       if (rr.parent[k] < 0 || rr.wet[k] || rr.flow[k] < LAKE_MIN_FLOW) continue;
       const c = w.cellAt(rr.x[k], rr.y[k], true);
-      if (c.region !== rkey || c.ocean || this.block(c.subRaw) !== null) continue;
-      const list = out.get(c.subRaw);
+      if (c.region !== rkey || c.ocean || this.block(c.patchRaw) !== null) continue;
+      const list = out.get(c.patchRaw);
       if (list) list.push(k);
-      else out.set(c.subRaw, [k]);
+      else out.set(c.patchRaw, [k]);
     }
     return out;
   }
@@ -276,10 +276,10 @@ export class Lakes {
     for (const b of this.rivers.regionElevationZones(rkey)) {
       const bc = w.elevationZoneCell(b);
       if (bc.ocean || elevationZoneType(bc.elevationZone, false) === MOUNTAINS) continue;
-      for (const s of w.elevationZoneSubs(w.elevationZone(b))) {
-        const sc = w.subCell(s);
+      for (const s of w.elevationZonePatches(w.elevationZone(b))) {
+        const sc = w.patchCell(s);
         if (sc.ocean || sc.region !== rkey) continue;
-        // the draws always happen, so the stream does not depend on which subbiomes have rivers
+        // the draws always happen, so the stream does not depend on which patches have rivers
         const roll = rng();
         const u = rng();
         const pick = rng();
@@ -305,7 +305,7 @@ export class Lakes {
           out.crowded++;
           continue;
         }
-        const lake = this.shape(rkey, sc.sub, out.lakes.length, cx, cy, nominal, k, rr.flow[k]);
+        const lake = this.shape(rkey, sc.patch, out.lakes.length, cx, cy, nominal, k, rr.flow[k]);
         if (!lake) {
           out.tooSmall++;
           continue;
@@ -319,10 +319,10 @@ export class Lakes {
   }
 
   /** Outline of one lake: noise-shaped rays, clipped to eligible land; null when too small after the clip. */
-  private shape(rkey: number, sub: number, id: number, cx: number, cy: number, nominal: number, node: number, flow: number): Lake | null {
+  private shape(rkey: number, patch: number, id: number, cx: number, cy: number, nominal: number, node: number, flow: number): Lake | null {
     const P = this.p;
     const R = nominal / 2;
-    const seed = hash4(this.world.p.seed, ST_SHAPE, keyI(sub) * 4099 + id, keyJ(sub));
+    const seed = hash4(this.world.p.seed, ST_SHAPE, keyI(patch) * 4099 + id, keyJ(patch));
     const srng = sfc32(seed);
     // ellipse: random axis (rejection sampling in the unit disc, no trig), elongation, area kept
     let axX = 1;
@@ -430,6 +430,6 @@ export class Lakes {
       if (y[k] < y0) y0 = y[k];
       if (y[k] > y1) y1 = y[k];
     }
-    return { id, region: rkey, sub, node, flow, cx, cy, nominal, size, area, x, y, x0, y0, x1, y1 };
+    return { id, region: rkey, patch, node, flow, cx, cy, nominal, size, area, x, y, x0, y0, x1, y1 };
   }
 }

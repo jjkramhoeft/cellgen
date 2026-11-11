@@ -5,9 +5,9 @@
  *                     zones whose site lies inside it, and picks among them 0–2 ocean
  *                     seeds and 2–4 elevation zone mergers.
  *   Elevation zones    32 km lattice Voronoi with border warp. Each elevation zone owns
- *                     the subbiomes whose site lies inside it, and picks 2–4 subbiome
+ *                     the patches whose site lies inside it, and picks 2–4 patch
  *                     mergers. Its type (ocean, flat, lowland, hills, mountains): zones.ts.
- *   Subbiomes           8 km lattice Voronoi with border warp.
+ *   Patches           8 km lattice Voronoi with border warp.
  *
  * Oceans (on raw elevation zone cells, before merging):
  *   1. Seeds: every region marks n ∈ [min, max] of its elevation zones as ocean seeds.
@@ -22,11 +22,11 @@
  *
  * Merges: a chosen cell joins its nearest neighbour (Gabriel graph, by site
  * distance). Elevation zone merges stay on one side of the coast unless `mergeAcrossCoast`;
- * subbiome merges stay inside one (merged) elevation zone. Chains X→Y→Z merge into one cell,
+ * patch merges stay inside one (merged) elevation zone. Chains X→Y→Z merge into one cell,
  * and a cycle X→Y→X resolves to the smaller key.
  *
- * Nesting: with `nest`, a subbiome belongs to the elevation zone under its site and an elevation zone
- * to the region under its site, and every pixel is classified through its subbiome,
+ * Nesting: with `nest`, a patch belongs to the elevation zone under its site and an elevation zone
+ * to the region under its site, and every pixel is classified through its patch,
  * so the borders of all three levels line up (coasts follow 8 km cells).
  *
  * Everything is evaluated lazily and memoised. Every value only depends on a bounded
@@ -63,13 +63,13 @@ export interface WorldParams {
   elevationZoneWarp: number;
   elevationZoneWarpFreq: number;
   mergeAcrossCoast: boolean;
-  subMergeMin: number;
-  subMergeMax: number;
-  // subbiomes
-  subSize: number;
-  subJitter: number;
-  subWarp: number;
-  subWarpFreq: number;
+  patchMergeMin: number;
+  patchMergeMax: number;
+  // patches
+  patchSize: number;
+  patchJitter: number;
+  patchWarp: number;
+  patchWarpFreq: number;
   nest: boolean;
 }
 
@@ -122,11 +122,11 @@ export interface ElevationZone {
   /** NaN = not resolved yet, −1 = not merged */
   target: number;
   root: number;
-  subs: number[] | null;
-  subMerges: Set<number> | null;
+  patches: number[] | null;
+  patchMerges: Set<number> | null;
 }
 
-export interface Sub {
+export interface Patch {
   key: number;
   i: number;
   j: number;
@@ -141,16 +141,16 @@ export interface Sub {
 
 /** Everything the renderer needs about one map location. */
 export interface Cell {
-  /** subbiome (raw and merged root); −1 when resolved at elevation zone level only */
-  subRaw: number;
-  sub: number;
+  /** patch (raw and merged root); −1 when resolved at elevation zone level only */
+  patchRaw: number;
+  patch: number;
   elevationZoneRaw: number;
   elevationZone: number;
   region: number;
   ocean: boolean;
   origin: number;
   /** member of a merged group */
-  subMerged: boolean;
+  patchMerged: boolean;
   elevationZoneMerged: boolean;
 }
 
@@ -159,7 +159,7 @@ const ST_MERGE = 0x5e02;
 const ST_LINK = 0x5e03;
 const ST_DLINK = 0x5e05;
 const ST_GROW = 0x5e10;
-const ST_SUBMERGE = 0x5e04;
+const ST_PATCHMERGE = 0x5e04;
 
 /** Pick k distinct items (partial Fisher–Yates on a copy). */
 function pick<T>(items: T[], k: number, rng: () => number): T[] {
@@ -185,14 +185,14 @@ export class World {
   readonly p: WorldParams;
   readonly regionLevel: Level;
   readonly elevationZoneLevel: Level;
-  readonly subLevel: Level;
+  readonly patchLevel: Level;
   /** cumulative normalised growth weights */
   private readonly growCdf: number[];
 
   private regions = new Map<number, Region>();
   private elevationZones = new Map<number, ElevationZone>();
-  private subs = new Map<number, Sub>();
-  private subCells = new Map<number, Cell>();
+  private patches = new Map<number, Patch>();
+  private patchCells = new Map<number, Cell>();
   private elevationZoneCells = new Map<number, Cell>();
   /** base ocean flags per elevation zone key, OR-merged by region sourcing */
   private base = new Map<number, number>();
@@ -205,7 +205,7 @@ export class World {
     const s = p.seed | 0;
     this.regionLevel = new Level({ seed: (s ^ 0x1b873593) | 0, size: p.regionSize, jitter: p.regionJitter, warp: 0, warpFreq: 1 });
     this.elevationZoneLevel = new Level({ seed: (s ^ 0x7f4a7c15) | 0, size: p.elevationZoneSize, jitter: p.elevationZoneJitter, warp: p.elevationZoneWarp, warpFreq: p.elevationZoneWarpFreq });
-    this.subLevel = new Level({ seed: (s ^ 0x6c8e9cf5) | 0, size: p.subSize, jitter: p.subJitter, warp: p.subWarp, warpFreq: p.subWarpFreq });
+    this.patchLevel = new Level({ seed: (s ^ 0x6c8e9cf5) | 0, size: p.patchSize, jitter: p.patchJitter, warp: p.patchWarp, warpFreq: p.patchWarpFreq });
     const w = p.growWeights.map((x) => Math.max(0, x));
     const sum = w.reduce((a, b) => a + b, 0) || 1;
     let acc = 0;
@@ -214,11 +214,11 @@ export class World {
 
   /** Number of memoised objects (for the cache budget). */
   get cacheSize(): number {
-    return this.regions.size + this.elevationZones.size + this.subs.size + this.subCells.size + this.elevationZoneCells.size;
+    return this.regions.size + this.elevationZones.size + this.patches.size + this.patchCells.size + this.elevationZoneCells.size;
   }
 
-  get cacheStats(): { regions: number; elevationZones: number; subs: number; cells: number } {
-    return { regions: this.regions.size, elevationZones: this.elevationZones.size, subs: this.subs.size, cells: this.subCells.size + this.elevationZoneCells.size };
+  get cacheStats(): { regions: number; elevationZones: number; patches: number; cells: number } {
+    return { regions: this.regions.size, elevationZones: this.elevationZones.size, patches: this.patches.size, cells: this.patchCells.size + this.elevationZoneCells.size };
   }
 
   /** Drop every cache when over budget. Results are pure, so this never changes the map. */
@@ -226,8 +226,8 @@ export class World {
     if (this.cacheSize <= limit) return false;
     this.regions.clear();
     this.elevationZones.clear();
-    this.subs.clear();
-    this.subCells.clear();
+    this.patches.clear();
+    this.patchCells.clear();
     this.elevationZoneCells.clear();
     this.base.clear();
     this.sourced.clear();
@@ -385,8 +385,8 @@ export class World {
       picks: new Array(this.p.growPasses + 1).fill(null),
       target: NaN,
       root: NaN,
-      subs: null,
-      subMerges: null,
+      patches: null,
+      patchMerges: null,
     };
     this.elevationZones.set(key, b);
     return b;
@@ -499,11 +499,11 @@ export class World {
     return false;
   }
 
-  /** Subbiomes owned by a raw elevation zone (sites inside it), lattice order. */
-  elevationZoneSubs(b: ElevationZone): number[] {
-    if (b.subs) return b.subs;
+  /** Patches owned by a raw elevation zone (sites inside it), lattice order. */
+  elevationZonePatches(b: ElevationZone): number[] {
+    if (b.patches) return b.patches;
     const B = this.elevationZoneLevel.size;
-    const S = this.subLevel.size;
+    const S = this.patchLevel.size;
     const m = Math.ceil(this.elevationZoneLevel.warp) + 1;
     const si0 = Math.floor(((b.i - m) * B) / S);
     const si1 = Math.floor(((b.i + 1 + m) * B) / S);
@@ -512,52 +512,52 @@ export class World {
     const out: number[] = [];
     for (let sj = sj0; sj <= sj1; sj++) {
       for (let si = si0; si <= si1; si++) {
-        const s = this.sub(packKey(si, sj));
+        const s = this.patch(packKey(si, sj));
         if (s.elevationZone === b.key) out.push(s.key);
       }
     }
-    b.subs = out;
+    b.patches = out;
     return out;
   }
 
-  private subMergeSet(bkey: number): Set<number> {
+  private patchMergeSet(bkey: number): Set<number> {
     const b = this.elevationZone(bkey);
-    if (!b.subMerges) {
-      const rng = sfc32(hash4(this.p.seed, ST_SUBMERGE, b.i, b.j));
-      const n = between(this.p.subMergeMin, this.p.subMergeMax, rng());
-      b.subMerges = new Set(pick(this.elevationZoneSubs(b), n, rng));
+    if (!b.patchMerges) {
+      const rng = sfc32(hash4(this.p.seed, ST_PATCHMERGE, b.i, b.j));
+      const n = between(this.p.patchMergeMin, this.p.patchMergeMax, rng());
+      b.patchMerges = new Set(pick(this.elevationZonePatches(b), n, rng));
     }
-    return b.subMerges;
+    return b.patchMerges;
   }
 
-  // ------------------------------------------------------------------ subbiomes
+  // ------------------------------------------------------------------ patches
 
-  sub(key: number): Sub {
-    let s = this.subs.get(key);
+  patch(key: number): Patch {
+    let s = this.patches.get(key);
     if (s) return s;
     const i = keyI(key);
     const j = keyJ(key);
-    const L = this.subLevel;
+    const L = this.patchLevel;
     const x = L.siteX(i, j);
     const y = L.siteY(i, j);
     s = { key, i, j, x, y, elevationZone: this.elevationZoneLevel.query(x, y), nbrs: null, target: NaN, root: NaN };
-    this.subs.set(key, s);
+    this.patches.set(key, s);
     return s;
   }
 
-  subNbrs(s: Sub): number[] {
-    if (!s.nbrs) s.nbrs = this.subLevel.neighbours(s.i, s.j).map((n) => n.key);
+  patchNbrs(s: Patch): number[] {
+    if (!s.nbrs) s.nbrs = this.patchLevel.neighbours(s.i, s.j).map((n) => n.key);
     return s.nbrs;
   }
 
-  subTarget(key: number): number {
-    const s = this.sub(key);
+  patchTarget(key: number): number {
+    const s = this.patch(key);
     if (!Number.isNaN(s.target)) return s.target;
     let t = -1;
-    if (this.subMergeSet(s.elevationZone).has(key)) {
+    if (this.patchMergeSet(s.elevationZone).has(key)) {
       const home = this.elevationZoneRoot(s.elevationZone);
-      for (const c of this.subNbrs(s)) {
-        if (this.elevationZoneRoot(this.sub(c).elevationZone) === home) {
+      for (const c of this.patchNbrs(s)) {
+        if (this.elevationZoneRoot(this.patch(c).elevationZone) === home) {
           t = c;
           break;
         }
@@ -567,16 +567,16 @@ export class World {
     return t;
   }
 
-  subRoot(key: number): number {
-    const s = this.sub(key);
-    if (Number.isNaN(s.root)) s.root = resolveRoot(key, (k) => this.subTarget(k));
+  patchRoot(key: number): number {
+    const s = this.patch(key);
+    if (Number.isNaN(s.root)) s.root = resolveRoot(key, (k) => this.patchTarget(k));
     return s.root;
   }
 
-  subMerged(key: number): boolean {
-    const root = this.subRoot(key);
+  patchMerged(key: number): boolean {
+    const root = this.patchRoot(key);
     if (root !== key) return true;
-    for (const n of this.subNbrs(this.sub(key))) if (this.subRoot(n) === key) return true;
+    for (const n of this.patchNbrs(this.patch(key))) if (this.patchRoot(n) === key) return true;
     return false;
   }
 
@@ -591,39 +591,39 @@ export class World {
     // genesis of the raw cell, so merged groups still show why each part is ocean
     const rawOrigin = this.origin(bkey);
     c = {
-      subRaw: -1,
-      sub: -1,
+      patchRaw: -1,
+      patch: -1,
       elevationZoneRaw: bkey,
       elevationZone: root,
       region: this.elevationZone(root).region,
       ocean,
       origin: !ocean ? ORIGIN.land : rawOrigin !== ORIGIN.land ? rawOrigin : this.origin(root),
-      subMerged: false,
+      patchMerged: false,
       elevationZoneMerged: this.elevationZoneMerged(root),
     };
     this.elevationZoneCells.set(bkey, c);
     return c;
   }
 
-  /** Cell info for a raw subbiome, nested: everything follows the merged subbiome's site. */
-  subCell(skey: number): Cell {
-    let c = this.subCells.get(skey);
+  /** Cell info for a raw patch, nested: everything follows the merged patch's site. */
+  patchCell(skey: number): Cell {
+    let c = this.patchCells.get(skey);
     if (c) return c;
-    const sr = this.subRoot(skey);
-    const bc = this.elevationZoneCell(this.sub(sr).elevationZone);
-    c = { ...bc, subRaw: skey, sub: sr, subMerged: this.subMerged(sr) };
-    this.subCells.set(skey, c);
+    const sr = this.patchRoot(skey);
+    const bc = this.elevationZoneCell(this.patch(sr).elevationZone);
+    c = { ...bc, patchRaw: skey, patch: sr, patchMerged: this.patchMerged(sr) };
+    this.patchCells.set(skey, c);
     return c;
   }
 
   /**
-   * Classify a world point. `detail` = false skips the subbiome level (used when
-   * subbiomes are smaller than a pixel). Without nesting each level is looked up
+   * Classify a world point. `detail` = false skips the patch level (used when
+   * patches are smaller than a pixel). Without nesting each level is looked up
    * at the point itself.
    */
   cellAt(x: number, y: number, detail: boolean, out?: Cell): Cell {
     if (this.p.nest) {
-      if (detail) return this.subCell(this.subLevel.query(x, y));
+      if (detail) return this.patchCell(this.patchLevel.query(x, y));
       return this.elevationZoneCell(this.elevationZoneLevel.query(x, y));
     }
     const bc = this.elevationZoneCell(this.elevationZoneLevel.query(x, y));
@@ -631,10 +631,10 @@ export class World {
     Object.assign(o, bc);
     o.region = this.regionLevel.query(x, y);
     if (detail) {
-      const s = this.subLevel.query(x, y);
-      o.subRaw = s;
-      o.sub = this.subRoot(s);
-      o.subMerged = this.subMerged(o.sub);
+      const s = this.patchLevel.query(x, y);
+      o.patchRaw = s;
+      o.patch = this.patchRoot(s);
+      o.patchMerged = this.patchMerged(o.patch);
     }
     return o;
   }
@@ -683,7 +683,7 @@ export class World {
         const wx = -half + ((x + 0.5) / n) * 2 * half;
         const wy = -half + ((y + 0.5) / n) * 2 * half;
         const c = this.cellAt(wx, wy, true);
-        mix(c.sub + 1);
+        mix(c.patch + 1);
         mix(c.elevationZone + 1);
         mix(c.region + 1);
         mix(c.ocean ? 1 : 2);

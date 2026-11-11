@@ -69,14 +69,14 @@ export const SECTIONS: Section[] = withDefaults.sections([
     id: 'elevationZones',
     title: 'Elevation zones · medium cells',
     open: true,
-    help: 'Warped Voronoi cells: the ocean/land unit, and the unit for factions. An elevation zone owns the subbiomes whose site lies inside it.',
+    help: 'Warped Voronoi cells: the ocean/land unit, and the unit for factions. An elevation zone owns the patches whose site lies inside it.',
     params: [
       { key: 'ez.size', label: 'Grid size', type: 'number', min: 8, max: 128, step: 1, log: true, unit: ' km' },
       { key: 'ez.jitter', label: 'Jitter', type: 'number', min: 0, max: 1, step: 0.01 },
       { key: 'ez.warp', label: 'Border warp', type: 'number', min: 0, max: 1, step: 0.01, help: 'Amplitude of the border warp, in cell sizes.' },
       { key: 'ez.warpFreq', label: 'Warp frequency', type: 'number', min: 0.1, max: 4, step: 0.01, log: true, help: 'Warp noise cycles per cell. Low = gently bent borders, high = wiggly borders.' },
-      { key: 'ez.mergeMin', label: 'Subbiome merges min', type: 'int', min: 0, max: 12, help: 'Subbiomes per elevation zone that join their nearest neighbour in the same elevation zone.' },
-      { key: 'ez.mergeMax', label: 'Subbiome merges max', type: 'int', min: 0, max: 12 },
+      { key: 'ez.mergeMin', label: 'Patch merges min', type: 'int', min: 0, max: 12, help: 'Patches per elevation zone that join their nearest neighbour in the same elevation zone.' },
+      { key: 'ez.mergeMax', label: 'Patch merges max', type: 'int', min: 0, max: 12 },
       { key: 'ez.mergeCoast', label: 'Merge across coast', type: 'bool', help: 'Allow a land elevation zone to merge into an ocean elevation zone (and vice versa). Off keeps coastlines intact.' },
       {
         key: 'ez.flatSparseP',
@@ -86,25 +86,25 @@ export const SECTIONS: Section[] = withDefaults.sections([
         max: 20000,
         step: 10,
         unit: ' mm/yr',
-        help: 'A flat elevation zone whose point (site) gets less initial precipitation than this is river-poor: every one of its subbiomes then gets only 0 or 1 river attractor (50/50) instead of "Attractors / subbiome". 0 = off. The default makes about a third of the flat zones river-poor. Rebuilds only the rivers.',
+        help: 'A flat elevation zone whose point (site) gets less initial precipitation than this is river-poor: every one of its patches then gets only 0 or 1 river attractor (50/50) instead of "Attractors / patch". 0 = off. The default makes about a third of the flat zones river-poor. Rebuilds only the rivers.',
       },
     ],
   },
   {
-    id: 'subs',
-    title: 'Subbiomes · small cells',
+    id: 'patches',
+    title: 'Patches · small cells',
     open: true,
-    help: 'Warped Voronoi cells for detail: sub-biomes, cities and towns, ore deposits, competing factions.',
+    help: 'Warped Voronoi cells for detail: biomes, cities and towns, ore deposits, competing factions.',
     params: [
-      { key: 'sub.size', label: 'Grid size', type: 'number', min: 2, max: 32, step: 0.1, log: true, unit: ' km' },
-      { key: 'sub.jitter', label: 'Jitter', type: 'number', min: 0, max: 1, step: 0.01 },
-      { key: 'sub.warp', label: 'Border warp', type: 'number', min: 0, max: 1, step: 0.01 },
-      { key: 'sub.warpFreq', label: 'Warp frequency', type: 'number', min: 0.1, max: 4, step: 0.01, log: true },
+      { key: 'patch.size', label: 'Grid size', type: 'number', min: 2, max: 32, step: 0.1, log: true, unit: ' km' },
+      { key: 'patch.jitter', label: 'Jitter', type: 'number', min: 0, max: 1, step: 0.01 },
+      { key: 'patch.warp', label: 'Border warp', type: 'number', min: 0, max: 1, step: 0.01 },
+      { key: 'patch.warpFreq', label: 'Warp frequency', type: 'number', min: 0.1, max: 4, step: 0.01, log: true },
       {
-        key: 'sub.nest',
+        key: 'patch.nest',
         label: 'Nest levels',
         type: 'bool',
-        help: 'Classify every point through its subbiome: elevation zone and region borders (and coasts) then follow subbiome cells. Off = each level is looked up at the point itself.',
+        help: 'Classify every point through its patch: elevation zone and region borders (and coasts) then follow patch cells. Off = each level is looked up at the point itself.',
       },
     ],
   },
@@ -119,10 +119,10 @@ export const RIVER_SECTION: Section = withDefaults.section({
   title: 'Rivers · space colonization',
   enableKey: 'riv.on',
   open: true,
-  help: 'Per region: a root at the point of every ocean elevation zone touching the region, attractors in every inland (non-coastal) land subbiome, then space colonization until every attractor is reached. Width = attractors reached upstream.',
+  help: 'Per region: a root at the point of every ocean elevation zone touching the region, attractors in every inland (non-coastal) land patch, then space colonization until every attractor is reached. Width = attractors reached upstream.',
   params: [
     { key: 'riv.on', label: 'Rivers', type: 'bool' },
-    { key: 'riv.points', label: 'Attractors / subbiome', type: 'int', min: 1, max: 30, help: 'Attraction points scattered inside every inland land subbiome.' },
+    { key: 'riv.points', label: 'Attractors / patch', type: 'int', min: 1, max: 30, help: 'Attraction points scattered inside every inland land patch.' },
     { key: 'riv.step', label: 'Step D', type: 'number', min: 0.5, max: 8, step: 0.1, log: true, unit: ' km', help: 'Length of one growth step (segment length).' },
     {
       key: 'riv.influence',
@@ -186,7 +186,7 @@ export const RIVER_SECTION: Section = withDefaults.section({
       step: 0.01,
       help: 'A side branch only sprouts when its pull is at least this fraction of the pull on the main stem it leaves. 0 = off; higher = dominant trunks, fewer short tributaries.',
     },
-    { key: 'riv.coast', label: 'Skip coast subbiomes', type: 'bool', help: 'No attractors in subbiomes that touch the ocean (the spec).' },
+    { key: 'riv.coast', label: 'Skip coast patches', type: 'bool', help: 'No attractors in patches that touch the ocean (the spec).' },
   ],
 });
 /** Keys shown in the map sections that only feed the rivers (changing them never regenerates the map). */
@@ -196,7 +196,7 @@ export const RIVER_KEYS = new Set([...RIVER_SECTION.params.map((p) => p.key), ..
 /** Schema → model parameters for Rivers (the seed feeds the precipitation map that thins flat zones). */
 export function toRiverParams(p: Params, seed: number): RiverParams {
   return {
-    perSub: num(p, 'riv.points'),
+    perPatch: num(p, 'riv.points'),
     step: num(p, 'riv.step') * KM,
     influence: num(p, 'riv.influence') * KM,
     kill: num(p, 'riv.kill') * KM,
@@ -221,7 +221,7 @@ export const LAKE_SECTION: Section = withDefaults.section({
   id: 'lakes',
   title: 'Lakes',
   open: true,
-  help: 'Per region, after the rivers, and always on a river: every subbiome that may hold a lake and has a river running through it gets one try, centred on the river (shown with the rivers). No lakes in ocean or mountains elevation zones, in desert subbiomes (hot or cold desert at sea level, so never where the map shows desert) or in restricted subbiomes (those of a river-poor flat elevation zone, see “Flat: sparse river precipitation cutoff”). The outline is an ellipse with a few broad noise lobes, clipped so a lake never leaves its region or the land it may cover, then rounded.',
+  help: 'Per region, after the rivers, and always on a river: every patch that may hold a lake and has a river running through it gets one try, centred on the river (shown with the rivers). No lakes in ocean or mountains elevation zones, in desert patches (hot or cold desert at sea level, so never where the map shows desert) or in restricted patches (those of a river-poor flat elevation zone, see “Flat: sparse river precipitation cutoff”). The outline is an ellipse with a few broad noise lobes, clipped so a lake never leaves its region or the land it may cover, then rounded.',
   params: [
     {
       key: 'lake.freq',
@@ -230,7 +230,7 @@ export const LAKE_SECTION: Section = withDefaults.section({
       min: 0,
       max: 1,
       step: 0.01,
-      help: 'Chance that a subbiome which may hold a lake, and has a river in it, gets one. 0 = no lakes. Lakes that would overlap another lake, or that the clip leaves smaller than the minimum size, are dropped.',
+      help: 'Chance that a patch which may hold a lake, and has a river in it, gets one. 0 = no lakes. Lakes that would overlap another lake, or that the clip leaves smaller than the minimum size, are dropped.',
     },
     {
       key: 'lake.min',
@@ -470,14 +470,14 @@ export function toClimateParams(p: Params, seed: number): ClimateParams {
 }
 
 /**
- * Biome parameters (left panel): every subbiome gets a biome from the initial climate at
+ * Biome parameters (left panel): every patch gets a biome from the initial climate at
  * its site, its height and its elevation zone. Changing them only recolours the map.
  */
 export const BIOME_SECTION: Section = withDefaults.section({
   id: 'biomes',
-  title: 'Biomes · per subbiome',
+  title: 'Biomes · per patch',
   open: false,
-  help: 'Each land subbiome gets a biome from the initial temperature and precipitation at its site. The temperature is lowered by the height cooling curve at the subbiome’s mean height (from the terrain; a typical height for its elevation zone type until the terrain is computed). The aridity P / (20·T + 140) and a thermal belt pick the biome. River-poor flat elevation zones are drier, so they favour desert. Coastal subbiomes (bordering the ocean) of flat and lowland elevation zones become mangrove where it is warm and wet enough. Colour by → Biomes.',
+  help: 'Each land patch gets a biome from the initial temperature and precipitation at its site. The temperature is lowered by the height cooling curve at the patch’s mean height (from the terrain; a typical height for its elevation zone type until the terrain is computed). The aridity P / (20·T + 140) and a thermal belt pick the biome. River-poor flat elevation zones are drier, so they favour desert. Coastal patches (bordering the ocean) of flat and lowland elevation zones become mangrove where it is warm and wet enough. Colour by → Biomes.',
   params: [
     ...[0, 1, 2, 3, 4].flatMap((i) => [
       {
@@ -512,7 +512,7 @@ export const BIOME_SECTION: Section = withDefaults.section({
       max: 50,
       step: 0.5,
       unit: ' °C',
-      help: 'Mangrove grows only in coastal subbiomes (a cell borders an ocean subbiome) of flat and lowland elevation zones, never in hills or mountains or inland. There it replaces the climate biome when the temperature after the height cooling is at least this (real mangroves stop near the frost line, about the 20 °C isotherm). Above the warmest coast = no mangrove.',
+      help: 'Mangrove grows only in coastal patches (a cell borders an ocean patch) of flat and lowland elevation zones, never in hills or mountains or inland. There it replaces the climate biome when the temperature after the height cooling is at least this (real mangroves stop near the frost line, about the 20 °C isotherm). Above the warmest coast = no mangrove.',
     },
     {
       key: 'bio.mangroveM',
@@ -546,10 +546,10 @@ export const LOCATION_SECTION: Section = withDefaults.section({
   id: 'locations',
   title: 'City & town locations',
   open: false,
-  help: 'Per region, every land subbiome is scored as a place for a city or town on five factors, each 0–1: resources (food of the catchment, fresh water, wood / stone / clay, fish), geography (buildable ground, a waterside site, defence, depth inside the region), trade & travel (river mouth, harbour, navigable river, confluence, or a central place within a day or two of much farmland), climate (temperature and aridity) and prosperity (the prosperity map). Viability = 100 × the weighted mean of the five, scaled down to 0 where there is no fresh water or the temperature is unlivable. The best-scoring subbiomes become the region’s locations, kept apart by the spacing; the top ones, far apart and well inside the region, are cities. Shown with Display → City & town locations; the Location viability slider there hides the weaker ones.',
+  help: 'Per region, every land patch is scored as a place for a city or town on five factors, each 0–1: resources (food of the catchment, fresh water, wood / stone / clay, fish), geography (buildable ground, a waterside site, defence, depth inside the region), trade & travel (river mouth, harbour, navigable river, confluence, or a central place within a day or two of much farmland), climate (temperature and aridity) and prosperity (the prosperity map). Viability = 100 × the weighted mean of the five, scaled down to 0 where there is no fresh water or the temperature is unlivable. The best-scoring patches become the region’s locations, kept apart by the spacing; the top ones, far apart and well inside the region, are cities. Shown with Display → City & town locations; the Location viability slider there hides the weaker ones.',
   params: [
     { key: 'loc.count', label: 'Locations / region', type: 'int', min: 0, max: 60, help: 'How many locations a region aims for (cities included). Regions with little habitable land get fewer.' },
-    { key: 'loc.cities', label: 'Cities / region', type: 'int', min: 0, max: 12, help: 'At most this many of a region’s locations are cities: its best scores that lie at least two subbiomes inside the region and 2.5 × the spacing apart. The rest are towns.' },
+    { key: 'loc.cities', label: 'Cities / region', type: 'int', min: 0, max: 12, help: 'At most this many of a region’s locations are cities: its best scores that lie at least two patches inside the region and 2.5 × the spacing apart. The rest are towns.' },
     {
       key: 'loc.spacing',
       label: 'Spacing',
@@ -559,7 +559,7 @@ export const LOCATION_SECTION: Section = withDefaults.section({
       step: 0.5,
       log: true,
       unit: ' km',
-      help: 'Least distance between two locations of a region. When that leaves a region short of its number of locations, the spacing is relaxed step by step, down to one subbiome size.',
+      help: 'Least distance between two locations of a region. When that leaves a region short of its number of locations, the spacing is relaxed step by step, down to one patch size.',
     },
     { key: 'loc.wRes', label: 'Weight · resources', type: 'number', min: 0, max: 1, step: 0.05, help: 'Relative weight of each factor in the viability score (the five weights are normalised).' },
     { key: 'loc.wGeo', label: 'Weight · geography', type: 'number', min: 0, max: 1, step: 0.05 },
@@ -583,13 +583,13 @@ export function toLocationParams(p: Params): LocationParams {
 /** Colour modes: [id, label]. */
 export const VIEW_MODES = [
   ['map', 'Map (elevation zone types)'],
-  ['biomes', 'Biomes (per subbiome)'],
+  ['biomes', 'Biomes (per patch)'],
   ['landsea', 'Land & ocean'],
   ['genesis', 'Ocean genesis'],
   ['merges', 'Merged cells'],
   ['regions', 'Regions'],
   ['elevationZones', 'Elevation zones'],
-  ['subbiomes', 'Subbiomes'],
+  ['patches', 'Patches'],
   ['hierarchy', 'Hierarchy (all levels)'],
   ['height', 'Height (hypsometric)'],
 ] as [string, string][];
@@ -642,7 +642,7 @@ export const VIEW_SECTION: Section = withDefaults.section({
     },
     { key: 'view.regEdges', label: 'Region borders', type: 'bool', view: true },
     { key: 'view.zoneEdges', label: 'Elevation zone borders', type: 'bool', view: true },
-    { key: 'view.subEdges', label: 'Subbiome borders', type: 'bool', view: true, help: 'Drawn when subbiomes are large enough on screen.' },
+    { key: 'view.patchEdges', label: 'Patch borders', type: 'bool', view: true, help: 'Drawn when patches are large enough on screen.' },
     { key: 'view.coast', label: 'Coastline', type: 'bool', view: true },
     { key: 'view.links', label: 'Ocean seeds & links', type: 'bool', view: true, help: 'Seeds (●linked ○lone) and the straight links between them.' },
     { key: 'view.growth', label: 'Growth arrows', type: 'bool', view: true, help: 'Arrow from each growing ocean elevation zone to the land elevation zones it converted.' },
@@ -689,7 +689,7 @@ export function defaults(): Params {
 export function toWorldParams(p: Params, seed: number): WorldParams {
   const regionSize = num(p, 'reg.size') * KM;
   const elevationZoneSize = Math.min(regionSize / 1.5, Math.max(regionSize / 16, num(p, 'ez.size') * KM));
-  const subSize = Math.min(elevationZoneSize / 1.5, Math.max(elevationZoneSize / 16, num(p, 'sub.size') * KM));
+  const patchSize = Math.min(elevationZoneSize / 1.5, Math.max(elevationZoneSize / 16, num(p, 'patch.size') * KM));
   return {
     seed,
     regionSize,
@@ -709,13 +709,13 @@ export function toWorldParams(p: Params, seed: number): WorldParams {
     elevationZoneWarp: num(p, 'ez.warp'),
     elevationZoneWarpFreq: num(p, 'ez.warpFreq'),
     mergeAcrossCoast: bool(p, 'ez.mergeCoast'),
-    subMergeMin: num(p, 'ez.mergeMin'),
-    subMergeMax: num(p, 'ez.mergeMax'),
-    subSize,
-    subJitter: num(p, 'sub.jitter'),
-    subWarp: num(p, 'sub.warp'),
-    subWarpFreq: num(p, 'sub.warpFreq'),
-    nest: bool(p, 'sub.nest'),
+    patchMergeMin: num(p, 'ez.mergeMin'),
+    patchMergeMax: num(p, 'ez.mergeMax'),
+    patchSize,
+    patchJitter: num(p, 'patch.jitter'),
+    patchWarp: num(p, 'patch.warp'),
+    patchWarpFreq: num(p, 'patch.warpFreq'),
+    nest: bool(p, 'patch.nest'),
   };
 }
 
@@ -740,13 +740,13 @@ export const PRESETS: Preset[] = [
   },
   { id: 'inland', label: 'Inland seas (no links)', params: { 'oc.connect': 0, 'oc.from': 'all', 'oc.passes': 2 } },
   { id: 'oceanic', label: 'Ocean world', params: { 'reg.oceanMin': 2, 'reg.oceanMax': 4, 'oc.connect': 90, 'oc.passes': 2, 'oc.from': 'all' } },
-  { id: 'nowarp', label: 'Straight borders (no warp)', params: { 'ez.warp': 0, 'sub.warp': 0 } },
-  { id: 'organic', label: 'Organic borders', params: { 'ez.warp': 0.7, 'ez.warpFreq': 0.45, 'sub.warp': 0.6, 'sub.warpFreq': 0.8 } },
+  { id: 'nowarp', label: 'Straight borders (no warp)', params: { 'ez.warp': 0, 'patch.warp': 0 } },
+  { id: 'organic', label: 'Organic borders', params: { 'ez.warp': 0.7, 'ez.warpFreq': 0.45, 'patch.warp': 0.6, 'patch.warpFreq': 0.8 } },
   {
     id: 'grid',
     label: 'Square grid (jitter 0)',
-    params: { 'reg.jitter': 0, 'ez.jitter': 0, 'sub.jitter': 0, 'ez.warp': 0, 'sub.warp': 0 },
+    params: { 'reg.jitter': 0, 'ez.jitter': 0, 'patch.jitter': 0, 'ez.warp': 0, 'patch.warp': 0 },
   },
   { id: 'bigmerge', label: 'Heavy merging', params: { 'reg.mergeMin': 6, 'reg.mergeMax': 10, 'ez.mergeMin': 5, 'ez.mergeMax': 9 } },
-  { id: 'flat', label: 'Independent levels (no nesting)', params: { 'sub.nest': false, 'view.color': 'hierarchy' } },
+  { id: 'flat', label: 'Independent levels (no nesting)', params: { 'patch.nest': false, 'view.color': 'hierarchy' } },
 ];

@@ -1,6 +1,6 @@
 # Game Resources and Trade: What Games Use, Why, and a Resource Set for the Generator
 
-*Research date: 2026-11-10. Scope: the same question as `subbiome-resources.md` (what does the land give, and where), asked from a **game-design** point of view. §2 surveys how RPGs, grand strategy, 4X, RTS and city or colony builders choose, place, consume and trade resources. §3 distils a cross-game taxonomy and the typical resource counts. §4 collects the economic-geography ideas that games use or approximate (comparative advantage, transport cost, central places, von Thünen rings, location theory) and how designers applied them. §5 proposes a game-level resource set of 37 resources in three tiers for `sandboxes/sandbox4`, maps it onto the ~370 rows of `subbiome-resources.md` §4, assigns each to a level of the map hierarchy, and sketches deterministic models for "thriving", deliberate deficits, prices and flows. The constraint carried over from the earlier notes is that the map is infinite, lazily evaluated and bit-exact.*
+*Research date: 2026-11-10. Scope: the same question as `patch-resources.md` (what does the land give, and where), asked from a **game-design** point of view. §2 surveys how RPGs, grand strategy, 4X, RTS and city or colony builders choose, place, consume and trade resources. §3 distils a cross-game taxonomy and the typical resource counts. §4 collects the economic-geography ideas that games use or approximate (comparative advantage, transport cost, central places, von Thünen rings, location theory) and how designers applied them. §5 proposes a game-level resource set of 37 resources in three tiers for `sandboxes/sandbox4`, maps it onto the ~370 rows of `patch-resources.md` §4, assigns each to a level of the map hierarchy, and sketches deterministic models for "thriving", deliberate deficits, prices and flows. The constraint carried over from the earlier notes is that the map is infinite, lazily evaluated and bit-exact.*
 
 **How to read the citations**
 
@@ -9,15 +9,15 @@
 - **[partially verified]** means the primary source exists and is cited, but only part of the claim was confirmed, for example from an abstract, a search-index excerpt, or a secondary source that quotes the primary.
 - Wiki numbers are for the game version the wiki page states (for example EU4 1.30–1.31, Victoria 3 1.10–1.13). Games are patched often, so treat them as typical values, not current ones.
 - The game-resource set in §5 and every "Design note" are my own engineering judgement, not sourced claims.
-- Row numbers like `#343` refer to the catalogue in `docs/research/subbiome-resources.md` §4; `F1`–`F28` to its fantasy table (§5 there).
+- Row numbers like `#343` refer to the catalogue in `docs/research/patch-resources.md` §4; `F1`–`F28` to its fantasy table (§5 there).
 
 **Code locations used below** (working tree at commit `b94e28d`)
 
 | Hook | File, lines | What it gives an economy pass |
 |---|---|---|
-| Map hierarchy | `sandboxes/sandbox4/src/world/world.ts` L1–30; `README.md` L67–71 | Regions on a 128 km lattice, elevation zones on 32 km, subbiomes on 8 km. Subbiomes are "also meant for towns, ore, factions"; elevation zones are "also meant for factions" |
-| Resource catalogue | `docs/research/subbiome-resources.md` §4, §6, §7 | ~370 real resources with zone, biome and rarity columns; potentials vs deposits (§7.1); per-biome exports and imports (§6.3) |
-| Coast | `src/world/rivers.ts` L237 (`isCoastSub`) | Port candidates; sea transport |
+| Map hierarchy | `sandboxes/sandbox4/src/world/world.ts` L1–30; `README.md` L67–71 | Regions on a 128 km lattice, elevation zones on 32 km, patches on 8 km. Patches are "also meant for towns, ore, factions"; elevation zones are "also meant for factions" |
+| Resource catalogue | `docs/research/patch-resources.md` §4, §6, §7 | ~370 real resources with zone, biome and rarity columns; potentials vs deposits (§7.1); per-biome exports and imports (§6.3) |
+| Coast | `src/world/rivers.ts` L237 (`isCoastPatch`) | Port candidates; sea transport |
 | Dry flat zones | `src/world/rivers.ts` L272 (`isSparseFlat`) | Desert plains: salt flats, caravans |
 | River flow | `src/world/rivers.ts` L139–145, L858–860 | `flow` = attractors reached upstream, a drainage-area proxy; parent links give downstream direction. Navigability and water power |
 | Prosperity | `src/world/climate.ts` L8–9, L105–107 | A unitless 1–100 noise field "there for later use (settlements, roads)". §5.6 proposes deriving it from resources instead |
@@ -28,10 +28,10 @@
 
 | Hook | File, lines | What it gives an economy pass |
 |---|---|---|
-| Lakes | `src/world/lakes.ts` L57–82 (`Lake`), L189 (`get`), L237 (`lakeAt`); commit `4766597` | River-fed lakes per region, each with a host subbiome, area and the river's flow. Fish, reeds and lake transport; a lake on a navigable river extends it |
+| Lakes | `src/world/lakes.ts` L57–82 (`Lake`), L189 (`get`), L237 (`lakeAt`); commit `4766597` | River-fed lakes per region, each with a host patch, area and the river's flow. Fish, reeds and lake transport; a lake on a navigable river extends it |
 | Mangrove | `src/world/biomes.ts` L85, L90–95, L343; commit `dc52798` | Biome `mangrove` (MG) on warm, not-desert coasts of flat and lowland zones. Mangrove timber, charcoal and tannin bark; poor farmland |
-| Coast per merged subbiome | `src/world/biomes.ts` L238 (`BiomeInfo.coastal`), L298 (`isCoastal`) | The coast test for a merged subbiome, cached with its biome |
-| Supernatural | `src/world/climate.ts` L121–123 (`supernaturalAt`); commit `397f779` | A 0–100 noise field (10 km features) for magic. A ready input for the fantasy goods of `subbiome-resources.md` §5 |
+| Coast per merged patch | `src/world/biomes.ts` L238 (`BiomeInfo.coastal`), L298 (`isCoastal`) | The coast test for a merged patch, cached with its biome |
+| Supernatural | `src/world/climate.ts` L121–123 (`supernaturalAt`); commit `397f779` | A 0–100 noise field (10 km features) for magic. A ready input for the fantasy goods of `patch-resources.md` §5 |
 
 ---
 
@@ -40,7 +40,7 @@
 Six findings shape everything below.
 
 1. **Games use few resources, and give each one a job.** The genres differ in how many goods they show (4 in Age of Empires II, about 20 in Patrician IV, about 30 in EU4, about 50 in Civilization VI and Victoria 3), but each resource has one dominant role: feed people, build things, keep people content, field armies (§2, §3.3).
-2. **Placement is a terrain or biome rule plus a hash.** Civilization places each resource on listed terrains and features; EU4 draws a province's trade good from weights modified by terrain and climate; CK3 restricts each economic building to listed terrains; Anno gives each island a random set of "fertilities" and fixed "lodes" (§2). The catalogue in `subbiome-resources.md` already supports this kind of rule.
+2. **Placement is a terrain or biome rule plus a hash.** Civilization places each resource on listed terrains and features; EU4 draws a province's trade good from weights modified by terrain and climate; CK3 restricts each economic building to listed terrains; Anno gives each island a random set of "fertilities" and fixed "lodes" (§2). The catalogue in `patch-resources.md` already supports this kind of rule.
 3. **Deficits are designed in.** Anno makes "not every plant … grow on any island" (ANNO-S); Patrician IV lets each city produce only "4–5 goods for export" and gives each of 8 regions one product made nowhere else (P4); Victoria 3 shows how shortages cut output (V3-M). Trade exists because no place has everything.
 4. **Trade is a graph with costs, not a free exchange.** EU4 routes trade value downstream through a fixed directed graph of nodes (EU4-T). Victoria 3 limits market access by infrastructure (V3-M). Humankind only counts a deposit if an unbroken supply path reaches the capital (HK). Bannerlord's villagers walk their goods to the nearest town (MB2-E, MB2-V).
 5. **Prices are a clamped function of supply and demand.** Victoria 3 uses price = base × (1 + 0.75 × clamp((buy − sell) / min(buy, sell), ±1)) (V3-M); Patrician IV and Bannerlord describe the same idea in words (P4, MB2-E). This formula uses only + − × ÷ and a clamp, so it is bit-exact.
@@ -175,7 +175,7 @@ A second axis, the one city builders and Victoria 3 use, groups by what a good *
 Ricardo's example: England needs the labour of 100 men a year for its cloth and 120 for its wine; Portugal needs 90 and 80. Portugal is better at both, yet both gain if England makes cloth and Portugal wine (RIC, ch. 7). Trade follows *relative* cost, not absolute.
 
 - **In games.** Anno's fertilities and Patrician's regional goods give absolute advantages (one place can, the other cannot) (ANNO-S, P4). Comparative advantage appears when every place *can* make most things, but at different costs: Bannerlord's regional village types (MB2-V) and CK3's terrain-limited buildings (CK3-B) come closest.
-- **Design note.** The catalogue's potentials (§7.1 there: suitability 0–1 per subbiome) already give relative costs. A region exports what its potential is *relatively* best at, measured by a location quotient (§5.5), even when a neighbour is better at everything.
+- **Design note.** The catalogue's potentials (§7.1 there: suitability 0–1 per patch) already give relative costs. A region exports what its potential is *relatively* best at, measured by a location quotient (§5.5), even when a neighbour is better at everything.
 
 ### 4.2 Transport cost: water beats land
 
@@ -246,10 +246,10 @@ Everything in §5 is my own design, built on the sources above and on the catalo
 
 ### 5.1 Principles
 
-1. **Two layers.** The catalogue's ~370 rows stay as the *realism layer*: they decide *what* a subbiome holds and give names and flavour ("this valley's grain is rye"). A smaller *game layer* of 37 resources is what settlements, prices and trade use. Each catalogue row maps to exactly one game resource (§5.3).
+1. **Two layers.** The catalogue's ~370 rows stay as the *realism layer*: they decide *what* a patch holds and give names and flavour ("this valley's grain is rye"). A smaller *game layer* of 37 resources is what settlements, prices and trade use. Each catalogue row maps to exactly one game resource (§5.3).
 2. **Seven groups for the player.** Food, Materials, Fuel, Metals, Salt, Luxuries, Animals. The player reasons in groups; the simulation tracks resources (§3.3).
 3. **Three tiers.** Raw (from the land), intermediate (one processing step, placed by Weber's rule), finished (consumed by people and armies). At most 3 inputs per output (§3.2, KP).
-4. **Potentials, deposits, enablers.** As in the catalogue §7.1: potentials are suitability scores every subbiome has; deposits are rare hashed point resources; enablers (river, coast, harbour, water power) multiply both.
+4. **Potentials, deposits, enablers.** As in the catalogue §7.1: potentials are suitability scores every patch has; deposits are rare hashed point resources; enablers (river, coast, harbour, water power) multiply both.
 5. **Deterministic and local.** Every value is a pure function of the seed, the parameters and a bounded neighbourhood, using only + − × ÷ and comparisons (bit-exactness rule, `biomes-and-climate.md` §7).
 
 ### 5.2 The game resource set (37)
@@ -286,7 +286,7 @@ Everything in §5 is my own design, built on the sources above and on the catalo
 
 | Resource | Inputs | Placed at | Why it matters |
 |---|---|---|---|
-| **Charcoal** | Timber | Forest subbiome | Turns timber into smelting fuel; deforests over time (optional) |
+| **Charcoal** | Timber | Forest patch | Turns timber into smelting fuel; deforests over time (optional) |
 | **Iron** | Iron ore + Fuel (charcoal) | Where ore and fuel are within a short haul | Iron needs two places, so it creates trade |
 | **Bronze** | Copper ore + Tin + Fuel | Copper or tin site, or a trade hub | Long-distance tin route |
 | **Cloth** | Fibre or Livestock (wool) | Fibre or flock zone; water power (#379) bonus | Main manufactured trade good (catalogue §6.1) |
@@ -310,34 +310,34 @@ Optional **fantasy layer** (toggle): three game resources over the catalogue's F
 
 ### 5.3 Mapping: game resource ← catalogue rows ← map rules
 
-Zone, biome and belt codes as in `subbiome-resources.md` §4.0. "Level" says where the value is computed (§5.4).
+Zone, biome and belt codes as in `patch-resources.md` §4.0. "Level" says where the value is computed (§5.4).
 
 | Game resource | Catalogue rows | Placement rule (from the catalogue's conditions) | Level |
 |---|---|---|---|
-| Grain | #1–18 | Max ECOCROP trapezoid over the grain crops that fit `t`, `p`, `height`; floodplain and river irrigation bonus; best in Fl, Lo | Subbiome potential → zone sum |
-| Produce | #19–46 | Same, over roots, pulses, vegetables | Subbiome potential (zone-local only) |
-| Orchard | #47–78, #35–39 (oilseeds) | Tree-crop trapezoids; olive and vine in WS, BL Te-w; dates in HD, TS with `riv`; palms on Tr `cst` | Subbiome potential |
-| Livestock | #94–97, #102–104, #106, #108–112 | Pasture by biome: GR, CS, SV, WS, Hi, Mo; yak and camelids by height; poor in RF, TA, IC | Subbiome potential |
-| Fish | #143–155, #165 | River `flow` above a threshold; `cst`; ocean-zone adjacency; cold shelf and upwelling bonuses; a lake in the subbiome (`Lake.sub`, by area; #147); crabs and oysters in MG (#153) | Subbiome potential |
-| Wild food & game | #79–93, #113–121 | Forest and tundra biomes; low on farmed land | Subbiome potential |
-| Timber | #247–278 | Forest biomes (TA, MF, BL, TR, DF, RF); mangrove poles in MG (#276); thin in WS, SV; none in HD, CD, GR, CS, TU, IC | Subbiome potential |
-| Stone | #294–307 | Common deposit in Hi, Mo; uncommon in Lo; rare in Fl (glacial boulders only) | Subbiome deposit |
-| Clay & earth | #291–293, #308–309 | Fl, Lo, `fp`; kaolin (#309) as a rare deposit | Subbiome potential |
-| Fibre | #212–226 | Flax, hemp in MF, BL, GR; cotton in SV, TS (irrigated), DF; jute on tropical `fp` | Subbiome potential |
+| Grain | #1–18 | Max ECOCROP trapezoid over the grain crops that fit `t`, `p`, `height`; floodplain and river irrigation bonus; best in Fl, Lo | Patch potential → zone sum |
+| Produce | #19–46 | Same, over roots, pulses, vegetables | Patch potential (zone-local only) |
+| Orchard | #47–78, #35–39 (oilseeds) | Tree-crop trapezoids; olive and vine in WS, BL Te-w; dates in HD, TS with `riv`; palms on Tr `cst` | Patch potential |
+| Livestock | #94–97, #102–104, #106, #108–112 | Pasture by biome: GR, CS, SV, WS, Hi, Mo; yak and camelids by height; poor in RF, TA, IC | Patch potential |
+| Fish | #143–155, #165 | River `flow` above a threshold; `cst`; ocean-zone adjacency; cold shelf and upwelling bonuses; a lake in the patch (`Lake.patch`, by area; #147); crabs and oysters in MG (#153) | Patch potential |
+| Wild food & game | #79–93, #113–121 | Forest and tundra biomes; low on farmed land | Patch potential |
+| Timber | #247–278 | Forest biomes (TA, MF, BL, TR, DF, RF); mangrove poles in MG (#276); thin in WS, SV; none in HD, CD, GR, CS, TU, IC | Patch potential |
+| Stone | #294–307 | Common deposit in Hi, Mo; uncommon in Lo; rare in Fl (glacial boulders only) | Patch deposit |
+| Clay & earth | #291–293, #308–309 | Fl, Lo, `fp`; kaolin (#309) as a rare deposit | Patch potential |
+| Fibre | #212–226 | Flax, hemp in MF, BL, GR; cotton in SV, TS (irrigated), DF; jute on tropical `fp` | Patch potential |
 | Fuel | #323–330, #286 | Wood in forests; mangrove charcoal in MG (#276); peat in Bo/Te Hu–PHu flats (*peat bog*); dung in CS, GR, CD, Mo; coal as a deposit on *clastic basin* | Potential + deposit |
-| Salt | #166–171 | Solar salt on `cst` in Ar–SAr warm belts; playa salt in `isSparseFlat` Arid zones; rock salt and brine on *evaporite* bedrock | Subbiome deposit |
-| Iron ore | #343–347 | Bog iron in TA, MF, BL wet flats; laterite in RF, SV, DF; skarn and BIF by bedrock | Subbiome deposit |
-| Copper ore | #337–340, #365 | Mo, Hi; *volcanic arc*, *ophiolite*, *clastic basin* | Subbiome deposit |
-| Tin | #341–342 | VR lode on *granite intrusion*; stream tin downstream along rivers | Subbiome deposit (river-propagated) |
-| Silver & lead | #336, #348–350 | Mo, Hi; *fold belt*, *carbonate platform* | Subbiome deposit |
-| Gold | #332–335 | Placers where the river leaves Mo/Hi zones (catalogue §7.3 placer rule); lodes in Mo | Subbiome deposit (river-propagated) |
-| Gems & pearls | #159–162, #363–376 | VR deposits by bedrock; pearls on warm `cst` | Subbiome deposit |
-| Spices & incense | #177–190, #198, #200–211 | RF, DF lowland; incense in TS, HD uplands | Subbiome potential (rare) |
-| Stimulants & sugar | #107, #174–175, #191–197 | Tea and coffee in `hiT`; cacao in RF; tobacco in BL Te-w; sugar cane on Tr `fp`; honey widespread (low value) | Subbiome potential |
-| Furs & ivory | #122–139, #142 | Furs in TA, TU, MF; ivory in SV, RF, DF and on polar coasts | Subbiome potential |
+| Salt | #166–171 | Solar salt on `cst` in Ar–SAr warm belts; playa salt in `isSparseFlat` Arid zones; rock salt and brine on *evaporite* bedrock | Patch deposit |
+| Iron ore | #343–347 | Bog iron in TA, MF, BL wet flats; laterite in RF, SV, DF; skarn and BIF by bedrock | Patch deposit |
+| Copper ore | #337–340, #365 | Mo, Hi; *volcanic arc*, *ophiolite*, *clastic basin* | Patch deposit |
+| Tin | #341–342 | VR lode on *granite intrusion*; stream tin downstream along rivers | Patch deposit (river-propagated) |
+| Silver & lead | #336, #348–350 | Mo, Hi; *fold belt*, *carbonate platform* | Patch deposit |
+| Gold | #332–335 | Placers where the river leaves Mo/Hi zones (catalogue §7.3 placer rule); lodes in Mo | Patch deposit (river-propagated) |
+| Gems & pearls | #159–162, #363–376 | VR deposits by bedrock; pearls on warm `cst` | Patch deposit |
+| Spices & incense | #177–190, #198, #200–211 | RF, DF lowland; incense in TS, HD uplands | Patch potential (rare) |
+| Stimulants & sugar | #107, #174–175, #191–197 | Tea and coffee in `hiT`; cacao in RF; tobacco in BL Te-w; sugar cane on Tr `fp`; honey widespread (low value) | Patch potential |
+| Furs & ivory | #122–139, #142 | Furs in TA, TU, MF; ivory in SV, RF, DF and on polar coasts | Patch potential |
 | Dyes | #156–158, #161, #230–239 | Woad, madder in Te; indigo in Tr; cochineal, kermes, murex rare | Potential / deposit |
 | Horses & pack animals | #98–101, #105 | GR, CS (horses); HD, CD (camels); Mo (mules) | Zone aggregate |
-| Enablers (not goods) | #378–385 | River, navigable river, water power, springs, aquifer, harbour; a lake (`Lake.sub`) as fresh water and a sheltered landing | Subbiome flags |
+| Enablers (not goods) | #378–385 | River, navigable river, water power, springs, aquifer, harbour; a lake (`Lake.patch`) as fresh water and a sheltered landing | Patch flags |
 
 Tanning bark (#241–245, including mangrove bark #243 in MG), resins (#205), plant ash (#320) and limestone (#297) feed the intermediates and need no separate game resource.
 
@@ -345,8 +345,8 @@ Tanning bark (#241–245, including mangrove bark #243 in MG), resins (#205), pl
 
 | Level | Size | Owns | Economic analogue |
 |---|---|---|---|
-| **Subbiome** (8 km, ~50–65 km²) | ~1 village and its fields | Potentials (0–1 per raw resource), 0–3 deposit slots, enabler flags | A village territory: walking distance to fields |
-| **Elevation zone** (32 km, ~16 subbiomes, ~1,000 km²) | Half a day's walk from centre to edge (hiker 16–24 km/day, `README.md` L131) | Production profile (sum of subbiome outputs), population capacity, the **market town** (lowest central place), processing sites (Weber) | A market area (§4.5), and the unit Bannerlord and EU4 attach goods to (one village type; one province good) |
+| **Patch** (8 km, ~50–65 km²) | ~1 village and its fields | Potentials (0–1 per raw resource), 0–3 deposit slots, enabler flags | A village territory: walking distance to fields |
+| **Elevation zone** (32 km, ~16 patches, ~1,000 km²) | Half a day's walk from centre to edge (hiker 16–24 km/day, `README.md` L131) | Production profile (sum of patch outputs), population capacity, the **market town** (lowest central place), processing sites (Weber) | A market area (§4.5), and the unit Bannerlord and EU4 attach goods to (one village type; one province good) |
 | **Region** (128 km, ~16 zones) | 3–4 days by horse across | **Trade balance**, prices, the **city** (higher central place), its signature export, river systems (computed per region already) | A city's hinterland; an EU4 trade node |
 | **Neighbourhood of regions** (k-ring, k = 1–2) | | Price formation and flows (§5.7) | The market reach |
 
@@ -391,7 +391,7 @@ access = 1 + 0.5 × coast + 0.5 × navigableRiver    (all + − × ÷)
 
 | Tier | Settlement | Needs (game resources) | Analogue |
 |---|---|---|---|
-| Subsistence | Village (subbiome) | Grain or Produce or Livestock or Fish or Wild food; Fuel; Salt; Clay & earth or Timber or Stone | Victoria 3 Basic Food, Heating, Crude Items (V3-N) |
+| Subsistence | Village (patch) | Grain or Produce or Livestock or Fish or Wild food; Fuel; Salt; Clay & earth or Timber or Stone | Victoria 3 Basic Food, Heating, Crude Items (V3-N) |
 | Comfort | Market town (zone) | + Tools, Clothing, Drink & oil, Preserved food, Bricks & lime | Victoria 3 Standard Clothing, Household Items, Intoxicants |
 | Luxury | City (region) | + Spices & incense, Stimulants & sugar, Furs & ivory, Dyes, Fine goods, Horses | Victoria 3 Luxury Drinks, Luxury Items |
 | Military (any) | Garrisons, armies | Arms & armour, Horses, Preserved food; Naval stores and Timber for fleets | Bannerlord garrison and militia (MB2-E); Civ VI Material resources (CIV6-C) |
@@ -433,8 +433,8 @@ The weighting is a market-potential index in the spirit of Harris 1954 [unverifi
 
 ### 5.8 Generation order
 
-1. Per subbiome: potentials and deposits (catalogue §7.1–7.2), enabler flags. Already pure functions of the subbiome.
-2. Per zone: sum outputs; population capacity from food; pick the market-town subbiome (best access × food); place intermediates by input co-location.
+1. Per patch: potentials and deposits (catalogue §7.1–7.2), enabler flags. Already pure functions of the patch.
+2. Per zone: sum outputs; population capacity from food; pick the market-town patch (best access × food); place intermediates by input co-location.
 3. Per region: balances, LQ, signature export (rule 5), deficits (rule 6), city site, `thrive`.
 4. Per region with its k-ring: prices (Model A), then flows (Model B). Rivers and coasts give the cheap edges; roads come later (`README.md` "Trade network").
 5. Inspector: show the 7 groups, the signature export, the biggest deficit and the main trade partner.
@@ -465,7 +465,7 @@ The weighting is a market-potential index in the spirit of Harris 1954 [unverifi
 | Dry warm coast | Solar Salt, Fish, Preserved food, a port |
 | River mouth on a flat coast | Port + navigable river: the region's trade hub and likely city |
 | Warm flat or lowland coast with mangrove (MG) | Fish and shellfish, Timber (poles), Fuel (charcoal), tanning bark; imports Grain, Salt, Iron |
-| Lake on a river (`Lake.sub`) | Fish, fresh water, reeds; a natural market and a stop for river transport |
+| Lake on a river (`Lake.patch`) | Fish, fresh water, reeds; a natural market and a stop for river transport |
 
 ---
 
@@ -516,7 +516,7 @@ The weighting is a market-potential index in the spirit of Harris 1954 [unverifi
 
 - `sandboxes/sandbox4/src/world/{world,rivers,climate}.ts`, `README.md`, at commit `b94e28d` (lines as in the code table).
 - `sandboxes/sandbox4/src/world/{lakes,biomes,climate}.ts` at commit `397f779`, for the lakes, the mangrove biome and the supernatural map (the "Added since" table).
-- `docs/research/subbiome-resources.md` (catalogue rows, §6, §7), `docs/research/biomes-and-climate.md` (bit-exactness rule, climate feature sizes).
+- `docs/research/patch-resources.md` (catalogue rows, §6, §7), `docs/research/biomes-and-climate.md` (bit-exactness rule, climate feature sizes).
 
 ### 7.4 Not accessible on the research date
 

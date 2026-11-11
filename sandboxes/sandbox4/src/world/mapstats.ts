@@ -2,10 +2,10 @@
  * Map statistics: how the biomes, elevation zone types, climate and heights are spread
  * over a rectangle of the world, to spot under-represented biomes while tuning.
  *
- *   Samples   one per raw subbiome lattice cell whose (i, j) lies in the rectangle (equal
+ *   Samples   one per raw patch lattice cell whose (i, j) lies in the rectangle (equal
  *             areas), every `stride`-th cell in each direction when the rectangle holds
  *             more than MAX_SAMPLES of them. A sample takes everything from its merged
- *             subbiome: biome, belt, moisture and climate (biomes.ts), elevation zone type.
+ *             patch: biome, belt, moisture and climate (biomes.ts), elevation zone type.
  *   Heights   from the terrain tiles that are already computed (their raster cells inside
  *             the rectangle, owned regions only); no tile is computed for the statistics.
  *
@@ -17,7 +17,7 @@ import { LAND, ownsRegion, type Terrain, type TerrainTile } from './terrain';
 import { ELEVATION_ZONE_TYPES } from './zones';
 import type { World } from './world';
 
-/** Most subbiome samples per run (the stride grows beyond it). */
+/** Most patch samples per run (the stride grows beyond it). */
 export const MAX_SAMPLES = 40_000;
 /** Bars of the distribution histograms. */
 export const HIST_BINS = 24;
@@ -60,10 +60,10 @@ export interface MapStats {
   /** distinct merged cells met */
   regions: number;
   zones: number;
-  subs: number;
-  /** per BIOMES index: samples (area) and distinct merged subbiomes */
+  patches: number;
+  /** per BIOMES index: samples (area) and distinct merged patches */
   biomeSamples: number[];
-  biomeSubs: number[];
+  biomePatches: number[];
   /** per ELEVATION_ZONE_TYPES index: samples (area) and distinct merged elevation zones */
   zoneSamples: number[];
   zoneCount: number[];
@@ -171,7 +171,7 @@ export class MapStatsJob {
     rect: Rect,
   ) {
     this.rect = rect;
-    const s = world.subLevel.size;
+    const s = world.patchLevel.size;
     this.i0 = Math.floor(rect.x0 / s);
     this.j0 = Math.floor(rect.y0 / s);
     const ni = Math.floor(rect.x1 / s) - this.i0 + 1;
@@ -221,12 +221,12 @@ export class MapStatsJob {
     const w = this.world;
     const i = this.i0 + (n % this.cols) * this.stride;
     const j = this.j0 + Math.floor(n / this.cols) * this.stride;
-    const c = w.subCell(packKey(i, j));
-    const b = this.biomes.ofSub(c.sub);
+    const c = w.patchCell(packKey(i, j));
+    const b = this.biomes.ofPatch(c.patch);
     this.regions.add(c.region);
     this.zoneSets[b.zoneType].add(c.elevationZone);
     this.zoneSamples[b.zoneType]++;
-    this.biomeSets[b.biome].add(c.sub);
+    this.biomeSets[b.biome].add(c.patch);
     this.biomeSamples[b.biome]++;
     this.accT0.add(b.t0, b.x, b.y);
     this.accP0.add(b.p0, b.x, b.y);
@@ -269,7 +269,7 @@ export class MapStatsJob {
   private finish(): void {
     const { x0, y0, x1, y1 } = this.rect;
     const area = Math.max(1, (x1 - x0) * (y1 - y0));
-    const s = this.world.subLevel.size * this.stride;
+    const s = this.world.patchLevel.size * this.stride;
     const gridBiome = this.gridBiomes.map((row) =>
       row.map((counts) => {
         let best = -1;
@@ -277,8 +277,8 @@ export class MapStatsJob {
         return best;
       }),
     );
-    let subs = 0;
-    for (const set of this.biomeSets) subs += set.size;
+    let patches = 0;
+    for (const set of this.biomeSets) patches += set.size;
     let zones = 0;
     for (const set of this.zoneSets) zones += set.size;
     this.result = {
@@ -290,9 +290,9 @@ export class MapStatsJob {
       ocean: this.ocean,
       regions: this.regions.size,
       zones,
-      subs,
+      patches,
       biomeSamples: this.biomeSamples,
-      biomeSubs: this.biomeSets.map((x) => x.size),
+      biomePatches: this.biomeSets.map((x) => x.size),
       zoneSamples: this.zoneSamples,
       zoneCount: this.zoneSets.map((x) => x.size),
       grid: this.grid,

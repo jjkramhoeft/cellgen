@@ -21,7 +21,7 @@ const pct = (v: number, d = 1) => (Number.isFinite(v) ? `${(v * 100).toFixed(d)}
 const ij = (k: number) => `${keyI(k)}, ${keyJ(k)}`;
 const sw = (c: string, label: string, v = '') => `<div class="lg-cat"><i style="background:${c}"></i><span>${esc(label)}</span><em>${esc(v)}</em></div>`;
 
-export const LEVEL_COLORS = { region: '#faecc8', elevationZone: '#fde725', sub: '#5ae6ff' };
+export const LEVEL_COLORS = { region: '#faecc8', elevationZone: '#fde725', patch: '#5ae6ff' };
 
 export function genesisName(o: number): string {
   return GENESIS.find((g) => g.origin === o)?.name ?? `Growth pass ${o - ORIGIN.grow + 1}`;
@@ -30,18 +30,18 @@ export function genesisName(o: number): string {
 // ------------------------------------------------------------------ legend
 
 const NOTES: Record<ViewMode, [string, string]> = {
-  map: ['Map', 'Each elevation zone is coloured by its type (ocean, flat, lowland, hills, mountains), lighter/darker per subbiome. Colour by Biomes for the biome of each subbiome. Turn on Hillshade to see the height map.'],
+  map: ['Map', 'Each elevation zone is coloured by its type (ocean, flat, lowland, hills, mountains), lighter/darker per patch. Colour by Biomes for the biome of each patch. Turn on Hillshade to see the height map.'],
   biomes: [
     'Biomes',
-    'One biome per subbiome, from the initial temperature (cooled with the subbiome’s height by the cooling curve) and precipitation at its site; river-poor flat zones are drier. Heights come from the terrain as it is computed, a typical height per elevation zone type until then. Zoomed far out, each elevation zone shows the biome at its site.',
+    'One biome per patch, from the initial temperature (cooled with the patch’s height by the cooling curve) and precipitation at its site; river-poor flat zones are drier. Heights come from the terrain as it is computed, a typical height per elevation zone type until then. Zoomed far out, each elevation zone shows the biome at its site.',
   ],
   landsea: ['Land & ocean', 'Land and ocean, from the ocean genesis.'],
   genesis: ['Ocean genesis', 'Why each ocean elevation zone is ocean. Turn on seeds & links and growth arrows to see the steps.'],
-  merges: ['Merged cells', 'Orange: elevation zones in a merged group (one colour per group). Yellow: merged subbiome groups.'],
+  merges: ['Merged cells', 'Orange: elevation zones in a merged group (one colour per group). Yellow: merged patch groups.'],
   regions: ['Regions', 'One colour per region (dark over ocean). With nesting, a region is the union of the elevation zones it owns.'],
   elevationZones: ['Elevation zones', 'One colour per merged elevation zone (dimmed over ocean).'],
-  subbiomes: ['Subbiomes', 'One colour per merged subbiome. Zoomed far out, subbiomes are skipped and elevation zones shown.'],
-  hierarchy: ['Hierarchy', 'Hue = region, lightness = elevation zone, fine shading = subbiome. Ocean is darkened.'],
+  patches: ['Patches', 'One colour per merged patch. Zoomed far out, patches are skipped and elevation zones shown.'],
+  hierarchy: ['Hierarchy', 'Hue = region, lightness = elevation zone, fine shading = patch. Ocean is darkened.'],
   height: ['Height', 'Fitted height map, hillshaded from the north-west. Regions are computed as you look; flat colours mean “not ready yet”.'],
 };
 
@@ -112,7 +112,7 @@ export function renderLegend(host: HTMLElement, mode: ViewMode, oceanShare: numb
     for (const h of [-800, -100, 0, 100, 300, 600, 1000, 1600, 2400]) html += sw(cssHex(heightColor(h)), h < 0 ? `${h} m` : h === 0 ? 'Sea level' : `${h} m`);
     html += '</div>';
   } else if (mode === 'merges') {
-    html += '<div class="lg-cats">' + sw('#e8913a', 'Merged elevation zone group') + sw('#f4dd63', 'Merged subbiome group') + sw('#767c70', 'Unmerged land') + sw('#283a54', 'Unmerged ocean') + '</div>';
+    html += '<div class="lg-cats">' + sw('#e8913a', 'Merged elevation zone group') + sw('#f4dd63', 'Merged patch group') + sw('#767c70', 'Unmerged land') + sw('#283a54', 'Unmerged ocean') + '</div>';
   }
   html += `<div class="lg-note">${esc(note)}</div>`;
   for (const c of climate) html += climateBar(c);
@@ -131,8 +131,8 @@ export function renderLevels(host: HTMLElement, world: World, zoom: number, deta
   host.innerHTML =
     row('Region', LEVEL_COLORS.region, world.regionLevel.size, true) +
     row('Elevation zone', LEVEL_COLORS.elevationZone, world.elevationZoneLevel.size, true) +
-    row('Subbiome', LEVEL_COLORS.sub, world.subLevel.size, detail);
-  host.title = detail ? 'Grid size and on-screen size of each level' : 'Subbiomes are under 3 px and are skipped (Display → Detail)';
+    row('Patch', LEVEL_COLORS.patch, world.patchLevel.size, detail);
+  host.title = detail ? 'Grid size and on-screen size of each level' : 'Patches are under 3 px and are skipped (Display → Detail)';
 }
 
 // ------------------------------------------------------------------ inspector
@@ -143,7 +143,7 @@ export interface Probe {
   pinned: boolean;
 }
 
-/** The inspector rows of a subbiome's biome: the biome and every input that picked it. */
+/** The inspector rows of a patch's biome: the biome and every input that picked it. */
 function biomeRows(b: BiomeInfo, bp: BiomeParams): string {
   const sparseDry = bp.sparseDry;
   const biome = BIOMES[b.biome];
@@ -156,15 +156,15 @@ function biomeRows(b: BiomeInfo, bp: BiomeParams): string {
   const pth = dryThreshold(b.t);
   html += `<div class="kv" title="Thermal belt from the temperature after the height cooling · moisture class from the aridity"><span>Belt · moisture</span><b>${esc(BELTS[b.belt].name)} · ${esc(MOISTURE[b.moisture].toLowerCase())}</b></div>`;
   html += `<div class="kv" title="Precipitation / Köppen dryness threshold 20·T + 140 mm. Below 0.5 desert, 0.5–1 steppe, 1–2 woodland / savanna, then forest and rainforest (≥ 6 temperate, ≥ 4 tropical)"><span>Aridity P / P_th</span><b>${b.aridity.toFixed(2)} · P_th ${pth.toFixed(0)} mm</b></div>`;
-  const hTxt = b.heightExact ? `${b.height.toFixed(0)} m · subbiome mean` : `≈ ${b.height.toFixed(0)} m · typical ${esc(ELEVATION_ZONE_TYPES[b.zoneType].name.toLowerCase())}`;
+  const hTxt = b.heightExact ? `${b.height.toFixed(0)} m · patch mean` : `≈ ${b.height.toFixed(0)} m · typical ${esc(ELEVATION_ZONE_TYPES[b.zoneType].name.toLowerCase())}`;
   const hTitle = b.heightExact
-    ? 'Mean height of the subbiome’s land, from its terrain tile'
+    ? 'Mean height of the patch’s land, from its terrain tile'
     : 'The terrain tile is not computed yet (it is computed while colouring by Biomes or Height, zoomed in): a typical height for the elevation zone type stands in';
   html += `<div class="kv" title="${hTitle}"><span>Height</span><b>${hTxt}</b></div>`;
   const cool = b.cooling !== 0 ? ` − ${b.cooling.toFixed(1)} = ${b.t.toFixed(1)} °C` : '';
-  html += `<div class="kv" title="Initial temperature at the subbiome’s site, minus the cooling curve (Biomes section, points 1–5) at the subbiome’s height [clim.t.*, bio.cool.*]"><span>Site temperature</span><b>${b.t0.toFixed(1)} °C${cool}</b></div>`;
+  html += `<div class="kv" title="Initial temperature at the patch’s site, minus the cooling curve (Biomes section, points 1–5) at the patch’s height [clim.t.*, bio.cool.*]"><span>Site temperature</span><b>${b.t0.toFixed(1)} °C${cool}</b></div>`;
   const pTxt = b.sparse ? `${b.p0.toFixed(0)} × ${sparseDry} = ${b.p.toFixed(0)} mm/yr` : `${b.p0.toFixed(0)} mm/yr`;
-  html += `<div class="kv" title="Initial precipitation at the subbiome’s site${b.sparse ? ', × the sparse-flat factor: this is a river-poor flat elevation zone, which favours desert' : ''} [clim.p.*, bio.sparseDry]"><span>Site precipitation</span><b>${pTxt}</b></div>`;
+  html += `<div class="kv" title="Initial precipitation at the patch’s site${b.sparse ? ', × the sparse-flat factor: this is a river-poor flat elevation zone, which favours desert' : ''} [clim.p.*, bio.sparseDry]"><span>Site precipitation</span><b>${pTxt}</b></div>`;
   if (b.sparse) html += `<div class="kv" title="The elevation zone is flat and its site gets less initial precipitation than the sparse river cutoff: few rivers, drier biomes [ez.flatSparseP, bio.sparseDry]"><span>Sparse flat zone</span><b>yes · drier</b></div>`;
   if (b.coastal) {
     const why =
@@ -175,7 +175,7 @@ function biomeRows(b: BiomeInfo, bp: BiomeParams): string {
           : b.t < bp.mangroveT
             ? `no mangrove · < ${bp.mangroveT} °C`
             : `no mangrove · aridity < ${bp.mangroveM}`;
-    html += `<div class="kv" title="The subbiome borders an ocean subbiome. Coastal subbiomes of flat and lowland elevation zones become mangrove when the temperature and the aridity reach the mangrove minimums [bio.mangroveT, bio.mangroveM]"><span>Ocean coast</span><b>yes · ${why}</b></div>`;
+    html += `<div class="kv" title="The patch borders an ocean patch. Coastal patches of flat and lowland elevation zones become mangrove when the temperature and the aridity reach the mangrove minimums [bio.mangroveT, bio.mangroveM]"><span>Ocean coast</span><b>yes · ${why}</b></div>`;
   }
   if (b.seaLevel !== b.biome) html += `<div class="kv" title="The biome the sea-level temperature would give: the height changed it"><span>At sea level</span><b>${esc(BIOMES[b.seaLevel].name)}</b></div>`;
   return html + '</div>';
@@ -198,32 +198,32 @@ const FACTOR_TERMS: Record<Factor, (c: Candidate) => string> = {
   prosperity: () => 'the prosperity map at the spot',
 };
 const FACTOR_HELP: Record<Factor, string> = {
-  resources: 'Food of the catchment (farmland by biome and zone type, river irrigation in dry land; the subbiome and its neighbours), fresh water, building material and fuel (wood, stone, clay) and fish',
+  resources: 'Food of the catchment (farmland by biome and zone type, river irrigation in dry land; the patch and its neighbours), fresh water, building material and fuel (wood, stone, clay) and fish',
   geography: 'Buildable ground (flat and lowland over hills and mountains; mangrove is swamp), a waterside site (river, harbour, coast, lake), defence (high ground, peninsula, confluence) and the depth inside the region',
   trade: 'The better of a gateway (river mouth, sheltered harbour, navigable river, head of navigation, confluence, lake) and a central place (how much of the region’s food lies within a day or two of travel)',
   climate: 'Comfort of the temperature (at the zone type’s typical height) and of the aridity',
   prosperity: 'The prosperity map at the spot [clim.pros.*]',
 };
 
-/** Why a land subbiome with this score is not one of its region's locations. */
+/** Why a land patch with this score is not one of its region's locations. */
 function notChosen(c: Candidate): string {
   if (c.score <= 0) return c.comfort <= 0 ? 'no · unlivable temperature' : c.water <= 0 ? 'no · no fresh water' : 'no · score 0';
   if (c.depth < 1) return 'no · on the region border';
   return 'no · better sites nearby or elsewhere';
 }
 
-/** The inspector rows of a location (or, with `l` null, of the subbiome under the cursor as a site). */
+/** The inspector rows of a location (or, with `l` null, of the patch under the cursor as a site). */
 function locationRows(c: Candidate, l: Location | null, rl: RegionLocations, lp: LocationProbe): string {
   const color = viabilityColor(c.score);
   const ink = c.score >= 50 ? '#0b0e13' : '#f2f5f7';
   const w = lp.locations.p.weights;
   const total = FACTORS.reduce((a, k) => a + Math.max(0, w[k]), 0);
   const share = (k: Factor) => (total > 0 ? Math.max(0, w[k]) / total : 1 / FACTORS.length);
-  const title = l ? `${l.kind === 'city' ? 'City' : 'Town'} location · rank ${l.rank} of ${rl.list.length} in region ${ij(c.region)}` : 'Site viability of this subbiome';
+  const title = l ? `${l.kind === 'city' ? 'City' : 'Town'} location · rank ${l.rank} of ${rl.list.length} in region ${ij(c.region)}` : 'Site viability of this patch';
   let html = `<div class="lvl"><h4><i style="background:${color}"></i>${title}</h4>`;
   const hidden = l && l.score < lp.min ? ' · hidden by the slider' : '';
   html += `<div class="kv" title="Combined score: 100 × need × the weighted mean of the five factors below [loc.w*]. Display → Location viability hides locations below a score [view.locMin]"><span>Viability</span><b><span class="chip" style="background:${color};color:${ink}">${c.score.toFixed(0)} / 100</span>${hidden}</b></div>`;
-  if (!l) html += `<div class="kv" title="A region’s locations are its best-scoring subbiomes that do not touch another region’s land, kept apart by the spacing (cities: at least ${CITY_DEPTH} subbiomes inside) [loc.count, loc.cities, loc.spacing]"><span>Location</span><b>${notChosen(c)}</b></div>`;
+  if (!l) html += `<div class="kv" title="A region’s locations are its best-scoring patches that do not touch another region’s land, kept apart by the spacing (cities: at least ${CITY_DEPTH} patches inside) [loc.count, loc.cities, loc.spacing]"><span>Location</span><b>${notChosen(c)}</b></div>`;
   for (const k of FACTORS) {
     html += `<div class="obar loc-bar" title="${FACTOR_HELP[k]}. Weight ${(share(k) * 100).toFixed(0)} % of the score"><span>${FACTOR_NAMES[k]}</span><i style="width:${(c[k] * 100).toFixed(1)}%;background:${viabilityColor(c[k] * 100)}"></i><em>${c[k].toFixed(2)}</em></div>`;
     html += `<div class="loc-terms">${FACTOR_TERMS[k](c)}</div>`;
@@ -233,14 +233,14 @@ function locationRows(c: Candidate, l: Location | null, rl: RegionLocations, lp:
     html += `<div class="kv" title="Necessities: the score is scaled by min(water, temperature comfort) × 2, capped at 1"><span>Limited by</span><b>${what} · × ${c.need.toFixed(2)}</b></div>`;
   }
   if (c.features.length) html += `<div class="kv" title="${esc(c.features.join(', '))}"><span>Stands out</span><b>${esc(c.features.join(', '))}</b></div>`;
-  if (c.river > 0) html += `<div class="kv" title="The largest river in the subbiome: subbiomes it drains upstream (navigable from 20, large from 80)${c.mouth > 0 ? '; it meets the sea here' : ''}"><span>River</span><b>${c.river.toFixed(1)} subbiomes upstream${c.mouth > 0 ? ' · mouth' : ''}</b></div>`;
-  html += `<div class="kv" title="The spot: on the subbiome’s river (its mouth, or where it is largest) when it has one, otherwise the subbiome’s site"><span>Spot</span><b>${(c.x / 1000).toFixed(1)}, ${(c.y / 1000).toFixed(1)} km · ${c.onRiver ? 'on the river' : 'subbiome site'}</b></div>`;
+  if (c.river > 0) html += `<div class="kv" title="The largest river in the patch: patches it drains upstream (navigable from 20, large from 80)${c.mouth > 0 ? '; it meets the sea here' : ''}"><span>River</span><b>${c.river.toFixed(1)} patches upstream${c.mouth > 0 ? ' · mouth' : ''}</b></div>`;
+  html += `<div class="kv" title="The spot: on the patch’s river (its mouth, or where it is largest) when it has one, otherwise the patch’s site"><span>Spot</span><b>${(c.x / 1000).toFixed(1)}, ${(c.y / 1000).toFixed(1)} km · ${c.onRiver ? 'on the river' : 'patch site'}</b></div>`;
   return html + '</div>';
 }
 
 export function renderInspector(host: HTMLElement, world: World | null, rivers: Rivers | null, pt: Probe | null, terrain: Terrain | null = null, climate: Climate | null = null, biomes: Biomes | null = null, lakes: Lakes | null = null, loc: LocationProbe | null = null): void {
   if (!world || !pt) {
-    host.innerHTML = '<p class="muted">Hover the map to inspect a point. Click to pin the elevation zone and subbiome under the cursor.</p>';
+    host.innerHTML = '<p class="muted">Hover the map to inspect a point. Click to pin the elevation zone and patch under the cursor.</p>';
     return;
   }
   const c = world.cellAt(pt.x, pt.y, true);
@@ -285,11 +285,11 @@ export function renderInspector(host: HTMLElement, world: World | null, rivers: 
   }
   html += '</div>';
 
-  // the location under the cursor, or else the subbiome under it as a site
+  // the location under the cursor, or else the patch under it as a site
   if (loc) {
     const near = loc.locations.nearest(pt.x, pt.y, loc.reach, loc.min);
     const nrl = near ? loc.locations.peek(near.region) : rl;
-    const cand = near ?? (c.ocean ? null : (rl?.bySub.get(c.sub) ?? null));
+    const cand = near ?? (c.ocean ? null : (rl?.byPatch.get(c.patch) ?? null));
     if (cand && nrl) html += locationRows(cand, near, nrl, loc);
   }
 
@@ -304,7 +304,7 @@ export function renderInspector(host: HTMLElement, world: World | null, rivers: 
     const precip = rivers.climate.precipitationAt(broot.x, broot.y);
     const sparse = rivers.isSparseFlat(c.elevationZone);
     const why = cut > 0 ? `${precip.toFixed(0)} ${sparse ? '<' : '≥'} ${cut.toFixed(0)} mm/yr` : 'cutoff off';
-    html += `<div class="kv" title="A flat elevation zone whose site gets less initial precipitation than “Flat: sparse river precipitation cutoff” is river-poor: each of its subbiomes gets only 0 or 1 river attractor [ez.flatSparseP]"><span>Sparse rivers</span><b>${sparse ? 'yes' : 'no'} · ${why}</b></div>`;
+    html += `<div class="kv" title="A flat elevation zone whose site gets less initial precipitation than “Flat: sparse river precipitation cutoff” is river-poor: each of its patches gets only 0 or 1 river attractor [ez.flatSparseP]"><span>Sparse rivers</span><b>${sparse ? 'yes' : 'no'} · ${why}</b></div>`;
   }
   if (c.elevationZoneMerged) {
     const members = World.cellsIn(world.elevationZoneLevel, broot.x - 3 * world.elevationZoneLevel.size, broot.y - 3 * world.elevationZoneLevel.size, broot.x + 3 * world.elevationZoneLevel.size, broot.y + 3 * world.elevationZoneLevel.size, 0).filter(
@@ -316,23 +316,23 @@ export function renderInspector(host: HTMLElement, world: World | null, rivers: 
   const t = world.elevationZoneTarget(c.elevationZone);
   if (t >= 0) html += `<div class="kv"><span>Joins</span><b>${ij(t)}</b></div>`;
   html += `<div class="kv"><span>Neighbours</span><b>${world.elevationZoneNbrs(broot).length}</b></div>`;
-  html += `<div class="kv"><span>Owned subbiomes</span><b>${world.elevationZoneSubs(braw).length}</b></div>`;
+  html += `<div class="kv"><span>Owned patches</span><b>${world.elevationZonePatches(braw).length}</b></div>`;
   if (f & SEED) html += `<div class="kv"><span>Ocean seed</span><b>${f & LINKED ? (world.linkCount(world.elevationZone(c.elevationZone)) === 2 ? 'double-linked' : 'linked') : 'lone'}</b></div>`;
   const grows = world.growthFrom(c.elevationZone);
   if (grows.length) html += `<div class="kv"><span>Converted</span><b>${grows.length} neighbour${grows.length > 1 ? 's' : ''}</b></div>`;
   html += `<div class="kv"><span>Site</span><b>${(broot.x / 1000).toFixed(1)}, ${(broot.y / 1000).toFixed(1)} km</b></div></div>`;
 
-  html += `<div class="lvl"><h4><i style="background:${LEVEL_COLORS.sub}"></i>Subbiome ${ij(c.sub)}</h4>`;
-  if (c.subRaw !== c.sub) html += `<div class="kv"><span>Raw cell</span><b>${ij(c.subRaw)} → ${ij(c.sub)}</b></div>`;
-  const st = world.subTarget(c.sub);
-  html += `<div class="kv"><span>Merged</span><b>${c.subMerged ? (st >= 0 ? `joins ${ij(st)}` : 'yes (group root)') : 'no'}</b></div>`;
-  html += `<div class="kv"><span>Neighbours</span><b>${world.subNbrs(world.sub(c.sub)).length}</b></div>`;
+  html += `<div class="lvl"><h4><i style="background:${LEVEL_COLORS.patch}"></i>Patch ${ij(c.patch)}</h4>`;
+  if (c.patchRaw !== c.patch) html += `<div class="kv"><span>Raw cell</span><b>${ij(c.patchRaw)} → ${ij(c.patch)}</b></div>`;
+  const st = world.patchTarget(c.patch);
+  html += `<div class="kv"><span>Merged</span><b>${c.patchMerged ? (st >= 0 ? `joins ${ij(st)}` : 'yes (group root)') : 'no'}</b></div>`;
+  html += `<div class="kv"><span>Neighbours</span><b>${world.patchNbrs(world.patch(c.patch)).length}</b></div>`;
   if (lakes && lakes.p.frequency > 0) {
-    const why = c.ocean ? 'ocean' : lakes.block(c.subRaw);
+    const why = c.ocean ? 'ocean' : lakes.block(c.patchRaw);
     html += `<div class="kv" title="${LAKE_RULES} [lake.*]"><span>Lakes</span><b>${why ? `none · ${LAKE_BLOCK[why]}` : 'allowed'}</b></div>`;
   }
   html += '</div>';
-  if (biomes) html += biomeRows(biomes.ofSub(c.sub), biomes.p);
+  if (biomes) html += biomeRows(biomes.ofPatch(c.patch), biomes.p);
   const nr = rivers?.nearestNode(pt.x, pt.y, rivers.p.step * 1.5);
   if (nr) {
     const { r, k } = nr;
@@ -352,16 +352,16 @@ export function renderInspector(host: HTMLElement, world: World | null, rivers: 
     html += `<div class="kv" title="Diameter of a circle with the lake’s area, after the clip to the land it may cover · nominal size drawn for it [lake.min, lake.max]"><span>Size</span><b>${(lake.size / 1000).toFixed(2)} km · nominal ${(lake.nominal / 1000).toFixed(2)} km</b></div>`;
     html += `<div class="kv"><span>Area</span><b>${(lake.area / 1e6).toFixed(2)} km²</b></div>`;
     html += `<div class="kv" title="Every lake is centred on a river node: attractors reached upstream of it"><span>On river</span><b>flow ${lake.flow} attractors</b></div>`;
-    html += `<div class="kv"><span>Placed in subbiome</span><b>${ij(lake.sub)}</b></div>`;
+    html += `<div class="kv"><span>Placed in patch</span><b>${ij(lake.patch)}</b></div>`;
     html += `<div class="kv"><span>Centre</span><b>${(lake.cx / 1000).toFixed(1)}, ${(lake.cy / 1000).toFixed(1)} km</b></div>`;
-    html += `<div class="kv" title="Subbiomes that may hold a lake and have a river in them · of those, passed the frequency roll · dropped because too close to another lake · dropped because the clip left them below the minimum size · compute time [lake.freq]"><span>Region tries</span><b>${rl.candidates} with river · ${rl.tries} rolled · ${rl.crowded} crowded · ${rl.tooSmall} too small · ${rl.ms.toFixed(0)} ms</b></div>`;
+    html += `<div class="kv" title="Patches that may hold a lake and have a river in them · of those, passed the frequency roll · dropped because too close to another lake · dropped because the clip left them below the minimum size · compute time [lake.freq]"><span>Region tries</span><b>${rl.candidates} with river · ${rl.tries} rolled · ${rl.crowded} crowded · ${rl.tooSmall} too small · ${rl.ms.toFixed(0)} ms</b></div>`;
     html += '</div>';
   }
   html += `<p class="muted small">${pt.pinned ? 'Pinned — Esc to release.' : 'Click to pin.'} Cell ids are lattice indices (i, j).</p>`;
   host.innerHTML = html;
 }
 
-const LAKE_RULES = 'No lakes in ocean or mountains elevation zones, in desert subbiomes (hot or cold desert at sea level) or in restricted subbiomes (in a river-poor flat elevation zone); lakes never cross a region border';
+const LAKE_RULES = 'No lakes in ocean or mountains elevation zones, in desert patches (hot or cold desert at sea level) or in restricted patches (in a river-poor flat elevation zone); lakes never cross a region border';
 const LAKE_BLOCK: Record<Exclude<LakeBlock, null>, string> = {
   ocean: 'ocean',
   mountains: 'mountains zone',
@@ -376,7 +376,7 @@ export interface ViewStats {
   oceanShare: number;
   regions: number;
   elevationZones: number;
-  subs: number;
+  patches: number;
   /** ocean elevation zones (merged roots) by ORIGIN code */
   origins: Map<number, number>;
   oceanElevationZones: number;
@@ -384,15 +384,15 @@ export interface ViewStats {
   linkedSeeds: number;
   links: number;
   elevationZonesPerRegion: number;
-  subsPerElevationZone: number;
+  patchesPerElevationZone: number;
   /** merged groups */
   elevationZoneGroups: number;
   elevationZoneGroupMax: number;
   elevationZoneMembers: number;
   elevationZoneRaw: number;
-  subGroups: number;
-  subMembers: number;
-  subRaw: number;
+  patchGroups: number;
+  patchMembers: number;
+  patchRaw: number;
   detail: boolean;
   rivers: RiverStats | null;
   ms: number;
@@ -443,7 +443,7 @@ export function computeViewStats(world: World, x0: number, y0: number, x1: numbe
   const elevationZones = new Set<number>();
   /** genesis per raw elevation zone (merged groups can mix seed, chain and growth) */
   const raw = new Map<number, number>();
-  const subs = new Set<number>();
+  const patches = new Set<number>();
   let ocean = 0;
   for (let y = 0; y < ny; y++) {
     for (let x = 0; x < nx; x++) {
@@ -452,7 +452,7 @@ export function computeViewStats(world: World, x0: number, y0: number, x1: numbe
       regions.add(c.region);
       elevationZones.add(c.elevationZone);
       raw.set(c.elevationZoneRaw, c.origin);
-      if (c.sub >= 0) subs.add(c.sub);
+      if (c.patch >= 0) patches.add(c.patch);
     }
   }
   const origins = new Map<number, number>();
@@ -473,12 +473,12 @@ export function computeViewStats(world: World, x0: number, y0: number, x1: numbe
     for (const s of reg.seeds) if (world.baseFlags(s) & LINKED) linkedSeeds++;
     links += world.links(r).length;
   }
-  let subOwned = 0;
-  let subOwners = 0;
+  let patchOwned = 0;
+  let patchOwners = 0;
   for (const b of elevationZones.keys()) {
-    if (subOwners >= 120) break;
-    subOwned += world.elevationZoneSubs(world.elevationZone(b)).length;
-    subOwners++;
+    if (patchOwners >= 120) break;
+    patchOwned += world.elevationZonePatches(world.elevationZone(b)).length;
+    patchOwners++;
   }
   // merged groups among the raw cells whose site is in view
   const groupSizes = (keys: number[], root: (k: number) => number) => {
@@ -500,27 +500,27 @@ export function computeViewStats(world: World, x0: number, y0: number, x1: numbe
   };
   const bg = World.countIn(world.elevationZoneLevel, x0, y0, x1, y1, 0) <= 20000 ? groupSizes(World.cellsIn(world.elevationZoneLevel, x0, y0, x1, y1, 0), (k) => world.elevationZoneRoot(k)) : null;
   const sg =
-    detail && World.countIn(world.subLevel, x0, y0, x1, y1, 0) <= 12000 ? groupSizes(World.cellsIn(world.subLevel, x0, y0, x1, y1, 0), (k) => world.subRoot(k)) : null;
+    detail && World.countIn(world.patchLevel, x0, y0, x1, y1, 0) <= 12000 ? groupSizes(World.cellsIn(world.patchLevel, x0, y0, x1, y1, 0), (k) => world.patchRoot(k)) : null;
   return {
     samples: nx * ny,
     oceanShare: ocean / (nx * ny),
     regions: regions.size,
     elevationZones: elevationZones.size,
-    subs: subs.size,
+    patches: patches.size,
     origins,
     oceanElevationZones,
     seeds,
     linkedSeeds,
     links,
     elevationZonesPerRegion: owned / Math.max(1, regions.size),
-    subsPerElevationZone: subOwned / Math.max(1, subOwners),
+    patchesPerElevationZone: patchOwned / Math.max(1, patchOwners),
     elevationZoneGroups: bg?.groups ?? NaN,
     elevationZoneGroupMax: bg?.max ?? NaN,
     elevationZoneMembers: bg?.members ?? NaN,
     elevationZoneRaw: bg?.raw ?? NaN,
-    subGroups: sg?.groups ?? NaN,
-    subMembers: sg?.members ?? NaN,
-    subRaw: sg?.raw ?? NaN,
+    patchGroups: sg?.groups ?? NaN,
+    patchMembers: sg?.members ?? NaN,
+    patchRaw: sg?.raw ?? NaN,
     detail,
     rivers: rivers ? riverStats(world, rivers, x0, y0, x1, y1) : null,
     ms: performance.now() - t0,
@@ -541,7 +541,7 @@ export function renderStats(
     d.innerHTML = `<span>${esc(k)}</span><b>${esc(v)}</b>`;
     host.append(d);
   };
-  const sub = (t: string) => {
+  const patch = (t: string) => {
     const d = document.createElement('div');
     d.className = 'sub';
     d.textContent = t;
@@ -552,11 +552,11 @@ export function renderStats(
     return;
   }
   add('Ocean / land', `${pct(s.oceanShare)} / ${pct(1 - s.oceanShare)}`, `Share of ${s.samples} sample points in the view`);
-  add('Regions · elevation zones · subbiomes', `${s.regions} · ${s.elevationZones} · ${s.detail ? s.subs : '—'}`, 'Distinct merged cells under the sample grid');
+  add('Regions · elevation zones · patches', `${s.regions} · ${s.elevationZones} · ${s.detail ? s.patches : '—'}`, 'Distinct merged cells under the sample grid');
   add('Elevation zones per region', s.elevationZonesPerRegion.toFixed(1), `Owned elevation zones; nominal (${fmtDist(world.regionLevel.size)}/${fmtDist(world.elevationZoneLevel.size)})² = ${((world.regionLevel.size / world.elevationZoneLevel.size) ** 2).toFixed(1)} [reg.size, ez.size]`);
-  add('Subbiomes per elevation zone', s.subsPerElevationZone.toFixed(1), `Owned subbiomes; nominal ${((world.elevationZoneLevel.size / world.subLevel.size) ** 2).toFixed(1)} [ez.size, sub.size]`);
+  add('Patches per elevation zone', s.patchesPerElevationZone.toFixed(1), `Owned patches; nominal ${((world.elevationZoneLevel.size / world.patchLevel.size) ** 2).toFixed(1)} [ez.size, patch.size]`);
 
-  sub('Oceans');
+  patch('Oceans');
   add('Seeds (linked)', `${s.seeds} (${s.linkedSeeds})`, 'Ocean seeds in the regions under the view, and how many take part in a link [reg.oceanMin, reg.oceanMax, oc.connect, oc.double]');
   add('Links', String(s.links));
   add('Ocean elevation zones', String(s.oceanElevationZones));
@@ -573,21 +573,21 @@ export function renderStats(
   }
   host.append(bars);
 
-  sub('Merges');
+  patch('Merges');
   add(
     'Elevation zone groups',
     Number.isFinite(s.elevationZoneGroups) ? `${s.elevationZoneGroups} · ${pct(s.elevationZoneMembers / Math.max(1, s.elevationZoneRaw), 0)} of cells · max ${s.elevationZoneGroupMax}` : 'zoom in',
     'Merged elevation zone groups among elevation zones whose site is in view, share of raw elevation zones in a group, and the largest group',
   );
   add(
-    'Subbiome groups',
-    Number.isFinite(s.subGroups) ? `${s.subGroups} · ${pct(s.subMembers / Math.max(1, s.subRaw), 0)} of cells` : 'zoom in',
-    'Merged subbiome groups among subbiomes whose site is in view',
+    'Patch groups',
+    Number.isFinite(s.patchGroups) ? `${s.patchGroups} · ${pct(s.patchMembers / Math.max(1, s.patchRaw), 0)} of cells` : 'zoom in',
+    'Merged patch groups among patches whose site is in view',
   );
 
   if (s.rivers) {
     const r = s.rivers;
-    sub('Rivers');
+    patch('Rivers');
     add('Regions computed', `${r.regions}${r.pending ? ` (+${r.pending} pending)` : ''}`, 'Regions whose site is in view; rivers are grown per region');
     add('Rivers', String(r.rivers), 'River mouths with at least one attractor upstream');
     add('Attractors reached', `${r.reached} / ${r.attractors}`, 'Every attractor of a region is reached unless the region finds no ocean to drain into');
@@ -597,11 +597,11 @@ export function renderStats(
     add('Time per region', r.regions ? `${(r.ms / r.regions).toFixed(0)} ms` : '—');
   }
 
-  sub('Performance');
+  patch('Performance');
   const c = extra.cache;
   add('Last full render', extra.render > 0 ? `${extra.render.toFixed(0)} ms` : '…');
   add('Statistics pass', `${s.ms.toFixed(0)} ms`);
-  add('Cached cells', `${c.regions} · ${c.elevationZones} · ${c.subs}`, 'Memoised regions · elevation zones · subbiomes. The caches are dropped when they grow too large; results never change.');
+  add('Cached cells', `${c.regions} · ${c.elevationZones} · ${c.patches}`, 'Memoised regions · elevation zones · patches. The caches are dropped when they grow too large; results never change.');
   add('Fingerprint', extra.fingerprint || '…', 'Hash of a fixed 768 km sample window around the origin. Same seed + parameters ⇒ same value in every browser.');
 }
 

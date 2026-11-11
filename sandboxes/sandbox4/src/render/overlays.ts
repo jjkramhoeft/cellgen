@@ -134,10 +134,10 @@ export function drawGrowth(f: Frame, world: World): void {
   });
 }
 
-/** Arrows from each merged cell to the neighbour it joined (elevation zones; subbiomes when large enough). */
+/** Arrows from each merged cell to the neighbour it joined (elevation zones; patches when large enough). */
 export function drawMerges(f: Frame, world: World): void {
   const BL = world.elevationZoneLevel;
-  const SL = world.subLevel;
+  const SL = world.patchLevel;
   if (World.countIn(BL, f.x0, f.y0, f.x1, f.y1) <= MAX_CELLS) {
     const head = Math.max(4, Math.min(9, BL.size * f.cam.zoom * 0.15)) * f.dpr;
     f.ctx.beginPath();
@@ -154,10 +154,10 @@ export function drawMerges(f: Frame, world: World): void {
     const head = Math.max(3, Math.min(7, SL.size * f.cam.zoom * 0.15)) * f.dpr;
     f.ctx.beginPath();
     for (const s of World.cellsIn(SL, f.x0, f.y0, f.x1, f.y1)) {
-      const t = world.subTarget(s);
+      const t = world.patchTarget(s);
       if (t < 0) continue;
-      const a = world.sub(s);
-      const c = world.sub(t);
+      const a = world.patch(s);
+      const c = world.patch(t);
       arrow(f, a.x, a.y, c.x, c.y, head);
     }
     haloStroke(f, '#fde725', 1.3);
@@ -169,7 +169,7 @@ export function drawSites(f: Frame, world: World, which: string): void {
   const { ctx, dpr } = f;
   const levels: [Level, string, number][] = [[world.regionLevel, '#ffffff', 4.5]];
   if (which === 'elevationZones' || which === 'all') levels.push([world.elevationZoneLevel, '#fde725', 3]);
-  if (which === 'all') levels.push([world.subLevel, '#3fc1b0', 2]);
+  if (which === 'all') levels.push([world.patchLevel, '#3fc1b0', 2]);
   for (let k = levels.length - 1; k >= 0; k--) {
     const [L, color, r] = levels[k];
     if (cellPx(L, f.cam) < 6 || World.countIn(L, f.x0, f.y0, f.x1, f.y1) > MAX_CELLS) continue;

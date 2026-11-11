@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>cellgen · Sandbox 4 · Terrain</title>
-    <meta name="description" content="An infinite, deterministic base map built from three nested levels of Voronoi cells — regions, elevation zones and subbiomes — with ocean seeds, links and growth, and random cell merges." />
+    <meta name="description" content="An infinite, deterministic base map built from three nested levels of Voronoi cells — regions, elevation zones and patches — with ocean seeds, links and growth, and random cell merges." />
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath fill='%2321918c' d='M16 2l12 7v14l-12 7-12-7V9z'/%3E%3Cpath fill='%23fde725' d='M16 9l6 3.5v7L16 23l-6-3.5v-7z'/%3E%3C/svg%3E" />
   </head>
   <body>
@@ -79,8 +79,8 @@
         <h3>The three levels</h3>
         <ul>
           <li><b>Regions</b> (128 km, straight borders) own the elevation zones whose site lies inside them. Each region picks <b>0–2 ocean seeds</b> and <b>2–4 elevation zone merges</b> among its elevation zones.</li>
-          <li><b>Elevation zones</b> (32 km, warped borders) are the land/ocean unit. Each elevation zone is <b>ocean, flat, lowland, hills or mountains</b> (the map colours) and picks <b>2–4 subbiome merges</b> among the subbiomes it owns.</li>
-          <li><b>Subbiomes</b> (8 km, warped borders) carry detail: each has a <b>biome</b>; later also towns, ore, factions.</li>
+          <li><b>Elevation zones</b> (32 km, warped borders) are the land/ocean unit. Each elevation zone is <b>ocean, flat, lowland, hills or mountains</b> (the map colours) and picks <b>2–4 patch merges</b> among the patches it owns.</li>
+          <li><b>Patches</b> (8 km, warped borders) carry detail: each has a <b>biome</b>; later also towns, ore, factions.</li>
         </ul>
         <h3>Oceans</h3>
         <ul>
@@ -91,10 +91,10 @@
         </ul>
         <h3>Rivers</h3>
         <ul>
-          <li>Grown per region by <b>space colonization</b>: a root at the point of every ocean elevation zone touching the region, and 10 <b>attraction points</b> in every inland (non-coastal) land subbiome.</li>
+          <li>Grown per region by <b>space colonization</b>: a root at the point of every ocean elevation zone touching the region, and 10 <b>attraction points</b> in every inland (non-coastal) land patch.</li>
           <li>Each step, nodes grow towards the attractors pulling on them, plus some <b>random motion</b>, until every attractor of the region is reached.</li>
           <li>Line width = <b>attractors reached upstream</b>. Turn on <b>Attractor points</b> to see the attractors (unreached in red) and the roots (rings).</li>
-          <li><b>Lakes</b> come after the rivers and always sit on one: each subbiome with a river gets a small chance of a lake (6 % by default, 1.5–5 km across), with a noise-shaped outline clipped to its region. No lakes in ocean or mountains zones, in deserts or in river-poor flat zones (left panel, <b>Lakes</b>; shown with the rivers). The inspector says whether a subbiome may hold a lake.</li>
+          <li><b>Lakes</b> come after the rivers and always sit on one: each patch with a river gets a small chance of a lake (6 % by default, 1.5–5 km across), with a noise-shaped outline clipped to its region. No lakes in ocean or mountains zones, in deserts or in river-poor flat zones (left panel, <b>Lakes</b>; shown with the rivers). The inspector says whether a patch may hold a lake.</li>
         </ul>
         <h3>Terrain (Sandbox 4)</h3>
         <ul>
@@ -112,17 +112,17 @@
         </ul>
         <h3>Biomes</h3>
         <ul>
-          <li>Every land <b>subbiome</b> gets a biome from the initial climate at its site. The temperature is lowered by a <b>cooling curve</b> over the subbiome’s mean height from the terrain: a smooth curve through 5 points you set (height → °C cooler, 6.5 °C per km by default), plotted in the <b>Biomes</b> section; until its terrain is computed a typical height for the elevation zone type stands in.</li>
+          <li>Every land <b>patch</b> gets a biome from the initial climate at its site. The temperature is lowered by a <b>cooling curve</b> over the patch’s mean height from the terrain: a smooth curve through 5 points you set (height → °C cooler, 6.5 °C per km by default), plotted in the <b>Biomes</b> section; until its terrain is computed a typical height for the elevation zone type stands in.</li>
           <li><b>River-poor flat elevation zones</b> are drier (precipitation × 0.2), so they favour <b>desert</b>.</li>
           <li>The aridity P / (20·T + 140) and a thermal belt pick one of 15 biomes, from ice, tundra and taiga over temperate forests and grassland to hot desert, savanna and rainforest (left panel, <b>Biomes</b>).</li>
-          <li><b>Mangrove</b>: a coastal subbiome (bordering the ocean) in a flat or lowland zone becomes mangrove where it is at least 20 °C and not desert (aridity ≥ 0.5); both are settings. Never inland or in hills or mountains.</li>
-          <li>Colour by <b>Biomes</b> (<b>2</b>) to see them; the inspector shows each subbiome’s biome and the values that picked it.</li>
+          <li><b>Mangrove</b>: a coastal patch (bordering the ocean) in a flat or lowland zone becomes mangrove where it is at least 20 °C and not desert (aridity ≥ 0.5); both are settings. Never inland or in hills or mountains.</li>
+          <li>Colour by <b>Biomes</b> (<b>2</b>) to see them; the inspector shows each patch’s biome and the values that picked it.</li>
         </ul>
         <h3>City &amp; town locations</h3>
         <ul>
-          <li>Every region gets about <b>20 potential locations</b> for cities (◆) and towns (●). Each land subbiome is scored on five factors: <b>resources</b> (food of its catchment, fresh water, wood / stone / clay, fish), <b>geography</b> (buildable ground, a waterside site, defence, depth inside the region), <b>trade &amp; travel</b> (river mouth, harbour, navigable river, confluence, or a central place), <b>climate</b> and <b>prosperity</b> (the prosperity map).</li>
-          <li>The <b>viability</b> score (0–100) is the weighted mean of the five, scaled down to 0 where there is no fresh water or the temperature is unlivable. The best-scoring subbiomes, kept apart by a spacing, become the locations; the top ones, far apart and well inside the region, are cities (left panel, <b>City &amp; town locations</b>).</li>
-          <li>Display → <b>City &amp; town locations</b> (<b>C</b>) shows them, coloured by viability; the <b>Location viability</b> slider hides the ones below a score. Zoom in for the scores, and hover a location (or any land subbiome) to see its factors in the inspector.</li>
+          <li>Every region gets about <b>20 potential locations</b> for cities (◆) and towns (●). Each land patch is scored on five factors: <b>resources</b> (food of its catchment, fresh water, wood / stone / clay, fish), <b>geography</b> (buildable ground, a waterside site, defence, depth inside the region), <b>trade &amp; travel</b> (river mouth, harbour, navigable river, confluence, or a central place), <b>climate</b> and <b>prosperity</b> (the prosperity map).</li>
+          <li>The <b>viability</b> score (0–100) is the weighted mean of the five, scaled down to 0 where there is no fresh water or the temperature is unlivable. The best-scoring patches, kept apart by a spacing, become the locations; the top ones, far apart and well inside the region, are cities (left panel, <b>City &amp; town locations</b>).</li>
+          <li>Display → <b>City &amp; town locations</b> (<b>C</b>) shows them, coloured by viability; the <b>Location viability</b> slider hides the ones below a score. Zoom in for the scores, and hover a location (or any land patch) to see its factors in the inspector.</li>
         </ul>
         <h3>Travel network</h3>
         <ul>
@@ -134,9 +134,9 @@
         <h3>Navigation</h3>
         <ul>
           <li><b>Scroll</b> to zoom at the cursor, <b>drag</b> to pan, <b>pinch</b> on touch, <b>double-click</b> zooms in (Shift zooms out).</li>
-          <li><b>Click</b> pins the elevation zone (yellow outline) and subbiome (cyan outline) under the cursor; <b>Esc</b> releases.</li>
+          <li><b>Click</b> pins the elevation zone (yellow outline) and patch (cyan outline) under the cursor; <b>Esc</b> releases.</li>
           <li><b>Shift+drag</b> or <b>M</b> measures a distance, with travel times for a horse, a marching legion and a hiker.</li>
-          <li><b>+ / −</b> zoom · <b>0 / H</b> origin · arrows pan · <b>R</b> new seed · <b>1–9</b> or <b>[ ]</b> colour mode · <b>T</b> 3D landscape · <b>B</b> elevation zone borders · <b>N</b> subbiome borders · <b>L</b> links · <b>W</b> growth · <b>J</b> merges · <b>V</b> rivers · <b>S</b> sites · <b>G</b> grid · <b>C</b> city &amp; town locations · <b>P</b> travel network · <b>?</b> help.</li>
+          <li><b>+ / −</b> zoom · <b>0 / H</b> origin · arrows pan · <b>R</b> new seed · <b>1–9</b> or <b>[ ]</b> colour mode · <b>T</b> 3D landscape · <b>B</b> elevation zone borders · <b>N</b> patch borders · <b>L</b> links · <b>W</b> growth · <b>J</b> merges · <b>V</b> rivers · <b>S</b> sites · <b>G</b> grid · <b>C</b> city &amp; town locations · <b>P</b> travel network · <b>?</b> help.</li>
         </ul>
         <p class="muted">Arrows connect cell <i>sites</i>. With border warp a site can sit slightly outside its own warped cell. Travel speeds are reference data from <code>sandbox3.md</code>; the generator does not use them.</p>
         <div class="dlg-actions"><button class="btn primary">Close</button></div>

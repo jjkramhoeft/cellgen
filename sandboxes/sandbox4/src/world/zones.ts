@@ -4,7 +4,7 @@
  * genesis; a land zone's type is picked from a hash of its key, by weight. The type sets
  * the terrain's hillslope, river gradient and detail noise (terrain.ts).
  *
- * Biomes are per subbiome, from the initial climate and the height map (biomes.ts).
+ * Biomes are per patch, from the initial climate and the height map (biomes.ts).
  */
 import { hash4 } from '@shared/core/hash';
 import type { RGB } from '@shared/render/colormaps';

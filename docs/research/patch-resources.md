@@ -1,6 +1,6 @@
-# Natural Resources per Subbiome: Food, Building Materials and Wealth
+# Natural Resources per Patch: Food, Building Materials and Wealth
 
-*Research date: 2026-11-10. Scope: a long, preliminary catalogue of the natural resources a single **subbiome** could hold, sorted into three economic roles (food, construction, wealth) and into above-ground and underground resources. Each one is keyed to what `sandboxes/sandbox4` already computes per subbiome: elevation zone type, biome, thermal belt, moisture class, temperature, precipitation, height, rivers and floodplains, coast. Where a resource needs something the map does not have yet (wetlands, karst, volcanoes, bedrock, salt flats and so on), §3 lists that as a missing feature instead of forcing it onto a biome. A small, separate set of fantasy resources (§5) follows the same rules. The aim is a believable economy: where settlements go, what they must trade for, and what they can specialise in.*
+*Research date: 2026-11-10. Scope: a long, preliminary catalogue of the natural resources a single **patch** could hold, sorted into three economic roles (food, construction, wealth) and into above-ground and underground resources. Each one is keyed to what `sandboxes/sandbox4` already computes per patch: elevation zone type, biome, thermal belt, moisture class, temperature, precipitation, height, rivers and floodplains, coast. Where a resource needs something the map does not have yet (wetlands, karst, volcanoes, bedrock, salt flats and so on), §3 lists that as a missing feature instead of forcing it onto a biome. A small, separate set of fantasy resources (§5) follows the same rules. The aim is a believable economy: where settlements go, what they must trade for, and what they can specialise in.*
 
 **How to read the citations**
 
@@ -20,35 +20,35 @@
 
 | Hook | File, lines | What it gives a resource pass |
 |---|---|---|
-| Map hierarchy | `src/world/world.ts` L1–35; `defaults.json` L4, L19, L27 | Regions on a 128 km lattice, elevation zones on 32 km, subbiomes on **8 km** (Voronoi, border warp). |
-| What subbiomes are for | `README.md` L71 | "Detail cells: each has a **biome**; also meant for towns, ore, factions". |
+| Map hierarchy | `src/world/world.ts` L1–35; `defaults.json` L4, L19, L27 | Regions on a 128 km lattice, elevation zones on 32 km, patches on **8 km** (Voronoi, border warp). |
+| What patches are for | `README.md` L71 | "Detail cells: each has a **biome**; also meant for towns, ore, factions". |
 | Elevation zone types | `src/world/zones.ts` L13, L25–31, L45–53 | `ocean`, `flat`, `lowland`, `hills`, `mountains`; land types hashed per zone with weights 5 / 6 / 1 / 1. These are relief classes, not geology. |
 | Biome pipeline | `src/world/biomes.ts` L1–27 | T = T₀ − cooling(height); P × `sparseDry` in river-poor flat zones; aridity m = P / (20·T + 140); thermal belt × moisture class → biome. |
 | Biome list | `src/world/biomes.ts` L35–51, L61–78 | The 16 biome ids used in this note (codes in §4.0). |
 | Thermal belts | `src/world/biomes.ts` L88–94, L97 | polar < −10 °C ≤ subpolar < −3 ≤ boreal < 3 ≤ temperate < 18 ≤ tropical. Cool and warm temperate forest split at 10 °C. |
 | Moisture classes | `src/world/biomes.ts` L100, L107–108, L111–113 | Arid, Semi-arid, Subhumid, Humid, Perhumid. Bounds on m: 0.5 / 1 / 2 / 6 (temperate) and 0.5 / 1 / 2 / 4 (tropical). `dryThreshold(t) = max(40, 20t + 140)`. |
-| Per-subbiome record | `src/world/biomes.ts` L197–222 (`BiomeInfo`) | `zoneType`, `t0`, `p0`, `height`, `t`, `p`, `aridity`, `belt`, `moisture`, `sparse`, and **`seaLevel`**, the biome the subbiome would have at sea level. A tropical `seaLevel` with a temperate `belt` marks a **tropical highland**, which several crops need (coffee, tea, quinoa, enset). |
-| Typical heights | `src/world/biomes.ts` L194 | Median subbiome height per zone type: flat 70 m, lowland 140, hills 270, mountains 470. |
+| Per-patch record | `src/world/biomes.ts` L197–222 (`BiomeInfo`) | `zoneType`, `t0`, `p0`, `height`, `t`, `p`, `aridity`, `belt`, `moisture`, `sparse`, and **`seaLevel`**, the biome the patch would have at sea level. A tropical `seaLevel` with a temperate `belt` marks a **tropical highland**, which several crops need (coffee, tea, quinoa, enset). |
+| Typical heights | `src/world/biomes.ts` L194 | Median patch height per zone type: flat 70 m, lowland 140, hills 270, mountains 470. |
 | Climate fields | `src/world/climate.ts` L1–10, L94–107 | `temperatureAt` (°C), `precipitationAt` (mm/yr, log scale), and `prosperityAt`, a unitless index "there for later use (settlements, roads)". |
 | Climate defaults | `defaults.json` L76–77, L82–83, L88–89 | Temperature −10 to 30 °C, precipitation 100 to 10 000 mm/yr, prosperity 1 to 100. |
 | Height cooling | `defaults.json` L90–100 | Cooling spline 0 m → 0 °C, 200 → 1, 400 → 5, 900 → 11, 1250 → 20; `bio.sparseDry` 0.2. Note: the `biomes.ts` header (L8–9) calls the default "the standard atmosphere's 6.5 °C per km", but these defaults are steeper: 16 °C/km on average up to 1250 m, about 26 °C/km between 900 and 1250 m. |
-| Coast | `src/world/rivers.ts` L237–242 | `isCoastSub(skey)`: the subbiome touches a cell of the other kind (land vs ocean). |
+| Coast | `src/world/rivers.ts` L237–242 | `isCoastPatch(skey)`: the patch touches a cell of the other kind (land vs ocean). |
 | Dry flat zones | `src/world/rivers.ts` L272–276; `defaults.json` L26 | `isSparseFlat(zkey)`: a flat zone whose site precipitation is below 1660 mm. Fewer river attractors, and P × 0.2 for the biome. |
 | River flow | `src/world/rivers.ts` L32–35, L139–145, L858–860 | Each node's `flow` = attractors reached upstream, a drainage-area proxy. Parent links give the downstream direction. |
 | Terrain and floodplain | `src/world/terrain.ts` L12–30, L278–279; `defaults.json` L63–71 | Heights in metres per 1 km raster cell (`hgt.res` 1000). River beds from the stream-power law; flat floodplain whose half-width is a spline of bed height (400 m at sea level, 30 m at 1000 m), optionally ∝ √flow. |
 | Filled depressions | `src/world/terrain.ts` L231–233 | `filled` and `maxFill`: cells the Priority-Flood raised ("lakes / flats"). The only lake-like signal at `b94e28d`; lakes are now a feature of their own (next table). |
-| Subbiome height | `src/world/terrain.ts` L371 | `subHeight(skey, rkey)`: mean land height of the subbiome from its tile. |
+| Patch height | `src/world/terrain.ts` L371 | `patchHeight(skey, rkey)`: mean land height of the patch from its tile. |
 
 **Added since `b94e28d`** (lines at commit `397f779`)
 
 | Hook | File, lines | What it gives a resource pass |
 |---|---|---|
-| Lakes | `src/world/lakes.ts` L1–39 (header), L57–82 (`Lake`), L84–95 (`RegionLakes`), L189 (`get`), L200 (`block`), L237 (`lakeAt`); commit `4766597` | Real lake polygons, placed per region after the rivers and **always on a river** (a node of flow ≥ `LAKE_MIN_FLOW` = 4, L118). Each `Lake` records its host subbiome (`sub`), the river node and its `flow`, its size (diameter of the equal-area circle) and `area`. Defaults: chance 0.06 per eligible river subbiome, size 1.5–5 km (`lake.*` in `defaults.json`). Never in ocean or mountains zones, desert subbiomes (hot or cold desert at sea level) or river-poor flat zones (`block()` says which). The terrain does not level them: `maxFill` (above) is a separate signal. |
-| Mangrove | `src/world/biomes.ts` L23–28 (header step 5), L85 (`mangrove` id), L90–95 (`MANGROVE_BIOME`, `MANGROVE_ZONES`), L298–321 (`isCoastal`), L343 (override); commit `dc52798` | A 17th biome id, `mangrove`. A coastal land subbiome (a raw member borders an ocean subbiome) in a flat or lowland zone becomes mangrove when T ≥ `bio.mangroveT` (20 °C) and m ≥ `bio.mangroveM` (0.5). About 5 % of coastal subbiomes at the defaults. |
-| Coastal flag per biome record | `src/world/biomes.ts` L238 (`BiomeInfo.coastal`) | Coast for the **merged** subbiome, cached with the biome. `isCoastSub` (above) is the same test on one raw subbiome. |
+| Lakes | `src/world/lakes.ts` L1–39 (header), L57–82 (`Lake`), L84–95 (`RegionLakes`), L189 (`get`), L200 (`block`), L237 (`lakeAt`); commit `4766597` | Real lake polygons, placed per region after the rivers and **always on a river** (a node of flow ≥ `LAKE_MIN_FLOW` = 4, L118). Each `Lake` records its host patch (`patch`), the river node and its `flow`, its size (diameter of the equal-area circle) and `area`. Defaults: chance 0.06 per eligible river patch, size 1.5–5 km (`lake.*` in `defaults.json`). Never in ocean or mountains zones, desert patches (hot or cold desert at sea level) or river-poor flat zones (`block()` says which). The terrain does not level them: `maxFill` (above) is a separate signal. |
+| Mangrove | `src/world/biomes.ts` L23–28 (header step 5), L85 (`mangrove` id), L90–95 (`MANGROVE_BIOME`, `MANGROVE_ZONES`), L298–321 (`isCoastal`), L343 (override); commit `dc52798` | A 17th biome id, `mangrove`. A coastal land patch (a raw member borders an ocean patch) in a flat or lowland zone becomes mangrove when T ≥ `bio.mangroveT` (20 °C) and m ≥ `bio.mangroveM` (0.5). About 5 % of coastal patches at the defaults. |
+| Coastal flag per biome record | `src/world/biomes.ts` L238 (`BiomeInfo.coastal`) | Coast for the **merged** patch, cached with the biome. `isCoastPatch` (above) is the same test on one raw patch. |
 | Supernatural map | `src/world/climate.ts` L11–13, L121–123 (`supernaturalAt`); commit `397f779` | A unitless 0–100 Perlin fBm (10 km features, 3 octaves) "for magic resources and other fantasy game play". It feeds nothing yet. |
 
-**Scale.** The task brief says a subbiome is "roughly 1 km across". In the code it is an 8 km lattice cell (`defaults.json` L27, `README.md` L71), so a typical subbiome covers about 50–65 km². The 1 km figure is the terrain raster (`hgt.res`). This matters for §7: an 8 km cell is big enough to hold a staple-food profile *and* one to three point resources (a quarry, a mine, a salt pan), not just one.
+**Scale.** The task brief says a patch is "roughly 1 km across". In the code it is an 8 km lattice cell (`defaults.json` L27, `README.md` L71), so a typical patch covers about 50–65 km². The 1 km figure is the terrain raster (`hgt.res`). This matters for §7: an 8 km cell is big enough to hold a staple-food profile *and* one to three point resources (a quarry, a mine, a salt pan), not just one.
 
 ---
 
@@ -60,12 +60,12 @@ Four points shape everything below:
 
 1. **Climate decides most of the above-ground list.** Crops, timber, wild plants, livestock and game follow temperature and rainfall. For 150+ plants, ECOCROP gives numeric limits that map almost directly onto the map's `t` and `p` (§4).
 2. **Geology decides most of the underground list.** Ores, gems, building stone, coal and salt beds depend on rock type and tectonic history, which the map does not model. The USGS deposit models describe each type by "rock types", "depositional environment" and "tectonic setting" (M17, M39a, …). §3.2 and §7.3 propose a minimal geology attribute.
-3. **Water and coast are the cheapest wealth.** Rivers give irrigation, fish, mill power, clay, gravel, reeds and placer gold. Coasts give fish, shellfish, salt, seaweed and trade. The map already has both (`isCoastSub`, river flow, floodplains).
+3. **Water and coast are the cheapest wealth.** Rivers give irrigation, fish, mill power, clay, gravel, reeds and placer gold. Coasts give fish, shellfish, salt, seaweed and trade. The map already has both (`isCoastPatch`, river flow, floodplains).
 4. **What a place lacks makes trade.** Salt, iron, timber in the steppe and desert, and fuel for smelting are the classic deficits (§6). A believable economy follows from making these scarce in the right places.
 
 ---
 
-## 2. What the map gives per subbiome
+## 2. What the map gives per patch
 
 | Variable | Where | Range at defaults | Used for |
 |---|---|---|---|
@@ -77,9 +77,9 @@ Four points shape everything below:
 | Belt, moisture class, biome | `biomes.ts` L88–155 | 5 belts, 5 classes, 17 biomes (16 at `b94e28d`, plus mangrove) | Biome codes in the tables |
 | Sea-level biome | `BiomeInfo.seaLevel` | as biome | Tropical highland test |
 | Sparse flat | `BiomeInfo.sparse` | boolean | Dry plains, desert pavements, salt flats candidates |
-| Coast | `rivers.ts` L237; `BiomeInfo.coastal` | boolean per subbiome | Fishing, salt, shellfish, trade ports |
+| Coast | `rivers.ts` L237; `BiomeInfo.coastal` | boolean per patch | Fishing, salt, shellfish, trade ports |
 | Mangrove | `BiomeInfo.biome` = `mangrove` (MG) | warm, not-desert coast of a flat or lowland zone | Mangrove timber and charcoal, tannin bark, crabs, oysters, nipa (§3.1) |
-| Lake | `Lakes.get(region).lakes`, `Lake.sub`; `Lakes.block(skey)` | 0 or 1 per river subbiome (chance 0.06); 1.5–5 km across | Lake fish, reeds, wild rice, lotus, ice harvest, transport (§3.1) |
+| Lake | `Lakes.get(region).lakes`, `Lake.patch`; `Lakes.block(skey)` | 0 or 1 per river patch (chance 0.06); 1.5–5 km across | Lake fish, reeds, wild rice, lotus, ice harvest, transport (§3.1) |
 | River and flow | `rivers.ts` L139–145 | flow = attractors upstream | Water, mills, fish, placers, floodplain soils |
 | Floodplain | `terrain.ts` L22–23, L278 | half-width 30–400 m (× √flow) | Alluvial soils, clay, rice, hay, reeds |
 | Prosperity | `climate.ts` L104–107 | 1…100 | Free index for settlements; could become a resource-wealth score |
@@ -97,17 +97,17 @@ A resource that depends on one of these should not be forced onto an existing bi
 |---|---|---|
 | **Freshwater wetland: marsh, fen, swamp** | Reeds, cattail, wild rice, wildfowl, eels, bog iron, sago, papyrus, peat (fen) | Floodplain or filled-depression cells (`terrain.ts` L231) with low slope, in Subhumid–Perhumid classes. Swamp when the belt is tropical. |
 | **Peat bog (mire)** | Peat fuel, bog iron, cloudberry, bog oak, sphagnum | Boreal or temperate belt, Humid–Perhumid, low gradient (flat or lowland, or filled cells). Xu et al. 2018: peatlands cover about 4.23 million km², about 2.84 % of land **[partially verified: abstract]**. USGS Circular 1143: a wet climate lets peat "pile up above the surrounding area" (Fig. 8 caption) **[partially verified: figure page]**. |
-| **Lake** | Lake fish, freshwater pearl mussels, ice harvest, lotus, water chestnut, transport | **Implemented** (`lakes.ts`, commit `4766597`): per-region lake polygons on rivers, recorded per host subbiome (`Lake.sub`), with area and the river's flow. They are open, river-fed (freshwater) lakes; endorheic ones are not modelled (next row). |
-| **Endorheic lake, salt flat, playa** | Lake salt, natron, soda, gypsum, borax, brine shrimp | Sparse flat zone (`isSparseFlat`) in the Arid class with no river outlet. Warren 2010 links evaporites to "belts of suitable aridity" **[partially verified: abstract]**. Still open: the lakes exclude exactly these places (desert and river-poor flat subbiomes), so a playa needs its own rule. |
-| **Oasis** | Date palm, irrigated grain, caravan water | Hot or cold desert subbiome with a river (exotic river from wetter uplands) or a spring at the foot of hills or mountains. |
-| **Estuary, delta, salt marsh** | Oysters, eels, salt meadows, reeds, wildfowl, sea salt | Coast subbiome where a river with high flow reaches the sea (river root, `rivers.ts` L148–149). Delta when flow is high and the coast is flat. |
-| **Mangrove** | Mangrove timber and charcoal, tannin bark, crabs, oysters, nipa thatch | **Implemented** as the biome `mangrove` (MG; `biomes.ts`, commit `dc52798`): a coastal subbiome of a flat or lowland zone with T ≥ 20 °C and m ≥ 0.5, both configurable. It does not yet ask for an estuary or a sheltered coast. Proposed originally: tropical-belt estuary or sheltered coast. Osland et al. 2017 found minimum-temperature range limits on some coasts and rainfall limits on others **[partially verified: USGS abstract page]**. Nipa palm tolerates high salinity, > 10 dS/m (`EC`). |
-| **Beach and dunes** | Shoreline placers (Ti, Zr), glass sand, amber strand, shellfish | Coast subbiome on a flat or lowland zone. |
-| **Rocky coast and cliffs** | Seabird eggs, seals, murex, kelp, building stone | Coast subbiome on a hills or mountains zone. |
+| **Lake** | Lake fish, freshwater pearl mussels, ice harvest, lotus, water chestnut, transport | **Implemented** (`lakes.ts`, commit `4766597`): per-region lake polygons on rivers, recorded per host patch (`Lake.patch`), with area and the river's flow. They are open, river-fed (freshwater) lakes; endorheic ones are not modelled (next row). |
+| **Endorheic lake, salt flat, playa** | Lake salt, natron, soda, gypsum, borax, brine shrimp | Sparse flat zone (`isSparseFlat`) in the Arid class with no river outlet. Warren 2010 links evaporites to "belts of suitable aridity" **[partially verified: abstract]**. Still open: the lakes exclude exactly these places (desert and river-poor flat patches), so a playa needs its own rule. |
+| **Oasis** | Date palm, irrigated grain, caravan water | Hot or cold desert patch with a river (exotic river from wetter uplands) or a spring at the foot of hills or mountains. |
+| **Estuary, delta, salt marsh** | Oysters, eels, salt meadows, reeds, wildfowl, sea salt | Coast patch where a river with high flow reaches the sea (river root, `rivers.ts` L148–149). Delta when flow is high and the coast is flat. |
+| **Mangrove** | Mangrove timber and charcoal, tannin bark, crabs, oysters, nipa thatch | **Implemented** as the biome `mangrove` (MG; `biomes.ts`, commit `dc52798`): a coastal patch of a flat or lowland zone with T ≥ 20 °C and m ≥ 0.5, both configurable. It does not yet ask for an estuary or a sheltered coast. Proposed originally: tropical-belt estuary or sheltered coast. Osland et al. 2017 found minimum-temperature range limits on some coasts and rainfall limits on others **[partially verified: USGS abstract page]**. Nipa palm tolerates high salinity, > 10 dS/m (`EC`). |
+| **Beach and dunes** | Shoreline placers (Ti, Zr), glass sand, amber strand, shellfish | Coast patch on a flat or lowland zone. |
+| **Rocky coast and cliffs** | Seabird eggs, seals, murex, kelp, building stone | Coast patch on a hills or mountains zone. |
 | **Coral reef** | Reef fish, pearl oysters, sponges, turtles, precious coral, lime | Shallow ocean next to tropical coast. NOAA: reef-building corals live from 35° N to 35° S, grow best at 23–29 °C, need 32–42 ‰ salinity and light to about 30 m. |
 | **Kelp coast** | Seaweed, kelp ash (soda, iodine), sea otters, abalone | Cold-water rocky coast. Steneck et al. 2002: kelp is limited "by light at high latitudes and by nutrients, warm temperatures and other macrophytes at low latitudes" **[partially verified: abstract]**. |
 | **Upwelling coast** | Large pelagic fisheries (anchovy, sardine), guano islands | Coast with cold water next to a dry land climate. Needs a wind or current direction; could be hashed per ocean elevation zone. |
-| **Sea ice and polar coast** | Seals, walrus, polar bear, narwhal | Ocean next to ice or tundra subbiomes. |
+| **Sea ice and polar coast** | Seals, walrus, polar bear, narwhal | Ocean next to ice or tundra patches. |
 | **Alpine meadow** (above treeline, not ice) | Summer pasture (transhumance), alpine herbs, marmots | Mountains zone with belt subpolar or boreal while `seaLevel` is temperate or tropical. Today these become tundra or taiga; a separate id would let them carry pasture, not reindeer. |
 | **Tropical montane cloud forest** | Coffee, tea, cinchona, orchids, tree ferns | `seaLevel` tropical, belt temperate, Humid–Perhumid. |
 | **Mediterranean (winter-rain) climate** | Olive, vine, cork oak, kermes, wheat without irrigation | Needs a precipitation-seasonality field (`biomes-and-climate.md` §7.2 step 4). Without it, use warm-temperate Semi-arid–Subhumid (the WS biome) as a proxy. |
@@ -138,9 +138,9 @@ A resource that depends on one of these should not be forced onto an existing bi
 
 - **Role**: F food, C construction, W wealth (trade, luxury, industry, fuel). Several letters when it serves several.
 - **Pos**: A above ground, U underground, A/U both, W water (river, lake, sea).
-- **Zones**: Fl flat, Fl\* dry (sparse) flat, Lo lowland, Hi hills, Mo mountains, any = all land; `cst` coast subbiome, `riv` river present, `fp` floodplain, `hiT` tropical highland (`seaLevel` tropical, belt temperate).
-- **Biomes**: IC ice, TU tundra, CS cold steppe, TA taiga, CD cold desert, GR temperate grassland, WS woodland & shrubland, MF temperate mixed forest, BL temperate broadleaf, TR temperate rainforest, HD hot desert, TS thorn scrub, SV savanna, DF tropical dry forest, RF tropical rainforest, MG mangrove (added after this catalogue was written; rows that said *mangrove* now say MG), OC ocean. Belts: Po, Sp, Bo, Te (Te-c below 10 °C, Te-w above), Tr. Moisture: Ar, SAr, SHu, Hu, PHu. *Missing features* from §3 are in italics. *lake* is no longer missing: read it as "a `Lake` in the subbiome" (`lakes.ts`).
-- **Rar** (in a subbiome where the conditions hold): C common, U uncommon, R rare, VR very rare.
+- **Zones**: Fl flat, Fl\* dry (sparse) flat, Lo lowland, Hi hills, Mo mountains, any = all land; `cst` coast patch, `riv` river present, `fp` floodplain, `hiT` tropical highland (`seaLevel` tropical, belt temperate).
+- **Biomes**: IC ice, TU tundra, CS cold steppe, TA taiga, CD cold desert, GR temperate grassland, WS woodland & shrubland, MF temperate mixed forest, BL temperate broadleaf, TR temperate rainforest, HD hot desert, TS thorn scrub, SV savanna, DF tropical dry forest, RF tropical rainforest, MG mangrove (added after this catalogue was written; rows that said *mangrove* now say MG), OC ocean. Belts: Po, Sp, Bo, Te (Te-c below 10 °C, Te-w above), Tr. Moisture: Ar, SAr, SHu, Hu, PHu. *Missing features* from §3 are in italics. *lake* is no longer missing: read it as "a `Lake` in the patch" (`lakes.ts`).
+- **Rar** (in a patch where the conditions hold): C common, U uncommon, R rare, VR very rare.
 - **Val**: S subsistence, B bulk (traded locally and by water), T trade good, L luxury.
 - **Chain**: what turning it into a usable good needs.
 - **Src**: source key (§9). `U` = [unverified] general knowledge.
@@ -632,33 +632,33 @@ These are not traded, but they decide where people can live and what they can pr
 
 Everything in this section is **design, not sourced**. Each entry uses the same columns and adds a **Trigger** built only from map quantities (§2) or the proposed geology (§7.3), so a fantasy resource is placed by the same deterministic rules as a real one. Most are a rare variant of a real resource, so they inherit its chain and its trade route.
 
-Since commit `397f779` the map also has a **supernatural** field (`Climate.supernaturalAt`, 0–100, 10 km features). A trigger can add a threshold on it (for example "supernatural ≥ 80 at the subbiome's site") to make a fantasy resource cluster where magic is strong, without changing the rest of its rule (Design note).
+Since commit `397f779` the map also has a **supernatural** field (`Climate.supernaturalAt`, 0–100, 10 km features). A trigger can add a threshold on it (for example "supernatural ≥ 80 at the patch's site") to make a fantasy resource cluster where magic is strong, without changing the rest of its rule (Design note).
 
 | # | Resource | Role | Pos | Zones | Biomes | Trigger (design) | Rar | Val | Chain |
 |---|---|---|---|---|---|---|---|---|---|
-| F1 | Truesilver (mithril-like light metal) | W | U | Mo | any | Lode-silver subbiome (#336) with the volcanic flag, height in the top 5 % of its region, and a granite-intrusion bedrock | VR | L | Needs a forge hotter than charcoal (coal + bellows + rune-craft) |
-| F2 | Sky-iron (star metal) | W | A/U | any | best in HD, CD, IC | Rare per-region hash places an impact crater; ring of subbiomes around it; preserved where dry or frozen | VR | L | Cold-forged; weapons resist magic |
+| F1 | Truesilver (mithril-like light metal) | W | U | Mo | any | Lode-silver patch (#336) with the volcanic flag, height in the top 5 % of its region, and a granite-intrusion bedrock | VR | L | Needs a forge hotter than charcoal (coal + bellows + rune-craft) |
+| F2 | Sky-iron (star metal) | W | A/U | any | best in HD, CD, IC | Rare per-region hash places an impact crater; ring of patches around it; preserved where dry or frozen | VR | L | Cold-forged; weapons resist magic |
 | F3 | Mana crystal geodes | W | U | Hi Mo | any | Volcanic flag × hot spring (#383) × Humid–Perhumid: water-laid geodes "charge" in wet volcanic ground | R | L | Cutting; focus stones |
 | F4 | Ley-line nodes | W | A | any | any | Points where region-border divide ridges (`terrain.ts` L26–27) meet a river confluence; at most one per elevation zone | R | L | Sites for towers, temples, not a carried good |
 | F5 | Dragonbone | W C | A/U | Hi Mo | HD, CD, TS (badlands) | Fossil-bed rule: clastic-basin bedrock exposed in hills under Arid/Semi-arid classes (erosion without cover) | VR | L | Armour, siege engines; scrimshaw |
 | F6 | Glowcap fungi | F W | U | Hi Lo | Hu, PHu | Karst caves (carbonate bedrock, Humid or wetter); grows in the dark, so only underground | U | T | Light source; dried for alchemy |
-| F7 | Moonpearls | W | W | cst | *coral reef* | Pearl-oyster coast (#160) where a per-subbiome hash < p and the sea-level temperature ≥ 26 °C | VR | L | Diving; scrying |
-| F8 | Frost-lotus | W | A | Mo | tundra, ice margin | Subbiome where belt is subpolar, the next colder belt (ice) is a neighbour, and there is a lake or spring | R | L | Cold-alchemy reagent; spoils when warm (must travel by cold route) |
+| F7 | Moonpearls | W | W | cst | *coral reef* | Pearl-oyster coast (#160) where a per-patch hash < p and the sea-level temperature ≥ 26 °C | VR | L | Diving; scrying |
+| F8 | Frost-lotus | W | A | Mo | tundra, ice margin | Patch where belt is subpolar, the next colder belt (ice) is a neighbour, and there is a lake or spring | R | L | Cold-alchemy reagent; spoils when warm (must travel by cold route) |
 | F9 | Ember-salt | W | A | Fl\* Mo | HD, CD | Playa salt (#170) inside a zone with the volcanic flag | R | T L | Fire runes, everburning lamps |
-| F10 | Sunstone | W | A | Fl\* | HD | t ≥ 28 °C and P < 200 mm: the hottest, driest subbiomes of a region | R | L | Stores heat; desert trade staple |
-| F11 | Elderwood (heartwood of ancient trees) | C W | A | Lo Hi | TR, RF, BL | Forest subbiome in the Perhumid class whose prosperity index is lowest in its zone (no settlement nearby, "untouched") | R | L | Staves, ship keels that never rot |
+| F10 | Sunstone | W | A | Fl\* | HD | t ≥ 28 °C and P < 200 mm: the hottest, driest patches of a region | R | L | Stores heat; desert trade staple |
+| F11 | Elderwood (heartwood of ancient trees) | C W | A | Lo Hi | TR, RF, BL | Forest patch in the Perhumid class whose prosperity index is lowest in its zone (no settlement nearby, "untouched") | R | L | Staves, ship keels that never rot |
 | F12 | Spirit amber | W | A | cst | Bo, Te coast | Amber coast (#376) next to an elderwood forest | VR | L | Holds a trapped spirit; charms |
 | F13 | Bloodiron | W | A | Fl Lo | *peat bog* | Bog iron (#343) in a bog that borders a battlefield or barrow site (game-history layer); otherwise hash | R | T | Smelts to a red steel |
 | F14 | Leviathan oil | W | W | OC cst | *upwelling* | Ocean zone with upwelling and the deepest water in the region | R | L | Lamps that burn under water |
 | F15 | Kraken ink | W | W | OC | deep ocean | Ocean elevation zones farther than k zones from land | VR | L | Spell ink; dye |
-| F16 | Griffin and wyvern eyries | W | A | Mo Hi | next to GR or CS | Cliff subbiome (mountains, high relief) adjacent to open grassland where the mounts hunt | R | L | Eggs → trained mounts |
+| F16 | Griffin and wyvern eyries | W | A | Mo Hi | next to GR or CS | Cliff patch (mountains, high relief) adjacent to open grassland where the mounts hunt | R | L | Eggs → trained mounts |
 | F17 | Dreamleaf | W | A | Mo hiT | *cloud forest* | Tropical highland, Perhumid | R | L | Visionary drug |
 | F18 | Quicksilver springs | W | A | Mo | *volcanic* | Hot spring (#383) with cinnabar (#351) | VR | L | Alchemy |
 | F19 | Starsalt | W | A | Fl\* Mo | CD | Playa salt at height ≥ 2000 m under the Arid class (thin, clear air) | VR | L | Preserves anything, including the dead |
 | F20 | Unicorn horn | W | A | Lo | BL, MF old growth | Elderwood rule (F11) in the temperate belt; real narwhal tusk (#131) is the counterfeit | VR | L | Antidote |
 | F21 | Golem clay | C W | A | fp | any | Clay (#308) at a river confluence where both branches have flow ≥ f | R | T | Animate servants; potters' guilds |
 | F22 | Voidglass | W | A | Mo | *volcanic* | Obsidian (#303) in a zone that also has F4 or F3 | VR | L | Mirrors that show elsewhere |
-| F23 | Windcrystal | W | A | Mo | IC, TU | Highest subbiome of each mountains zone, if its belt is polar or subpolar | R | L | Sails, flying ships |
+| F23 | Windcrystal | W | A | Mo | IC, TU | Highest patch of each mountains zone, if its belt is polar or subpolar | R | L | Sails, flying ships |
 | F24 | Silkspider canopy | W | A | Lo Hi | RF | Rainforest, Perhumid, distance to coast > d | R | L | Fine silk stronger than wool or silk |
 | F25 | Healing moss | F W | A | Lo Hi | TR | Temperate rainforest with a spring | U | T | Poultices |
 | F26 | Ghostlight peat | W | A | Fl | *peat bog* (Bo, Sp) | Peat bog in the boreal or subpolar belt; burns cold | R | T | Lamps that do not attract beasts |
@@ -717,7 +717,7 @@ Since commit `397f779` the map also has a **supernatural** field (`Climate.super
 | Tropical rainforest (RF) | Cassava, yams, bananas, sago, taro | Bamboo, rattan, palm thatch, hardwood | Wood | Spices, cacao, rubber, hardwoods, feathers | Salt, iron, cloth |
 | Mangrove (MG) | Fish, crabs, oysters, shellfish (#153) | Mangrove poles (#276), nipa thatch (#240) | Mangrove wood and charcoal (#276) | Tannin bark (#243), charcoal, poles, dried shellfish | Grain, salt, iron, fresh water in dry seasons |
 | Coast (any, `cst`) | Fish, shellfish, seaweed | Driftwood, shell lime | — | Salt, dried fish, pearls, dyes | Depends on the hinterland |
-| Lake (any, `Lake.sub`) | Lake fish (#147), wild rice (#18), lotus (#87), water chestnut (#88) | Reeds | — | Dried fish, freshwater pearls, ice (#290, cold belts) | Depends on the shore biome |
+| Lake (any, `Lake.patch`) | Lake fish (#147), wild rice (#18), lotus (#87), water chestnut (#88) | Reeds | — | Dried fish, freshwater pearls, ice (#290, cold belts) | Depends on the shore biome |
 
 ---
 
@@ -727,18 +727,18 @@ Everything in this section is my own engineering judgement, not sourced science.
 
 ### 7.1 Two kinds of resources
 
-1. **Potentials** (crops, timber, pasture, game, fish, wild foods): every subbiome has a suitability score for each, from climate and position. They are not "placed"; a settlement picks the best few.
+1. **Potentials** (crops, timber, pasture, game, fish, wild foods): every patch has a suitability score for each, from climate and position. They are not "placed"; a settlement picks the best few.
    - Use the ECOCROP trapezoid: 0 outside the absolute limits, 1 inside the optimum, linear between. This is the shape the ECOCROP model uses (Recocrop) **[partially verified]**, and it is bit-exact (+ − × ÷ only, like `biomes.ts`).
    - Rainfall: compare ECOCROP's annual P directly with `BiomeInfo.p`. Add an irrigation bonus on floodplains and next to rivers, so desert rivers grow wheat and dates.
    - Temperature: ECOCROP gives crop-cycle temperatures, the map gives annual means. Until there is a seasonality field, use a belt-dependent offset (the growing season is warmer than the annual mean outside the tropics), or score the belt and moisture class directly from the Biomes column of §4.
    - Altitude: use `height` against ECOCROP `alt`.
-2. **Deposits** (ores, gems, stone, salt beds, coal, springs, caves): rare point resources. Each is a hashed draw against a probability from geology × climate × zone type. A subbiome gets 0–3 of them.
+2. **Deposits** (ores, gems, stone, salt beds, coal, springs, caves): rare point resources. Each is a hashed draw against a probability from geology × climate × zone type. A patch gets 0–3 of them.
 
 ### 7.2 Deterministic selection
 
-- Draw per subbiome with `hash4(seed, salt, keyI(skey), keyJ(skey))`, as `zones.ts` L45–53 does for zone types. One salt per resource family, so adding a resource does not reshuffle the others.
-- Rarity as a probability per eligible subbiome, as a starting calibration: C ≈ 0.3–0.6, U ≈ 0.05–0.2, R ≈ 0.005–0.03, VR < 0.002. With about 16 subbiomes per elevation zone (32 km / 8 km, squared), an R deposit appears in roughly every 2nd to 12th eligible zone, and a VR one in fewer than one zone in 30.
-- Keep the result a pure function of the seed, the parameters and the subbiome, so the lazy, order-independent map stays deterministic.
+- Draw per patch with `hash4(seed, salt, keyI(skey), keyJ(skey))`, as `zones.ts` L45–53 does for zone types. One salt per resource family, so adding a resource does not reshuffle the others.
+- Rarity as a probability per eligible patch, as a starting calibration: C ≈ 0.3–0.6, U ≈ 0.05–0.2, R ≈ 0.005–0.03, VR < 0.002. With about 16 patches per elevation zone (32 km / 8 km, squared), an R deposit appears in roughly every 2nd to 12th eligible zone, and a VR one in fewer than one zone in 30.
+- Keep the result a pure function of the seed, the parameters and the patch, so the lazy, order-independent map stays deterministic.
 
 ### 7.3 Geology: the minimal attribute
 
@@ -766,23 +766,23 @@ Plus two flags: **active margin** (arc volcanism, faulting; for M17, M25a, M36a)
   - Rivers carry the heavy minerals down. Placer gold collects "where gradients flatten" (M39a); stream tin where gradients are "within the critical range" (M39e); diamonds travel up to 1000 km (M39d).
   - Lowlands and flats collect fine sediment: clay, sand and gravel (BGS), and in wet climates peat and bog iron.
   - Coasts collect the most resistant grains: beach gold (M39a), titanium sands (M39c), diamonds (M39d).
-- **Placer rule (sketch).** Rivers are already computed per region with parent links and flow (`rivers.ts` L139–145). For each river node, carry a "heavy-mineral load" = sum over upstream nodes in lode-bearing subbiomes. Deposit a placer where the bed gradient drops (the zone type changes from mountains or hills to lowland or flat along the river, or the bed slope falls below a threshold). This stays inside the region computation, so it keeps the locality of the river pass.
+- **Placer rule (sketch).** Rivers are already computed per region with parent links and flow (`rivers.ts` L139–145). For each river node, carry a "heavy-mineral load" = sum over upstream nodes in lode-bearing patches. Deposit a placer where the bed gradient drops (the zone type changes from mountains or hills to lowland or flat along the river, or the bed slope falls below a threshold). This stays inside the region computation, so it keeps the locality of the river pass.
 - **Weathering rules** use climate on top of bedrock: laterite iron, bauxite and nickel laterite need warm-wet (RF, DF, wet SV) and a stable flat or lowland (M38a–c); evaporites need Arid and no outlet or a coast (Warren 2010); peat needs Humid–Perhumid and a low gradient.
 
 ### 7.4 Using the existing fields
 
-- **Prosperity** (`climate.ts` L104–107) could be replaced or complemented by a resource-wealth score: the sum of the subbiome's best food potential, its deposits weighted by value tier, and its position (coast, navigable river).
+- **Prosperity** (`climate.ts` L104–107) could be replaced or complemented by a resource-wealth score: the sum of the patch's best food potential, its deposits weighted by value tier, and its position (coast, navigable river).
 - **Travel days** in the README ruler (`README.md` L131: horse 32–48 km/day, legion 24–32, hiker 16–24) give a natural trade radius: bulk goods within one or two days by land, much farther by river or sea.
-- **Lakes** (`Lakes.get(region).lakes`) give the *lake* rows directly: one lake per host subbiome (`Lake.sub`), with its area for a yield and the river's `flow` for an inflow. Lakes in cold belts carry ice harvest (#290).
-- **Mangrove** (`BiomeInfo.biome` = MG) gives the *mangrove* rows; `BiomeInfo.coastal` gives `cst` for merged subbiomes without a second neighbour walk.
+- **Lakes** (`Lakes.get(region).lakes`) give the *lake* rows directly: one lake per host patch (`Lake.patch`), with its area for a yield and the river's `flow` for an inflow. Lakes in cold belts carry ice harvest (#290).
+- **Mangrove** (`BiomeInfo.biome` = MG) gives the *mangrove* rows; `BiomeInfo.coastal` gives `cst` for merged patches without a second neighbour walk.
 - **Sea-level biome** (`BiomeInfo.seaLevel`) finds tropical highlands for coffee, tea, quinoa and coca without a new field.
 
 ### 7.5 Open questions
 
-1. **Subbiome size.** The brief says ~1 km; the code says 8 km. At 8 km, one subbiome can hold a village and its fields; at 1 km it holds one field or one mine. Which scale should own a deposit?
+1. **Patch size.** The brief says ~1 km; the code says 8 km. At 8 km, one patch can hold a village and its fields; at 1 km it holds one field or one mine. Which scale should own a deposit?
 2. **Seasonality.** Mediterranean and monsoon resources (olive, vine, cork, unirrigated rice, jute) are only proxies without a seasonality field (`biomes-and-climate.md` §7.2 step 4).
 3. **Technology level.** Should late-technology resources (bauxite, nickel, chromite, titanium, phosphate, tungsten) exist as dormant deposits, or be left out?
-4. **Wetlands and lakes as biomes or overlays?** A marsh changes the land cover (§3.1) but is local. An overlay flag per subbiome is simpler than new biome ids. *Partly settled since:* lakes became polygons with a host subbiome (an overlay, `lakes.ts`), and mangrove became a biome id (`biomes.ts`). Marsh, fen and swamp are still open.
+4. **Wetlands and lakes as biomes or overlays?** A marsh changes the land cover (§3.1) but is local. An overlay flag per patch is simpler than new biome ids. *Partly settled since:* lakes became polygons with a host patch (an overlay, `lakes.ts`), and mangrove became a biome id (`biomes.ts`). Marsh, fen and swamp are still open.
 5. **Quantities.** This note gives occurrence, not yield. A later pass needs carrying capacity (people per km² by staple and biome) and deposit size classes.
 6. **Cooling curve.** The defaults cool 20 °C by 1250 m, more than the 6.5 °C/km the `biomes.ts` header describes. Crop altitude limits from ECOCROP (`alt`) were set for real lapse rates, so with these defaults crops will drop out lower than their `alt` suggests.
 7. **Fantasy share.** How rare should the fantasy layer be relative to real luxuries, and should it be a separate toggle?
@@ -797,7 +797,7 @@ Plus two flags: **active margin** (arc volcanism, faulting; for M17, M25a, M36a)
 | River with flow (`riv`) | Fish, water power, placer gold and tin, sand and gravel, navigation, irrigation |
 | Coast (`cst`) | Fish, shellfish, salt, seaweed, coconut (Tr), amber (Bo/Te), black sands, harbour |
 | Mangrove (MG) | Mangrove timber and charcoal, tannin bark, crabs, oysters, nipa palm |
-| Lake (`Lake.sub`) | Lake fish, reeds, wild rice, lotus, water chestnut, freshwater pearls, ice harvest (cold), transport |
+| Lake (`Lake.patch`) | Lake fish, reeds, wild rice, lotus, water chestnut, freshwater pearls, ice harvest (cold), transport |
 | Dry flat zone (`sparse`) | Playa salt, natron, dates (with water), camels, esparto, sunstone (F10) |
 | Mountains zone | Lode metals, gems, building stone, slate, marble, yak, alpine pasture, larch, cedar |
 | Hills zone | Vines, olives, quarries, millstones, sheep, chestnut, lead-zinc in limestone |

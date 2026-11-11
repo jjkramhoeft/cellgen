@@ -1,0 +1,168 @@
+{
+  "seed": "cellgen",
+  "units": { "distance": "m", "temperature": "°C", "precipitation": "mm/yr", "height": "m" },
+  "regions": [
+    {
+      "key": 1001,
+      "i": 0,
+      "j": 0,
+      "x": 61800,
+      "y": 66400,
+      "elevationZones": [
+        {
+          "key": 2005,
+          "i": 1,
+          "j": 1,
+          "x": 47200,
+          "y": 50900,
+          "type": "lowland",
+          "ocean": false,
+          "biomePatches": [
+            {
+              "key": 3045,
+              "i": 5,
+              "j": 5,
+              "x": 43600,
+              "y": 44100,
+              "biome": "broadleaf",
+              "belt": "temperate",
+              "moisture": "Humid",
+              "aridity": 2.23,
+              "temperature": 11.4,
+              "precipitation": 820,
+              "height": 152,
+              "coastal": false
+            },
+            {
+              "key": 3046,
+              "i": 6,
+              "j": 5,
+              "x": 52300,
+              "y": 42700,
+              "biome": "shrubland",
+              "belt": "temperate",
+              "moisture": "Subhumid",
+              "aridity": 1.71,
+              "temperature": 10.8,
+              "precipitation": 610,
+              "height": 131,
+              "coastal": false
+            },
+            {
+              "key": 3062,
+              "i": 6,
+              "j": 7,
+              "x": 51900,
+              "y": 60200,
+              "biome": "grassland",
+              "belt": "temperate",
+              "moisture": "Semi-arid",
+              "aridity": 0.93,
+              "temperature": 11.9,
+              "precipitation": 350,
+              "height": 118,
+              "coastal": true
+            }
+          ]
+        },
+        {
+          "key": 2006,
+          "i": 2,
+          "j": 1,
+          "x": 81300,
+          "y": 44600,
+          "type": "mountains",
+          "ocean": false,
+          "biomePatches": [
+            {
+              "key": 3041,
+              "i": 9,
+              "j": 4,
+              "x": 75400,
+              "y": 36800,
+              "biome": "mixedForest",
+              "belt": "temperate",
+              "moisture": "Humid",
+              "aridity": 2.55,
+              "temperature": 8.3,
+              "precipitation": 780,
+              "height": 620,
+              "coastal": false
+            },
+            {
+              "key": 3050,
+              "i": 10,
+              "j": 5,
+              "x": 84900,
+              "y": 45200,
+              "biome": "taiga",
+              "belt": "boreal",
+              "moisture": "Humid",
+              "aridity": 4.64,
+              "temperature": 2.7,
+              "precipitation": 900,
+              "height": 1450,
+              "coastal": false
+            },
+            {
+              "key": 3059,
+              "i": 11,
+              "j": 6,
+              "x": 91700,
+              "y": 51300,
+              "biome": "tundra",
+              "belt": "subpolar",
+              "moisture": "Perhumid",
+              "aridity": 12.07,
+              "temperature": -4.1,
+              "precipitation": 700,
+              "height": 2300,
+              "coastal": false
+            }
+          ]
+        },
+        {
+          "key": 2009,
+          "i": 1,
+          "j": 2,
+          "x": 52800,
+          "y": 78400,
+          "type": "ocean",
+          "ocean": true,
+          "biomePatches": [
+            {
+              "key": 3069,
+              "i": 5,
+              "j": 8,
+              "x": 44800,
+              "y": 68900,
+              "biome": "ocean",
+              "belt": null,
+              "moisture": null,
+              "aridity": null,
+              "temperature": null,
+              "precipitation": null,
+              "height": 0,
+              "coastal": false
+            },
+            {
+              "key": 3078,
+              "i": 6,
+              "j": 9,
+              "x": 53100,
+              "y": 76500,
+              "biome": "ocean",
+              "belt": null,
+              "moisture": null,
+              "aridity": null,
+              "temperature": null,
+              "precipitation": null,
+              "height": 0,
+              "coastal": false
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

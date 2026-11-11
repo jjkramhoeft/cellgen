@@ -15,7 +15,7 @@
 
 | Hook | Lines | What happens there |
 |---|---|---|
-| `attractors()` | 198–240 | `perSub` points per inland subbiome, placed randomly within ±0.8 × cell size around the site |
+| `attractors()` | 198–240 | `perPatch` points per inland patch, placed randomly within ±0.8 × cell size around the site |
 | `addNode()` | 345–394 | Attractors within dₖ are removed, and each attractor's nearest node (`near`, `nearD2`) is updated |
 | Pull loop | 518–534 | Each live attractor within dᵢ adds `unit(a − k) × pullWeight` to `sx/sy[k]` |
 | Direction | 587–610 | Normalize, then add `jitter × discVec` and normalize again |
@@ -49,18 +49,18 @@ One mechanism is worth keeping in mind throughout. Branches appear when the set 
   - Denser, more regular sources give "smoother primary and secondary veins, and more uniform tertiary veins" ([Runions 2005, §6, Fig. 9f–h](http://algorithmicbotany.org/papers/venation.sig2005.pdf)). That figure varies the dart rate ρ over 0.00006, 0.0003 and 0.006 darts per unit area per step.
 - **Original placement method:** dart throwing with two birth distances. A new source must be at least `b_s` from other sources and at least `b_v` from vein nodes ([Runions 2005, §3.3](http://algorithmicbotany.org/papers/venation.sig2005.pdf)).
 - **Grid placement:** Jason Webb's implementation can place attractors on a jittered grid (`getGridOfAttractors(numRows, numColumns, ctx, jitterRange)`; [`core/AttractorPatterns.js` L62–70 @5e35b09](https://github.com/jasonwebb/2d-space-colonization-experiments/blob/5e35b0998901fff13f30d208aaf71a077ef7658b/core/AttractorPatterns.js#L62-L70)). The 2005 paper warns that grid-constrained sources give "a visible regularity in the layout of vein endings", which it criticises in Gottlieb's earlier model ([Runions 2005, §2.5](http://algorithmicbotany.org/papers/venation.sig2005.pdf)).
-- **Current state:** `perSub` points sit uniformly in a 1.6 × cell box around each subbiome site. That is stratified per subbiome but can clump inside a cell.
+- **Current state:** `perPatch` points sit uniformly in a 1.6 × cell box around each patch site. That is stratified per patch but can clump inside a cell.
 - **Proposed param:** `riv.spacing`, a minimum attractor spacing (the birth distance `b_s`) in km. 0 keeps the current placement. For each candidate, reject it if an accepted point is closer than `b_s`, and retry up to the existing 24 tries. Use the existing `grid` for the neighbour check.
-- **Look:** a larger `b_s` gives smoother trunks and evenly spaced tributaries. A smaller `b_s` and lower `perSub` give a scrappier, more irregular network.
+- **Look:** a larger `b_s` gives smoother trunks and evenly spaced tributaries. A smaller `b_s` and lower `perPatch` give a scrappier, more irregular network.
 - **Cost:** O(A) with a grid. **Determinism:** yes (sfc32 plus squared distances).
 
 ### 2.2 Density gradients (where the branches go)
 
 - **Sourced effect:** putting attractors only near the crown envelope gives "an open, sparse branch system, with small twigs limited to the crown surface" ([Runions 2007, §3, Fig. 7](http://algorithmicbotany.org/papers/colonization.egwnp2007.pdf)).
-- **River analogue (Design note):** scale `perSub` per subbiome by a field. That field could be distance from the coast in subbiome hops, elevation, moisture or noise.
+- **River analogue (Design note):** scale `perPatch` per patch by a field. That field could be distance from the coast in patch hops, elevation, moisture or noise.
   - Dense inland and sparse near the coast gives long, bare lower trunks with branchy headwaters, the typical "few junctions downstream" look.
   - Dense near the coast gives many short coastal streams.
-- **Proposed params:** `riv.densityBias` (−1…1) and `riv.densityBy` (`coastDist | moisture | noise`). Hook: the `for k < perSub` loop in `attractors()`, line 213.
+- **Proposed params:** `riv.densityBias` (−1…1) and `riv.densityBy` (`coastDist | moisture | noise`). Hook: the `for k < perPatch` loop in `attractors()`, line 213.
 - **Cost:** negligible. **Determinism:** yes, if the field is integer hop counts or a trig-free noise.
 
 ### 2.3 Incremental placement (attractors released over time)
@@ -69,7 +69,7 @@ One mechanism is worth keeping in mind throughout. Branches appear when the set 
   - In marginal growth, sources are precomputed and "include[d]... as they appear within the expanding leaf contour". With slow growth, "all vein tips closely followed the leaf margin" ([Runions 2005, §3.3; §6, Fig. 9i](http://algorithmicbotany.org/papers/venation.sig2005.pdf)).
   - Adding points *while the tree forms*, "with a gradually decreasing distance between the points", produced "a hierarchy of branch sizes" with small twigs filling the gaps between large limbs ([Runions 2007, §3, Fig. 8](http://algorithmicbotany.org/papers/colonization.egwnp2007.pdf)).
 - **River analogue (Design note), two variants:**
-  - **(a) Headward waves:** activate attractors in rings by subbiome hop distance from the coast, adding one ring every `riv.waveIters` iterations. The front then advances inland like headward erosion, and trunks run long and roughly perpendicular to the coast.
+  - **(a) Headward waves:** activate attractors in rings by patch hop distance from the coast, adding one ring every `riv.waveIters` iterations. The front then advances inland like headward erosion, and trunks run long and roughly perpendicular to the coast.
   - **(b) Coarse-to-fine:** release a sparse set first (large `b_s`), let it grow, then release the rest. Trunks form from the sparse set and tributaries fill in later, giving a clear size hierarchy.
 - **Proposed params:** `riv.waves` (`off | headward | coarseFine`) and `riv.waveIters`.
 - **Hook:** an `active` flag per attractor. The pull loop (line 518) and the `addNode` kill check skip inactive attractors. The main loop's exit test must also count pending attractors.
@@ -236,7 +236,7 @@ One mechanism is worth keeping in mind throughout. Branches appear when the set 
   - `riv.maxTurn` relaxed on the first lateral step (4.3);
   - inertia (4.1), which reduces it;
   - node relaxation toward the parent (8.4), which reduces it ([Runions 2007, Fig. 1e, Fig. 11](http://algorithmicbotany.org/papers/colonization.egwnp2007.pdf)).
-- **Climate mapping:** the world already has biomes, so the cap could vary with subbiome moisture: dry → 45° (cos = √½), wet → 72° (cos = (√5−1)/4). Proposed param: `riv.junctionBy` (`fixed | moisture`).
+- **Climate mapping:** the world already has biomes, so the cap could vary with patch moisture: dry → 45° (cos = √½), wet → 72° (cos = (√5−1)/4). Proposed param: `riv.junctionBy` (`fixed | moisture`).
 
 ### 7.2 Hack's law and Horton–Strahler ratios (diagnostics)
 

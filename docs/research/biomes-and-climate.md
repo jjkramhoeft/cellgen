@@ -18,7 +18,7 @@
   - UNEP 1997, *World Atlas of Desertification*: not read. The aridity classes are cited through Zomer et al. 2022.
 - Text marked "Design note" is my own engineering judgement, not a sourced claim.
 
-**Implementation status** (added later; the code table below is the state at `eaafe81`, before any biome code). At commit `397f779`, `sandboxes/sandbox4/src/world/biomes.ts` implements §7.3's "aridity × thermal belt" table with precipitation in mm/yr (the humidity field was replaced), the lapse-rate step of §7.2 as a configurable cooling spline, and one azonal override of §7.2 step 6: **mangrove** (commit `dc52798`). It differs from the step-6 wording in three ways: there is no seasonality field, so it tests the annual mean T ≥ 20 °C (`bio.mangroveT`) instead of T_cold ≥ 18 °C; it also needs m ≥ 0.5 (`bio.mangroveM`), so desert coasts stay bare; and it is limited to flat and lowland elevation zones. "Coastal" means one of the subbiome's cells borders an ocean subbiome. **Lakes** (the WWF "Lake" code, §2.4) are not a biome: `lakes.ts` (commit `4766597`) places them as polygons on the rivers, outside deserts, mountains and river-poor flat zones. The other overrides (alpine, flooded grassland, savanna-or-forest by fire) are not implemented.
+**Implementation status** (added later; the code table below is the state at `eaafe81`, before any biome code). At commit `397f779`, `sandboxes/sandbox4/src/world/biomes.ts` implements §7.3's "aridity × thermal belt" table with precipitation in mm/yr (the humidity field was replaced), the lapse-rate step of §7.2 as a configurable cooling spline, and one azonal override of §7.2 step 6: **mangrove** (commit `dc52798`). It differs from the step-6 wording in three ways: there is no seasonality field, so it tests the annual mean T ≥ 20 °C (`bio.mangroveT`) instead of T_cold ≥ 18 °C; it also needs m ≥ 0.5 (`bio.mangroveM`), so desert coasts stay bare; and it is limited to flat and lowland elevation zones. "Coastal" means one of the patch's cells borders an ocean patch. **Lakes** (the WWF "Lake" code, §2.4) are not a biome: `lakes.ts` (commit `4766597`) places them as polygons on the rivers, outside deserts, mountains and river-poor flat zones. The other overrides (alpine, flooded grassland, savanna-or-forest by fire) are not implemented.
 
 **Code locations used below** (working tree at commit `eaafe81`)
 
@@ -522,8 +522,8 @@ Everything in this section is my own engineering judgement, not sourced science.
 6. **Overrides for azonal biomes** (§5.3–5.4, WWF #9, #10, #14):
    - above the treeline isotherm (T_bio < 3 °C, or growing-season T < 6.4 °C): alpine; below 1.5 °C: nival or ice;
    - river floodplain (already computed in `terrain.ts`) in a warm, seasonal climate: flooded grassland;
-   - coastal subbiome with T_cold ≥ 18 °C (frost-free): mangrove (implemented with an annual-mean test instead, see Implementation status at the top);
-   - in the hot 1000–2000 mm band: savanna or forest by a per-subbiome hash or a fire field.
+   - coastal patch with T_cold ≥ 18 °C (frost-free): mangrove (implemented with an annual-mean test instead, see Implementation status at the top);
+   - in the hot 1000–2000 mm band: savanna or forest by a per-patch hash or a fire field.
 
 ### 7.3 Choosing a classifier
 

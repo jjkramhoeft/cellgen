@@ -1,13 +1,13 @@
 /**
- * Biomes of the subbiomes (small cells), from the initial climate and the height map.
+ * Biomes of the patches (small cells), from the initial climate and the height map.
  *
- * Every land subbiome gets one biome, read at its (merged root's) site:
+ * Every land patch gets one biome, read at its (merged root's) site:
  *
  *   1. Temperature   the initial temperature T₀ (°C, the sea-level value) cooled with the
- *                    subbiome's height: T = T₀ − cooling(h), where cooling is a monotone
+ *                    patch's height: T = T₀ − cooling(h), where cooling is a monotone
  *                    spline through 5 configurable points (height → °C cooler; the default
  *                    is the standard atmosphere's 6.5 °C per km). h is the mean height of
- *                    the subbiome's land from its terrain tile; while that tile is not
+ *                    the patch's land from its terrain tile; while that tile is not
  *                    computed, a typical height of its elevation zone type stands in
  *                    (flagged as an estimate).
  *   2. Moisture      the initial precipitation P (mm/yr). In a river-poor ("sparse") flat
@@ -20,15 +20,15 @@
  *                    Whittaker / Holdridge names. See docs/research/biomes-and-climate.md
  *                    §7.3 ("aridity × thermal belt"); the thresholds are this file's own
  *                    calibration against the Whittaker grid (§2.1), not sourced values.
- *   5. Mangrove      an azonal override (§7.2, step 6): a coastal subbiome (one of its
- *                    cells borders an ocean subbiome) in a flat or lowland elevation zone
+ *   5. Mangrove      an azonal override (§7.2, step 6): a coastal patch (one of its
+ *                    cells borders an ocean patch) in a flat or lowland elevation zone
  *                    becomes mangrove when it is warm enough (T ≥ `mangroveT`) and not
  *                    desert (m ≥ `mangroveM`). Never in hills or mountains, never inland.
  *                    Zoomed far out (elevation zones only) there is no mangrove: the
- *                    coastal strip is a subbiome feature.
+ *                    coastal strip is a patch feature.
  *
- * Pure functions of the seed, the parameters and the subbiome (comparisons and + − × ÷
- * only on top of the climate maps), apart from the height: exact once the subbiome's
+ * Pure functions of the seed, the parameters and the patch (comparisons and + − × ÷
+ * only on top of the climate maps), apart from the height: exact once the patch's
  * terrain tile exists, an estimate before.
  */
 import type { RGB } from '@shared/render/colormaps';
@@ -204,17 +204,17 @@ export interface BiomeParams {
 }
 
 /**
- * Typical mean subbiome height per elevation zone type (index = ELEVATION_ZONE_TYPES
+ * Typical mean patch height per elevation zone type (index = ELEVATION_ZONE_TYPES
  * order), metres: the medians measured on the default terrain (1 km cells, two seeds).
- * Only used until the subbiome's terrain tile is computed.
+ * Only used until the patch's terrain tile is computed.
  */
 export const TYPICAL_HEIGHT = [0, 70, 140, 270, 470];
 
-/** Everything that went into one subbiome's biome (for the inspector). */
+/** Everything that went into one patch's biome (for the inspector). */
 export interface BiomeInfo extends Classified {
-  /** the subbiome (merged root) or, zoomed far out, the elevation zone it was read for */
+  /** the patch (merged root) or, zoomed far out, the elevation zone it was read for */
   key: number;
-  level: 'sub' | 'zone';
+  level: 'patch' | 'zone';
   ocean: boolean;
   /** type of its (merged) elevation zone, index into ELEVATION_ZONE_TYPES */
   zoneType: number;
@@ -234,13 +234,13 @@ export interface BiomeInfo extends Classified {
   p: number;
   /** in a river-poor flat elevation zone (precipitation × sparseDry) */
   sparse: boolean;
-  /** a land subbiome bordering the ocean (always false zoomed out, at elevation zone level) */
+  /** a land patch bordering the ocean (always false zoomed out, at elevation zone level) */
   coastal: boolean;
   /** the biome the sea-level temperature alone would give (differs on high ground) */
   seaLevel: number;
 }
 
-/** Subbiome infos kept at most (each is small; the map re-reads them per pixel). */
+/** Patch infos kept at most (each is small; the map re-reads them per pixel). */
 const CACHE = 400_000;
 
 export class Biomes {
@@ -261,24 +261,24 @@ export class Biomes {
   }
 
   /**
-   * Biome of a (merged) subbiome. Cached once its height is exact; an estimate is
+   * Biome of a (merged) patch. Cached once its height is exact; an estimate is
    * recomputed on every call until the terrain tile arrives.
    */
-  ofSub(skey: number): BiomeInfo {
+  ofPatch(skey: number): BiomeInfo {
     const hit = this.cache.get(skey);
     if (hit && hit.heightExact) return hit;
     const w = this.world;
-    const c = w.subCell(skey);
-    const h = this.terrain && !c.ocean ? this.terrain.subHeight(c.sub, c.region) : NaN;
+    const c = w.patchCell(skey);
+    const h = this.terrain && !c.ocean ? this.terrain.patchHeight(c.patch, c.region) : NaN;
     if (hit && h !== h) return hit;
-    const s = w.sub(c.sub);
-    const info = this.info(c.sub, 'sub', s.x, s.y, c.elevationZone, c.ocean, h);
+    const s = w.patch(c.patch);
+    const info = this.info(c.patch, 'patch', s.x, s.y, c.elevationZone, c.ocean, h);
     if (this.cache.size >= CACHE) this.cache.clear();
     this.cache.set(skey, info);
     return info;
   }
 
-  /** Biome of an elevation zone at its own site (zoomed far out, where subbiomes are skipped); always an estimated height. */
+  /** Biome of an elevation zone at its own site (zoomed far out, where patches are skipped); always an estimated height. */
   ofZone(zkey: number): BiomeInfo {
     let info = this.zoneCache.get(zkey);
     if (info) return info;
@@ -291,8 +291,8 @@ export class Biomes {
   }
 
   /**
-   * Does a (merged) land subbiome border the ocean: is a cell next to one of its raw
-   * subbiomes an ocean subbiome? Merges go to neighbours, so the raw members are found
+   * Does a (merged) land patch border the ocean: is a cell next to one of its raw
+   * patches an ocean patch? Merges go to neighbours, so the raw members are found
    * by walking neighbours that share the root.
    */
   isCoastal(root: number): boolean {
@@ -304,12 +304,12 @@ export class Biomes {
     const stack = [root];
     while (stack.length && !coast) {
       const s = stack.pop()!;
-      for (const n of w.subNbrs(w.sub(s))) {
-        if (w.subCell(n).ocean) {
+      for (const n of w.patchNbrs(w.patch(s))) {
+        if (w.patchCell(n).ocean) {
           coast = true;
           break;
         }
-        if (!seen.has(n) && w.subRoot(n) === root) {
+        if (!seen.has(n) && w.patchRoot(n) === root) {
           seen.add(n);
           stack.push(n);
         }
@@ -320,12 +320,12 @@ export class Biomes {
     return coast;
   }
 
-  /** Biome index of a classified map cell (subbiome, or elevation zone when sub < 0). */
-  indexOf(sub: number, zoneRaw: number): number {
-    return sub >= 0 ? this.ofSub(sub).biome : this.ofZone(zoneRaw).biome;
+  /** Biome index of a classified map cell (patch, or elevation zone when patch < 0). */
+  indexOf(patch: number, zoneRaw: number): number {
+    return patch >= 0 ? this.ofPatch(patch).biome : this.ofZone(zoneRaw).biome;
   }
 
-  private info(key: number, level: 'sub' | 'zone', x: number, y: number, zone: number, ocean: boolean, h: number): BiomeInfo {
+  private info(key: number, level: 'patch' | 'zone', x: number, y: number, zone: number, ocean: boolean, h: number): BiomeInfo {
     const t0 = this.climate.temperatureAt(x, y);
     const p0 = this.climate.precipitationAt(x, y);
     const exact = h === h;
@@ -336,7 +336,7 @@ export class Biomes {
     const t = t0 - cooling;
     const p = sparse ? p0 * this.p.sparseDry : p0;
     const k = classify(t, p);
-    const coastal = !ocean && level === 'sub' && this.isCoastal(key);
+    const coastal = !ocean && level === 'patch' && this.isCoastal(key);
     const base = { key, level, ocean, zoneType, x, y, t0, p0, height, heightExact: exact, cooling, t, p, sparse, coastal };
     if (ocean) return { ...base, ...k, biome: OCEAN_BIOME, seaLevel: OCEAN_BIOME };
     // the mangrove override, for the actual and the sea-level temperature alike

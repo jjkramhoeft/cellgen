@@ -80,9 +80,9 @@ describe('lakes', { timeout: 60_000 }, () => {
           expect(c.ocean).toBe(false);
           const zt = elevationZoneType(c.elevationZone, false);
           expect(zt).not.toBe(MOUNTAINS);
-          expect(DESERT.has(bio.ofSub(c.sub).seaLevel)).toBe(false);
+          expect(DESERT.has(bio.ofPatch(c.patch).seaLevel)).toBe(false);
           expect(rv.isSparseFlat(c.elevationZone)).toBe(false);
-          expect(lk.block(c.subRaw)).toBeNull();
+          expect(lk.block(c.patchRaw)).toBeNull();
         }
       }
     }
@@ -91,12 +91,12 @@ describe('lakes', { timeout: 60_000 }, () => {
   });
 
   it('never puts a lake where the map would show desert, at any height', () => {
-    // the desert test is at sea level: a subbiome that is no desert there is none higher up
+    // the desert test is at sea level: a patch that is no desert there is none higher up
     const { w, bio, lk } = setup({ frequency: 0.25 });
     const hot = new Biomes(w, lk.rivers, bio.climate, null, toBiomeParams(testParams()));
     for (const r of landRegions(w, 8)) {
       for (const l of lk.get(r).lakes) {
-        const info = hot.ofSub(l.sub);
+        const info = hot.ofPatch(l.patch);
         for (const h of [0, 100, 300, 800, 1500, 3000]) {
           const t = info.t0 - hot.cooling(h);
           const b = BIOMES[classifyAt(t, info.p)].id;
@@ -238,18 +238,18 @@ describe('lakes', { timeout: 60_000 }, () => {
     }
   });
 
-  it('marks ocean, mountains, desert and river-poor flat (restricted) subbiomes as blocked', () => {
+  it('marks ocean, mountains, desert and river-poor flat (restricted) patches as blocked', () => {
     const { w, rv, bio, lk } = setup();
     const seen = new Set<string | null>();
     for (const r of landRegions(w, 10)) {
       for (const b of rv.regionElevationZones(r)) {
-        for (const s of w.elevationZoneSubs(w.elevationZone(b))) {
-          const c = w.subCell(s);
+        for (const s of w.elevationZonePatches(w.elevationZone(b))) {
+          const c = w.patchCell(s);
           const why = lk.block(s);
           seen.add(why);
           if (c.ocean) expect(why).toBe('ocean');
           else if (elevationZoneType(c.elevationZone, false) === MOUNTAINS) expect(why).toBe('mountains');
-          else if (DESERT.has(bio.ofSub(c.sub).seaLevel)) expect(why).toBe('desert');
+          else if (DESERT.has(bio.ofPatch(c.patch).seaLevel)) expect(why).toBe('desert');
           else if (rv.isSparseFlat(c.elevationZone)) expect(why).toBe('restricted');
           else expect(why).toBeNull();
         }

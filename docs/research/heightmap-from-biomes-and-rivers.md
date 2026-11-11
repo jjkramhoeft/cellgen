@@ -30,15 +30,15 @@
 
 | Hook | File, lines | What it gives a height pass |
 |---|---|---|
-| Level sizes and nesting | `world/world.ts` L4–9, L27–29 | Regions ~128 km (no warp), biomes ~32 km, subbiomes ~8 km. With `nest`, coasts follow 8 km cells. |
+| Level sizes and nesting | `world/world.ts` L4–9, L27–29 | Regions ~128 km (no warp), biomes ~32 km, patches ~8 km. With `nest`, coasts follow 8 km cells. |
 | Order independence | `world/world.ts` L31–33 | "Every value only depends on a bounded neighbourhood". |
-| River header | `world/rivers.ts` L1–38 | Roots at ocean-biome sites, attractors in inland subbiomes, the region border rule, flow, bit-exactness. |
-| Coast subbiomes skipped | `world/rivers.ts` L221–227, L265 | No attractors in subbiomes that touch the ocean (`skipCoast`, on by default). |
+| River header | `world/rivers.ts` L1–38 | Roots at ocean-biome sites, attractors in inland patches, the region border rule, flow, bit-exactness. |
+| Coast patches skipped | `world/rivers.ts` L221–227, L265 | No attractors in patches that touch the ocean (`skipCoast`, on by default). |
 | Landlocked exemption | `world/rivers.ts` L321–338, L405–414 | A region with no ocean neighbour searches outward, and its rivers may cross other regions' land. |
 | Unreached pockets | `world/rivers.ts` L24–25 | Land walled off from the sea by other regions keeps its attractors unreached. |
 | Flow sweep | `world/rivers.ts` L828–830 | `flow[par[k]] += flow[k]` in reverse index order: a parent always has a lower index than its children. |
 | `wet`, `tree` | `world/rivers.ts` L831–834 | Whether a node lies over ocean, and the root of each node's tree. |
-| Defaults | `params.ts` L77, L104–118 | Subbiome 8 km, 10 attractors per subbiome, D = 2 km, dᵢ = 16 km, dₖ = 3 km. |
+| Defaults | `params.ts` L77, L104–118 | Patch 8 km, 10 attractors per patch, D = 2 km, dᵢ = 16 km, dₖ = 3 km. |
 | Land types | `render/source.ts` L49–67 | 12 cosmetic types, chosen by `keyHash(biomeKey) % 12`, so they are spatially uncorrelated. |
 | Per-pixel render | `render/source.ts` L209 | One `world.cellAt` call per raster pixel. |
 | Noise | `shared/core/noise.ts` L8, L29–123 | In-house simplex, `fbm` and `ridged`. "Arithmetic only — deterministic": hashed gradients from a literal table, so they are already bit-exact. |
@@ -71,7 +71,7 @@ Two observations shape the rest of this report.
 
 | Input | Where | Use for height |
 |---|---|---|
-| Land/ocean per subbiome (nested) | `world.cellAt`, `world.ts` L622–638 | Sea-level base, the coast as the zero contour, ocean depth |
+| Land/ocean per patch (nested) | `world.cellAt`, `world.ts` L622–638 | Sea-level base, the coast as the zero contour, ocean depth |
 | River nodes `x, y, parent` | `RegionRivers`, `rivers.ts` L127–159 | Channel geometry. Segments are ~D = 2 km long. |
 | `flow` (attractors upstream, including the node itself) | `rivers.ts` L828–830 | Drainage-area proxy |
 | `wet` (node over ocean) | L831–832 | The first dry node on each path is the river's base level (coast crossing) |
@@ -79,7 +79,7 @@ Two observations shape the rest of this report.
 | Region of each pixel | `cellAt(...).region` | The primary divides (§6.1) |
 | Land type per biome | `render/source.ts` L65–67 | Relief style (§7) |
 
-**Drainage-area scale (Design note):** attractors sit `perSub` per inland subbiome, so one attractor stands for about `subSize² / perSub` = 8² / 10 ≈ **6.4 km²**. Use `A_k = a · max(flow_k, 1)`, with `a` derived from params. Coastal subbiomes carry no attractors, so `A` under-counts the lowest reaches a little.
+**Drainage-area scale (Design note):** attractors sit `perPatch` per inland patch, so one attractor stands for about `patchSize² / perPatch` = 8² / 10 ≈ **6.4 km²**. Use `A_k = a · max(flow_k, 1)`, with `a` derived from params. Coastal patches carry no attractors, so `A` under-counts the lowest reaches a little.
 
 **Gaps a height pass must cover (from the code):**
 
@@ -118,7 +118,7 @@ Two observations shape the rest of this report.
      - `z_k = z_p + Δx · S₀ · (A₀/A_k)^θ`
      
      S₀ is the "channel slope at reference area A₀"; take A₀ = 1 attractor.
-  3. **Per-biome steepness (optional).** S₀ can vary with the node's subbiome (§7). The Mudd form is `(U/K)^{1/n}`, a steepness index, and it may vary in space.
+  3. **Per-biome steepness (optional).** S₀ can vary with the node's patch (§7). The Mudd form is `(U/K)^{1/n}`, a steepness index, and it may vary in space.
 - **C1 Local:** yes. One region's trees only, O(n), no halo. Region rivers are already computed per region.
 - **C2 Downhill:** **guaranteed by construction.** `Δx > 0` and `S > 0`, so `z_child > z_parent` strictly.
   - Landlocked trees work the same way: their roots sit in a real ocean biome.
@@ -346,7 +346,7 @@ Two observations shape the rest of this report.
 
 ### 6.3 The coastal strip
 
-- **Fact:** coastal subbiomes have no attractors (`skipCoast`), so a band roughly one subbiome (~8 km) wide carries only river mouths.
+- **Fact:** coastal patches have no attractors (`skipCoast`), so a band roughly one patch (~8 km) wide carries only river mouths.
 - **Design note:** the coast cone `g_c(d_coast)` in §4.1 makes this band rise gently from 0. A lower coastal slope `s_coast` gives coastal plains. Use a higher one for cliffy land types (§7).
 
 ---
@@ -404,7 +404,7 @@ Dwarf Fortress was dropped: no primary source describing its elevation/river alg
 All three options share step 0:
 
 - **0. Channel profile (§3.2) + carve (§3.4).** Per region, O(n), bit-exact with dyadic θ, strictly monotone. Store `z` alongside `flow` in `RegionRivers`.
-- **Shared params:** `hgt.chSlope` (S₀, default 0.02), `hgt.theta` (½ | 7⁄16 | ⅜), `hgt.areaPerAttr` (auto = subSize²/perSub), `hgt.baseZ`, `hgt.seaDepth`.
+- **Shared params:** `hgt.chSlope` (S₀, default 0.02), `hgt.theta` (½ | 7⁄16 | ⅜), `hgt.areaPerAttr` (auto = patchSize²/perPatch), `hgt.baseZ`, `hgt.seaDepth`.
 
 ### Option A: Envelope (simple; no grids)
 
