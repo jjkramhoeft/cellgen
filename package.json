@@ -12,7 +12,8 @@
     "typecheck": "tsc --noEmit",
     "new-sandbox": "node scripts/new-sandbox.mjs",
     "export-map": "node scripts/export-map.mjs",
-    "export-network": "node scripts/export-network.mjs"
+    "export-network": "node scripts/export-network.mjs",
+    "biome-chart": "node scripts/biome-chart.mjs"
   },
   "devDependencies": {
     "@types/node": "^24.19.2",
