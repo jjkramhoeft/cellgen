@@ -76,8 +76,8 @@ const RIVER = 0.4;
 /** Loading and unloading at a sea harbour and at a river landing, km of open flat road (per end of a link). */
 const PORT = 12;
 const LANDING = 6;
-/** A location is on a navigable river when one runs within this many cells of it. */
-const RIVER_REACH = 1;
+/** A location is on a navigable river when one runs within this distance of it, metres. */
+export const RIVER_REACH = 4000;
 /** A link is dropped for a detour over cheaper links of at most this × its cost. */
 export const DETOUR = 1.6;
 /** A road is dropped for a cheaper route that uses water only when that costs at most this × the road. */
@@ -683,7 +683,7 @@ export class Travel {
         }
       };
       seedW(
-        nearest(l.x, l.y, RIVER_REACH, (q) => rmask[q] !== 0),
+        nearest(l.x, l.y, Math.ceil(RIVER_REACH / G), (q) => rmask[q] !== 0),
         LANDING,
       );
       if (l.coast)

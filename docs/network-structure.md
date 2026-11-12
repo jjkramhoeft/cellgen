@@ -37,11 +37,11 @@ With the defaults of 2026-11-12:
 | | Block (16 regions) | Core (4 regions) |
 |---|---|---|
 | Nodes | 169 (38 cities, 131 towns) | 31 |
-| Links | 331 (222 road, 77 river, 32 sea) | 54 between two core nodes, 71 touching one |
-| Route length | 12 687 km (7 697 road, 2 836 river, 2 155 sea) | |
+| Links | 341 (222 road, 87 river, 32 sea) | 55 between two core nodes, 72 touching one |
+| Route length | 12 951 km (7 697 road, 3 166 river, 2 089 sea) | |
 
-The graph is one connected component. A node has 1 to 8 links (median 4). 60 pairs of nodes
-have both a road and a water link, 58 links cross a region border and 4 join two cities. 19
+The graph is one connected component. A node has 1 to 8 links (median 4). 68 pairs of nodes
+have both a road and a water link, 56 links cross a region border and 3 join two cities. 19
 links leave the block and are left out.
 
 Regenerate it with `npm run export-network` (scripts/export-network.ts, about 12 s) after
@@ -102,7 +102,7 @@ the viability threshold are not nodes.
 | `biome`     | Biome of the patch (ids in [map-structure.md](map-structure.md#biome-ids))           |
 | `zoneType`  | Type of its elevation zone: `flat`, `lowland`, `hills` or `mountains`                |
 | `coast`     | The patch borders the ocean: the location has a sea harbour                          |
-| `harbour`   | The coast is that of an enclosed bay (a sheltered harbour)                           |
+| `harbour`   | A sheltered harbour: the patch borders a bay, an ocean patch with at least 3 land neighbours and more land than ocean ones |
 | `onRiver`   | The spot is on a river                                                               |
 | `navigable` | The patch's river is navigable (drains at least 8 patches upstream)                  |
 | `features`  | What stands out about the place, see below                                           |
@@ -112,8 +112,55 @@ the viability threshold are not nodes.
 `lake`, `central place`, `high ground`, `peninsula`, `rich farmland`.
 
 A node can start a water link when it has a sea harbour (`coast`) or a navigable river runs
-within one grid cell (2 km) of its spot. That is nearly, but not exactly, the `navigable`
+within two grid cells (4 km) of its spot. That is nearly, but not exactly, the `navigable`
 flag: the flag is about the patch, the test about the spot.
+
+### Features
+
+River size is the number of patches a river drains above a point. A river is navigable
+from 8 patches and large from 80. A patch's river size, mouth and confluence are the
+largest found at any river node on the patch.
+
+**Sea and coast.** Only one of each pair is listed: a mouth of either size, and a
+sheltered harbour or the coast.
+
+| Feature                      | Set when                                                                                     | What it means                                                                                                   |
+| ---------------------------- | -------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `mouth of a navigable river` | A river draining 8 or more patches reaches the sea on the patch                              | Where river and sea traffic meet, the strongest gateway. Its trade value grows with the river and is full at 80 patches. The spot is put at the mouth |
+| `river mouth`                | The same for a river draining 2–7 patches                                                    | Fresh water and a landing place, but no route inland; little trade value                                        |
+| `sheltered harbour`          | The patch borders an ocean patch that is a bay: one with at least 3 land neighbours, and more land than ocean ones | A protected anchorage: the most fish (1), full waterside value, trade 0.6                                       |
+| `coast`                      | The patch borders the ocean, but no bay                                                      | An open shore. It still has a sea harbour (it can start sea lanes), but less: fish 0.8, waterside 0.7, trade 0.24 |
+
+**Rivers.** At most one of these, and none when a mouth already describes the river.
+
+| Feature           | Set when                                                | What it means                                                                                                    |
+| ----------------- | ------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `large river`     | The river drains 80 or more patches, and no navigable mouth | A major waterway, at the top of the trade scale (0.5). In a dry climate it also irrigates fully, up to 60 people per km² more |
+| `navigable river` | The river drains 8–79 patches, and no navigable mouth   | Boats can use it: it carries river routes and makes travel to central places cheaper (0.4 × the land cost). Its trade value grows from 0 at 8 patches to 0.5 at 80 |
+| `river`           | The river drains 2–7 patches, and no river mouth        | Fresh water, some fish (0.3), waterside 0.7, and clay in flat and lowland zones. No boat traffic                  |
+
+**River structure.**
+
+| Feature              | Set when                                                                                   | What it means                                                                                                   |
+| -------------------- | ------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------- |
+| `head of navigation` | A river node is navigable, but its largest tributary is not                                | The furthest point boats reach upstream, where goods are unloaded (break of bulk); trade 0.6. Fall lines from the river bed heights are not modelled yet |
+| `confluence`         | The second-largest stream joining at a node drains at least 4 patches (half of navigable)  | Two real rivers meet: trade up to 0.4, and defence 0.4 (water on two sides)                                      |
+| `lake`               | A lake lies on the patch                                                                   | Water 1, fish 0.6, waterside 0.8; only a little trade (0.15)                                                     |
+
+**Land.** Only one of `high ground` and `peninsula` is listed.
+
+| Feature         | Set when                                                                     | What it means                                                                                                    |
+| --------------- | ---------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `central place` | The central-place term is at least 0.6 and at least the gateway score        | The place trades by where it is, not by a water gateway. The term is Hansen accessibility: the region's food, each patch weighted by 1 / (1 + travel days)², one day being 35 km of open flat road; it reaches 1 at 0.55 of an ideal region (a disc of farmland seen from its centre). Typically an inland market town in good farmland |
+| `high ground`   | The zone type is hills or mountains                                          | A defensible site with stone, but harder to build on (buildable 0.55 or 0.25) and with less farmland             |
+| `peninsula`     | At least half the patch's neighbours are ocean                               | Defence 0.5 (water on most sides); less farmland around it, as ocean neighbours count as empty land              |
+| `rich farmland` | The food of the catchment is at least 0.7                                    | The patch counts twice, then its land neighbours; ocean neighbours dilute it. 1 means about 30 people per km² (temperate farmland): broadleaf, mixed forest, grassland or shrubland on flat or lowland ground, or dry land irrigated by a large river |
+
+**How they add up to trade.** The gateway score is the best of the water features'
+values plus a quarter of the others, divided by 1.5. The trade factor is the larger of the
+gateway and the central place plus a quarter of the smaller. So a place with several
+features ("navigable river, head of navigation, confluence, central place") beats one with
+a single strong feature, which is why that combination tops many regions.
 
 ## Link
 

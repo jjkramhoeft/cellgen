@@ -9,7 +9,7 @@ import { keyI, keyJ, packKey } from '../src/world/level';
 import { Locations, type Location } from '../src/world/locations';
 import { Rivers } from '../src/world/rivers';
 import { Terrain } from '../src/world/terrain';
-import { BIOME_COST, CELL, ownerOf, Travel, TravelGrid, ZONE_COST, type RegionTravel, type TravelEdge } from '../src/world/travel';
+import { BIOME_COST, CELL, ownerOf, RIVER_REACH, Travel, TravelGrid, ZONE_COST, type RegionTravel, type TravelEdge } from '../src/world/travel';
 import { World } from '../src/world/world';
 import { ELEVATION_ZONE_TYPES, elevationZoneType } from '../src/world/zones';
 
@@ -253,7 +253,8 @@ describe('travel network', { timeout: 240_000 }, () => {
       const j = Math.floor(l.y / CELL);
       for (const q of tr.around(l.region)) {
         const cells = riverCells(q);
-        for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) if (cells.has(`${i + di},${j + dj}`)) return true;
+        const r = Math.ceil(RIVER_REACH / CELL);
+        for (let dj = -r; dj <= r; dj++) for (let di = -r; di <= r; di++) if (cells.has(`${i + di},${j + dj}`)) return true;
       }
       return false;
     };
