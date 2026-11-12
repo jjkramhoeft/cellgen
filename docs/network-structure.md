@@ -36,12 +36,12 @@ With the defaults of 2026-11-12:
 
 | | Block (16 regions) | Core (4 regions) |
 |---|---|---|
-| Nodes | 169 (38 cities, 131 towns) | 31 |
-| Links | 341 (222 road, 87 river, 32 sea) | 55 between two core nodes, 72 touching one |
-| Route length | 12 951 km (7 697 road, 3 166 river, 2 089 sea) | |
+| Nodes | 198 (39 cities, 159 towns) | 34 |
+| Links | 393 (267 road, 98 river, 28 sea) | 61 between two core nodes, 81 touching one |
+| Route length | 13 859 km (8 630 road, 3 415 river, 1 814 sea) | |
 
-The graph is one connected component. A node has 1 to 8 links (median 4). 68 pairs of nodes
-have both a road and a water link, 56 links cross a region border and 3 join two cities. 19
+The graph is one connected component. A node has 1 to 9 links (median 4). 71 pairs of nodes
+have both a road and a water link, 66 links cross a region border and 2 join two cities. 26
 links leave the block and are left out.
 
 Regenerate it with `npm run export-network` (scripts/export-network.ts, about 12 s) after
@@ -109,7 +109,9 @@ the viability threshold are not nodes.
 
 `features` holds any of: `mouth of a navigable river`, `river mouth`, `sheltered harbour`,
 `coast`, `large river`, `navigable river`, `river`, `head of navigation`, `confluence`,
-`lake`, `central place`, `high ground`, `peninsula`, `rich farmland`.
+`lake`, `central place`, `high ground`, `peninsula`, `rich farmland`, and the names of up to
+two rich deposits on the patch: `salt`, `crystal`, `iron ore`, `copper ore`, `tin`,
+`silver & lead`, `gold`, `gems & pearls`.
 
 A node can start a water link when it has a sea harbour (`coast`) or a navigable river runs
 within two grid cells (4 km) of its spot. That is nearly, but not exactly, the `navigable`
@@ -135,7 +137,7 @@ sheltered harbour or the coast.
 
 | Feature           | Set when                                                | What it means                                                                                                    |
 | ----------------- | ------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| `large river`     | The river drains 80 or more patches, and no navigable mouth | A major waterway, at the top of the trade scale (0.5). In a dry climate it also irrigates fully, up to 60 people per km² more |
+| `large river`     | The river drains 80 or more patches, and no navigable mouth | A major waterway, at the top of the trade scale (0.5). It also irrigates fully: a river adds 100 mm of water a year per patch it drains beyond the first, up to 1 200 mm, to the crops that lack it |
 | `navigable river` | The river drains 8–79 patches, and no navigable mouth   | Boats can use it: it carries river routes and makes travel to central places cheaper (0.4 × the land cost). Its trade value grows from 0 at 8 patches to 0.5 at 80 |
 | `river`           | The river drains 2–7 patches, and no river mouth        | Fresh water, some fish (0.3), waterside 0.7, and clay in flat and lowland zones. No boat traffic                  |
 
@@ -145,7 +147,7 @@ sheltered harbour or the coast.
 | -------------------- | ------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------- |
 | `head of navigation` | A river node is navigable, but its largest tributary is not                                | The furthest point boats reach upstream, where goods are unloaded (break of bulk); trade 0.6. Fall lines from the river bed heights are not modelled yet |
 | `confluence`         | The second-largest stream joining at a node drains at least 4 patches (half of navigable)  | Two real rivers meet: trade up to 0.4, and defence 0.4 (water on two sides)                                      |
-| `lake`               | A lake lies on the patch                                                                   | Water 1, fish 0.6, waterside 0.8; only a little trade (0.15)                                                     |
+| `lake`               | A lake lies on the patch                                                                   | Water 1, fish 0.45 to 0.75 by the lake's area, waterside 0.8; only a little trade (0.15)                                                     |
 
 **Land.** Only one of `high ground` and `peninsula` is listed.
 
@@ -154,7 +156,13 @@ sheltered harbour or the coast.
 | `central place` | The central-place term is at least 0.6 and at least the gateway score        | The place trades by where it is, not by a water gateway. The term is Hansen accessibility: the region's food, each patch weighted by 1 / (1 + travel days)², one day being 35 km of open flat road; it reaches 1 at 0.55 of an ideal region (a disc of farmland seen from its centre). Typically an inland market town in good farmland |
 | `high ground`   | The zone type is hills or mountains                                          | A defensible site with stone, but harder to build on (buildable 0.55 or 0.25) and with less farmland             |
 | `peninsula`     | At least half the patch's neighbours are ocean                               | Defence 0.5 (water on most sides); less farmland around it, as ocean neighbours count as empty land              |
-| `rich farmland` | The food of the catchment is at least 0.7                                    | The patch counts twice, then its land neighbours; ocean neighbours dilute it. 1 means about 30 people per km² (temperate farmland): broadleaf, mixed forest, grassland or shrubland on flat or lowland ground, or dry land irrigated by a large river |
+| `rich farmland` | The food of the catchment is at least 0.7                                    | The patch counts twice, then its land neighbours; ocean neighbours dilute it. A patch's food comes from its resources: its grain (or roots and pulses at four fifths), plus herds, orchards and game. Typically wheat, barley or rice land on flat or lowland ground, or dry land irrigated by a river |
+
+**Resources.** The names of the richest deposits on the patch, at most two.
+
+| Feature                                                                              | Set when                                                                 | What it means                                                                                                   |
+| ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------- |
+| `salt`, `crystal`, `iron ore`, `copper ore`, `tin`, `silver & lead`, `gold`, `gems & pearls` | The patch lists that deposit with an amount (richness) of at least 0.5   | A salt works or a mining town. The deposit counts in the trade goods of the resources factor, by value (gold 1, tin and silver 0.9, gems 0.8, salt 0.7, copper 0.6, iron 0.5, crystal 0.4). The resources themselves are in the map file ([map-structure.md](map-structure.md#resource)) |
 
 **How they add up to trade.** The gateway score is the best of the water features'
 values plus a quarter of the others, divided by 1.5. The trade factor is the larger of the

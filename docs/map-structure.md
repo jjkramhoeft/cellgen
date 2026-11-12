@@ -16,8 +16,9 @@ its site.
 [map-default-structure.json](map-default-structure.json) has the same structure with values
 from a run of sandbox4 at the default seed and settings (`sandboxes/sandbox4/defaults.json`),
 for the four regions that meet at the map origin: lattice cells (−1, −1), (0, −1), (−1, 0)
-and (0, 0). With the defaults of 2026-11-11 it holds 51 elevation zones and 818 biome
-patches, one patch per line.
+and (0, 0). With the defaults of 2026-11-12 it holds 51 elevation zones and 818 biome
+patches (593 land), one patch per line, which list 4 929 resources between them (about 7.7 per
+land patch).
 
 Regenerate it with `npm run export-map` (scripts/export-map.ts, about 20 s) after changing
 `defaults.json` or the generator.
@@ -28,6 +29,8 @@ Regenerate it with `npm run export-map` (scripts/export-map.ts, about 20 s) afte
   that merged into a zone outside them is therefore missing, and a zone from outside that
   merged into one of theirs is included.
 - Heights are the mean land height of each patch from the 1 km terrain raster.
+- Resources are read on those exact heights too, so they fit the biome and climate listed
+  with them.
 
 The travel network of the same four regions and the regions around them, with the city and
 town locations as nodes, is in [network-default-structure.json](network-default-structure.json),
@@ -67,6 +70,7 @@ A medium cell with one terrain character, which sets slopes, river gradient and 
 | -------------- | ----------------------------------------------------------- |
 | `type`         | `ocean`, `flat`, `lowland`, `hills` or `mountains`          |
 | `ocean`        | `true` when the zone is sea (same as `type` being `ocean`)  |
+| `bedrock`      | Bedrock class of a land zone, see below; `null` for ocean   |
 | `biomePatches` | The biome patches whose site lies in this zone              |
 
 ## BiomePatch
@@ -83,8 +87,10 @@ The smallest cell. Has one biome, derived from its climate and height.
 | `precipitation` | Yearly precipitation, mm/yr                                                      |
 | `height`        | Mean land height of the patch, metres (0 for ocean)                              |
 | `coastal`       | `true` for a land patch that borders the ocean                                   |
+| `resources`     | List of Resource: what the patch holds, largest amount first (may be empty)      |
 
-Ocean patches have `biome: "ocean"` and `null` for the climate fields.
+Ocean patches have `biome: "ocean"` and `null` for the climate fields. They list resources
+too: fish, and next to land seaweed, seals, pearls or coral.
 
 ### Biome ids
 
@@ -99,3 +105,63 @@ Ocean patches have `biome: "ocean"` and `null` for the climate fields.
 `mixedForest` is the humid temperate forest below 10 °C, `broadleaf` from 10 °C up.
 `mangrove` replaces the biome of warm, wet coastal patches in flat and lowland zones.
 `ocean` is used for sea patches.
+
+## Resource
+
+One raw resource of a patch (world/resources.ts). A patch lists a resource from an amount
+of 0.25; most land patches list six to ten of the 24.
+
+| Field     | Description                                                                          |
+| --------- | ------------------------------------------------------------------------------------ |
+| `id`      | Resource id, see below                                                               |
+| `amount`  | 0.25 to 1. For a potential: how well the patch suits it. For a deposit: how rich it is |
+| `variant` | The kind that fits this patch best, for example `barley`, `teak`, `bog iron`, `solar sea salt` (names from the catalogue in research/patch-resources.md) |
+
+### Resource ids
+
+| Group     | Id           | Name                  | Kind      | Where                                                              |
+| --------- | ------------ | --------------------- | --------- | ------------------------------------------------------------------ |
+| Food      | `grain`      | Grain                 | potential | The best cereal for the temperature and water; rivers irrigate     |
+| Food      | `produce`    | Produce               | potential | Roots, pulses and vegetables, the same way                         |
+| Food      | `orchard`    | Orchard               | potential | Fruit, nuts, olives, vines, palms and oilseeds                     |
+| Food      | `livestock`  | Livestock             | potential | Pasture by biome: grassland, steppe and savanna most               |
+| Food      | `fish`       | Fish                  | potential | Coast and harbour, river by size, a lake                           |
+| Food      | `wildFood`   | Wild food & game      | potential | Forests most; berries, mushrooms, deer, boar, waterfowl            |
+| Materials | `timber`     | Timber                | potential | Forest biomes; gallery woods along rivers in open land             |
+| Materials | `stone`      | Stone                 | deposit   | Common in hills and mountains, scarce in flat land; kind by bedrock |
+| Materials | `clay`       | Clay & earth          | both      | Flat and lowland, more along rivers; kaolin as a rare deposit      |
+| Materials | `crystal`    | Crystal               | deposit   | Rock crystal in hills and mountains, glass sand on coasts and large rivers |
+| Materials | `fibre`      | Fibre                 | potential | Flax and hemp in the temperate belt, cotton and jute in the tropics |
+| Fuel      | `fuel`       | Fuel                  | both      | Firewood and charcoal, peat, dung; coal and lignite in clastic basins |
+| Salt      | `salt`       | Salt                  | deposit   | Dry warm coasts, salt flats, rock salt and brine in a few basins; scarce |
+| Metals    | `ironOre`    | Iron ore              | deposit   | Bog iron in wet cool forest, laterite in the tropics, ores by bedrock |
+| Metals    | `copperOre`  | Copper ore            | deposit   | Volcanic arc, ophiolite, flood basalt, clastic basin               |
+| Metals    | `tin`        | Tin                   | deposit   | Granite intrusions, and the streams below them; never in a copper zone |
+| Metals    | `silverLead` | Silver & lead         | deposit   | Fold belts, carbonate platforms, volcanic mountains                |
+| Metals    | `gold`       | Gold                  | deposit   | Lodes in fold belts, shields and arcs; placers where their rivers reach flatter ground |
+| Luxuries  | `gems`       | Gems & pearls         | deposit   | By bedrock; turquoise and opal in deserts; pearls, coral and amber on coasts |
+| Luxuries  | `spices`     | Spices & incense      | potential | Tropical belt only, and only in some zones                         |
+| Luxuries  | `stimulants` | Stimulants & sugar    | potential | Sugar cane, tea, coffee, cacao, tobacco in some zones; honey       |
+| Luxuries  | `furs`       | Furs & ivory          | potential | Furs in taiga, tundra and cool forest; ivory and feathers in some hot zones |
+| Luxuries  | `dyes`       | Dyes                  | both      | Dye crops in some zones; murex and kermes as rare finds            |
+| Animals   | `horses`     | Horses & pack animals | potential | Grassland and steppe (horses), deserts (camels), hills (mules)     |
+
+A potential is a suitability every patch has; a deposit is a rare hashed find; `both` is a
+potential with deposits on top.
+
+### Bedrock ids
+
+`bedrock` of an ElevationZone is hashed by weight from its `type`, and decides which stone,
+ores and gems the zone's patches can hold.
+
+| Id          | Name                 | Mostly under            | Gives                                                    |
+| ----------- | -------------------- | ----------------------- | -------------------------------------------------------- |
+| `shield`    | Crystalline shield   | flat, lowland, hills    | Granite, banded iron, lode gold (hills), diamonds, kaolin |
+| `foldBelt`  | Fold belt            | hills, mountains        | Slate, marble, silver, lode gold, garnet, emerald        |
+| `granite`   | Granite intrusion    | hills, mountains        | Granite, tin lodes, skarn iron, topaz and beryl, kaolin  |
+| `volcanic`  | Volcanic arc         | mountains               | Basalt, obsidian, pumice, porphyry copper, gold, rock crystal |
+| `basalt`    | Flood basalt         | flat, lowland, hills    | Basalt, native copper, agate, black sands                |
+| `ophiolite` | Ophiolite            | hills, mountains        | Soapstone, massive-sulfide copper, jade                  |
+| `carbonate` | Carbonate platform   | lowland, hills          | Limestone, chalk, flint, lead and zinc, skarn iron       |
+| `clastic`   | Clastic basin        | flat, lowland           | Sandstone, coal, lignite, red-bed copper, rock salt, amber |
+| `alluvium`  | Unconsolidated cover | flat, lowland           | Field stone only; clay                                   |

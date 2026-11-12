@@ -17,6 +17,7 @@
           "y": 50900,
           "type": "lowland",
           "ocean": false,
+          "bedrock": "clastic",
           "biomePatches": [
             {
               "key": 3045,
@@ -31,7 +32,15 @@
               "temperature": 11.4,
               "precipitation": 820,
               "height": 152,
-              "coastal": false
+              "coastal": false,
+              "resources": [
+                { "id": "grain", "amount": 0.95, "variant": "bread wheat" },
+                { "id": "timber", "amount": 0.9, "variant": "oak" },
+                { "id": "fuel", "amount": 0.81, "variant": "firewood" },
+                { "id": "clay", "amount": 0.6, "variant": "wattle and daub" },
+                { "id": "livestock", "amount": 0.6, "variant": "pigs" },
+                { "id": "ironOre", "amount": 0.52, "variant": "bog iron" }
+              ]
             },
             {
               "key": 3046,
@@ -46,7 +55,14 @@
               "temperature": 10.8,
               "precipitation": 610,
               "height": 131,
-              "coastal": false
+              "coastal": false,
+              "resources": [
+                { "id": "grain", "amount": 0.85, "variant": "barley" },
+                { "id": "livestock", "amount": 0.7, "variant": "sheep" },
+                { "id": "orchard", "amount": 0.62, "variant": "grape" },
+                { "id": "clay", "amount": 0.6, "variant": "rammed earth and cob" },
+                { "id": "timber", "amount": 0.4, "variant": "Mediterranean pines" }
+              ]
             },
             {
               "key": 3062,
@@ -61,7 +77,14 @@
               "temperature": 11.9,
               "precipitation": 350,
               "height": 118,
-              "coastal": true
+              "coastal": true,
+              "resources": [
+                { "id": "livestock", "amount": 1, "variant": "cattle" },
+                { "id": "horses", "amount": 0.9, "variant": "horses" },
+                { "id": "fish", "amount": 0.8, "variant": "sardine and anchovy" },
+                { "id": "salt", "amount": 0.71, "variant": "solar sea salt" },
+                { "id": "clay", "amount": 0.6, "variant": "adobe and mud-brick earth" }
+              ]
             }
           ]
         },
@@ -73,6 +96,7 @@
           "y": 44600,
           "type": "mountains",
           "ocean": false,
+          "bedrock": "foldBelt",
           "biomePatches": [
             {
               "key": 3041,
@@ -87,7 +111,14 @@
               "temperature": 8.3,
               "precipitation": 780,
               "height": 620,
-              "coastal": false
+              "coastal": false,
+              "resources": [
+                { "id": "stone", "amount": 0.92, "variant": "slate" },
+                { "id": "timber", "amount": 0.8, "variant": "fir" },
+                { "id": "wildFood", "amount": 0.8, "variant": "wild sheep and ibex" },
+                { "id": "fuel", "amount": 0.72, "variant": "charcoal" },
+                { "id": "silverLead", "amount": 0.64, "variant": "silver" }
+              ]
             },
             {
               "key": 3050,
@@ -102,7 +133,13 @@
               "temperature": 2.7,
               "precipitation": 900,
               "height": 1450,
-              "coastal": false
+              "coastal": false,
+              "resources": [
+                { "id": "stone", "amount": 0.88, "variant": "slate" },
+                { "id": "furs", "amount": 0.85, "variant": "sable and marten" },
+                { "id": "timber", "amount": 0.8, "variant": "larch" },
+                { "id": "fuel", "amount": 0.72, "variant": "firewood" }
+              ]
             },
             {
               "key": 3059,
@@ -117,7 +154,12 @@
               "temperature": -4.1,
               "precipitation": 700,
               "height": 2300,
-              "coastal": false
+              "coastal": false,
+              "resources": [
+                { "id": "stone", "amount": 0.75, "variant": "marble" },
+                { "id": "furs", "amount": 0.5, "variant": "fox and Arctic fox" },
+                { "id": "wildFood", "amount": 0.3, "variant": "caribou" }
+              ]
             }
           ]
         },
@@ -129,6 +171,7 @@
           "y": 78400,
           "type": "ocean",
           "ocean": true,
+          "bedrock": null,
           "biomePatches": [
             {
               "key": 3069,
@@ -143,7 +186,11 @@
               "temperature": null,
               "precipitation": null,
               "height": 0,
-              "coastal": false
+              "coastal": false,
+              "resources": [
+                { "id": "fish", "amount": 0.9, "variant": "herring" },
+                { "id": "wildFood", "amount": 0.3, "variant": "edible seaweed and kelp" }
+              ]
             },
             {
               "key": 3078,
@@ -158,7 +205,10 @@
               "temperature": null,
               "precipitation": null,
               "height": 0,
-              "coastal": false
+              "coastal": false,
+              "resources": [
+                { "id": "fish", "amount": 0.5, "variant": "herring" }
+              ]
             }
           ]
         }

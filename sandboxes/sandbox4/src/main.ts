@@ -30,6 +30,7 @@ import { Biomes, coolingCurve } from './world/biomes';
 import { Climate } from './world/climate';
 import { Lakes } from './world/lakes';
 import { Locations } from './world/locations';
+import { Resources } from './world/resources';
 import { Rivers } from './world/rivers';
 import { FLOOD_REF_FLOW, monotoneSpline, Terrain } from './world/terrain';
 import { Travel, TravelGrid } from './world/travel';
@@ -75,6 +76,10 @@ let climate!: Climate;
 let biomes!: Biomes;
 /** lakes, placed per region after the rivers (rebuilt with the rivers, the climate, the biomes or the lake settings) */
 let lakes!: Lakes;
+/** the resources of the patches on the lakes' terrain-less biomes, as the locations read them (rebuilt with the lakes) */
+let resources!: Resources;
+/** the same layer on the map's biomes (exact patch heights once a tile is there), for the inspector; see `mapResources` */
+let inspectorResources: Resources | null = null;
 /** potential city and town locations per region (rebuilt with the rivers, lakes, climate, prosperity map or location settings) */
 let locations!: Locations;
 /** the cost grid of the travel network (rebuilt with the rivers, lakes, biomes or terrain settings) */
@@ -340,7 +345,7 @@ function setParams(delta: Params): void {
     // lakes come after the rivers and read the sea-level biomes (climate, dry flat zones)
     const lak = riv || changed(CLIMATE_KEYS) || changed(BIOME_KEYS) || changed(LAKE_KEYS);
     if (lak) newLakes();
-    // locations are scored on the rivers, lakes, climate, sea-level biomes and the prosperity map
+    // locations are scored on the rivers, lakes, resources, climate, sea-level biomes and the prosperity map
     if (lak || changed(PROSPERITY_KEYS) || changed(LOCATION_KEYS)) newLocations();
     // the travel network runs between the locations, over the rivers, lakes, biomes and the terrain's slopes
     if (lak || changed(PROSPERITY_KEYS) || changed(LOCATION_KEYS) || changed(TERRAIN_KEYS)) newTravel();
@@ -393,15 +398,26 @@ function newBiomes(): void {
  */
 function newLakes(): void {
   lakes = new Lakes(world, rivers, new Biomes(world, rivers, climate, null, toBiomeParams(params)), toLakeParams(params));
+  resources = new Resources(world, rivers, lakes, lakes.biomes);
 }
 
 /**
- * City and town locations on the current rivers, lakes, climate and prosperity map. They
- * share the lakes' terrain-less biomes (zone-typical heights), so they never change as
- * terrain tiles arrive.
+ * The resource layer the inspector shows: on the map's own biomes, so the resources fit
+ * the biome listed above them (they follow the exact patch height once its tile is
+ * computed). It shares the river and lake sites of the locations' layer.
+ */
+function mapResources(): Resources {
+  if (!inspectorResources || inspectorResources.biomes !== biomes || inspectorResources.lakes !== lakes) inspectorResources = resources.withBiomes(biomes);
+  return inspectorResources;
+}
+
+/**
+ * City and town locations on the current rivers, lakes, resources, climate and prosperity
+ * map. They share the lakes' terrain-less biomes (zone-typical heights) and the resource
+ * layer on them, so they never change as terrain tiles arrive.
  */
 function newLocations(): void {
-  locations = new Locations(world, rivers, lakes, lakes.biomes, climate, toLocationParams(params));
+  locations = new Locations(world, rivers, lakes, lakes.biomes, climate, toLocationParams(params), resources);
 }
 
 /**
@@ -883,7 +899,7 @@ function updateInspector(): void {
   const locMin = locationMin();
   // a location is picked up within 9 px of the cursor
   const loc = locMin === null ? null : { locations, reach: 9 / cam.zoom, min: locMin };
-  renderInspector($('inspector'), world, params['riv.on'] === true ? rivers : null, pt ? { ...pt, pinned: !!pinned } : null, needTerrain() ? terrain : null, climate, biomes, params['riv.on'] === true ? lakes : null, loc);
+  renderInspector($('inspector'), world, params['riv.on'] === true ? rivers : null, pt ? { ...pt, pinned: !!pinned } : null, needTerrain() ? terrain : null, climate, biomes, params['riv.on'] === true ? lakes : null, loc, mapResources());
   tagTooltips($('inspector'));
 }
 

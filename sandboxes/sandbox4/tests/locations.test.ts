@@ -7,6 +7,7 @@ import { Biomes } from '../src/world/biomes';
 import { Climate } from '../src/world/climate';
 import { Lakes } from '../src/world/lakes';
 import { CITY_DEPTH, CITY_SPACING, combine, FACTORS, Locations, viable, type Location, type RegionLocations } from '../src/world/locations';
+import { MIN_AMOUNT, resourceIndex, RESOURCES, Resources } from '../src/world/resources';
 import { Rivers } from '../src/world/rivers';
 import { Terrain } from '../src/world/terrain';
 import { World } from '../src/world/world';
@@ -149,6 +150,73 @@ describe('city and town locations', { timeout: 120_000 }, () => {
     expect(digest(new Locations(w, rv, lk, bio, cl, loc.p).get(r))).toEqual(before);
     // biomes that read tile heights (exact once a tile exists, an estimate before) are refused
     expect(() => new Locations(w, rv, lk, new Biomes(w, rv, cl, terrain, toBiomeParams(p)), cl, loc.p)).toThrow(/terrain-less/);
+  });
+
+  it('scores the resources factor on the resource layer: food, water, materials, fish and trade goods', () => {
+    const { w, rv, lk, bio, cl, loc } = setup();
+    const fish = resourceIndex('fish');
+    let n = 0;
+    let named = 0;
+    let rich = 0;
+    let poor = 0;
+    let richGoods = 0;
+    let poorGoods = 0;
+    for (const r of landRegions(w, 12)) {
+      const rl = loc.get(r);
+      for (const c of rl.candidates) {
+        const res = loc.resources.ofPatch(c.patch);
+        for (const term of [c.food, c.water, c.materials, c.fish, c.goods]) {
+          expect(term).toBeGreaterThanOrEqual(0);
+          expect(term).toBeLessThanOrEqual(1);
+        }
+        expect(c.resources).toBeCloseTo(0.45 * c.food + 0.2 * c.water + 0.15 * c.materials + 0.1 * c.fish + 0.1 * c.goods, 12);
+        expect(c.fish).toBe(res.amount[fish]);
+        // the patch's own trade goods count in full, so a rich deposit always shows in the term
+        expect(c.goods).toBeGreaterThanOrEqual(Math.min(1, res.wealth / 1.2) - 1e-12);
+        if (res.wealth >= 0.6) {
+          rich++;
+          richGoods += c.goods;
+        } else {
+          poor++;
+          poorGoods += c.goods;
+        }
+        // a rich deposit is named among what stands out: a salt works, a mining town
+        for (const h of res.list) {
+          const type = RESOURCES[h.resource];
+          if (type.kind === 'deposit' && type.id !== 'stone' && h.amount >= 0.5 && h === res.list.filter((x) => RESOURCES[x.resource].kind === 'deposit' && RESOURCES[x.resource].id !== 'stone')[0]) {
+            expect(c.features).toContain(type.name.toLowerCase());
+            named++;
+          }
+          expect(h.amount).toBeGreaterThanOrEqual(MIN_AMOUNT);
+        }
+        n++;
+      }
+    }
+    expect(n).toBeGreaterThan(1500);
+    expect(named).toBeGreaterThan(20);
+    expect(rich).toBeGreaterThan(20);
+    expect(richGoods / rich).toBeGreaterThan(poorGoods / poor + 0.25);
+    // the locations read their own layer, or one passed in on the same biomes
+    const [r] = landRegions(w, 1);
+    const shared = new Resources(w, rv, lk, bio);
+    expect(digest(new Locations(w, rv, lk, bio, cl, loc.p, shared).get(r))).toEqual(digest(loc.get(r)));
+    expect(() => new Locations(w, rv, lk, bio, cl, loc.p, shared.withBiomes(new Biomes(w, rv, cl, null, bio.p)))).toThrow(/own Biomes/);
+  });
+
+  it('a patch with salt, ore or luxuries outscores the same patch without them', () => {
+    // all the weight on resources: the score is the resources factor, and trade goods are a tenth of it
+    const only: Params = { 'loc.wRes': 1, 'loc.wGeo': 0, 'loc.wTrade': 0, 'loc.wClim': 0, 'loc.wPros': 0 };
+    const { w, loc } = setup(only);
+    let n = 0;
+    for (const r of landRegions(w, 6)) {
+      for (const c of loc.get(r).candidates) {
+        if (c.need <= 0) continue;
+        const without = 0.45 * c.food + 0.2 * c.water + 0.15 * c.materials + 0.1 * c.fish;
+        expect(c.score).toBeCloseTo(100 * c.need * (without + 0.1 * c.goods), 9);
+        if (c.goods > 0) n++;
+      }
+    }
+    expect(n).toBeGreaterThan(200);
   });
 
   it('follows the weights: a factor with all the weight ranks the locations', () => {

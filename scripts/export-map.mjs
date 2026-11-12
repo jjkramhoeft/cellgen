@@ -28,7 +28,7 @@ try {
   const t0 = Date.now();
   const m = exportMap();
   writeFileSync(out, m.text);
-  console.log(`${relative(root, out)}: ${m.regions} regions, ${m.zones} elevation zones, ${m.patches} biome patches (${m.land} land) in ${((Date.now() - t0) / 1000).toFixed(1)} s`);
+  console.log(`${relative(root, out)}: ${m.regions} regions, ${m.zones} elevation zones, ${m.patches} biome patches (${m.land} land), ${m.resources} resources (${m.bare} patches with none) in ${((Date.now() - t0) / 1000).toFixed(1)} s`);
   if (m.estimated) console.warn(`warning: ${m.estimated} land patches have an estimated height (no terrain value)`);
 } finally {
   await server.close();

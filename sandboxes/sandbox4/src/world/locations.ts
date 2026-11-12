@@ -5,9 +5,12 @@
  * For one region (as drawn, like the rivers and lakes):
  *   Candidates  every land patch (merged) drawn in the region. Each gets five factor
  *               scores in [0, 1], from the map alone (no terrain tiles):
- *                 resources   food of its catchment (farmland by biome and zone type, river
- *                             irrigation in dry land; itself and its neighbours), fresh
- *                             water, building material and fuel (wood, stone, clay), fish
+ *                 resources   read from the resource layer (resources.ts): food of its
+ *                             catchment (grain or roots, herds, orchards and game of the
+ *                             patch and its neighbours), fresh water, building material
+ *                             and fuel (timber, stone, clay, fuel; here or next door),
+ *                             fish, and trade goods (salt, ores, gems, luxuries and cash
+ *                             crops, here or next door: what a town can specialise in)
  *                 geography   buildable ground (flat and lowland over hills and mountains,
  *                             mangrove is swamp), a waterside site (river, harbour, coast,
  *                             lake), defence (hills, peninsula, confluence) and how deep
@@ -35,8 +38,8 @@
  *
  * Deterministic and order-independent: everything is read from the region's own rivers
  * and lakes and from pure functions of the map; sums run in key order, ties break on a
- * hash; + - x / sqrt and dlog only. The biomes must be terrain-less (zone-typical
- * heights), so the locations never change as terrain tiles arrive.
+ * hash; + - x / sqrt and dlog only. The biomes (and the resource layer on them) must be
+ * terrain-less (zone-typical heights), so the locations never change as terrain tiles arrive.
  */
 import { dlog } from '@shared/core/dmath';
 import { hash4 } from '@shared/core/hash';
@@ -45,6 +48,7 @@ import { BIOMES, type BiomeId, type Biomes } from './biomes';
 import type { Climate } from './climate';
 import { inPolygon, type Lake, type Lakes } from './lakes';
 import { keyI, keyJ, packKey } from './level';
+import { isBayPatch, Resources, RESOURCES, type ResourceId } from './resources';
 import type { Rivers } from './rivers';
 import type { World } from './world';
 import { ELEVATION_ZONE_TYPES } from './zones';
@@ -94,11 +98,12 @@ export interface Candidate {
   confluence: number;
   /** the upstream end of a navigable river */
   head: boolean;
-  /** terms of the factors, each in [0, 1] */
+  /** terms of the factors, each in [0, 1]; `goods` is the trade goods of the patch and its neighbours */
   food: number;
   water: number;
   materials: number;
   fish: number;
+  goods: number;
   buildable: number;
   waterside: number;
   defence: number;
@@ -175,25 +180,28 @@ const SPOT_DIRS = [
 const ST_LOC = 0x10c1;
 
 const BIOME_TABLE = (values: Record<BiomeId, number>) => BIOMES.map((b) => values[b.id]);
-/** Farmland: people per km² the biome can feed once cleared (settlement-siting.md §6.4; design values). */
-const FARM = BIOME_TABLE({ ocean: 0, ice: 0, tundra: 0.3, coldSteppe: 3, taiga: 2, coldDesert: 0.3, grassland: 20, shrubland: 20, mixedForest: 30, broadleaf: 30, tempRainforest: 8, hotDesert: 0.3, thornScrub: 4, savanna: 12, dryForest: 18, rainforest: 8, mangrove: 3 });
-/** Timber and fuel, 0–1. */
-const WOOD = BIOME_TABLE({ ocean: 0, ice: 0, tundra: 0.05, coldSteppe: 0.2, taiga: 1, coldDesert: 0.05, grassland: 0.4, shrubland: 0.5, mixedForest: 1, broadleaf: 1, tempRainforest: 1, hotDesert: 0.05, thornScrub: 0.3, savanna: 0.4, dryForest: 0.7, rainforest: 1, mangrove: 0.5 });
 /** How much slower travel is through the vegetation (1 = open). */
 const VEG = BIOME_TABLE({ ocean: 1, ice: 1.5, tundra: 1.1, coldSteppe: 1, taiga: 1.3, coldDesert: 1, grassland: 1, shrubland: 1.1, mixedForest: 1.3, broadleaf: 1.3, tempRainforest: 2, hotDesert: 1.1, thornScrub: 1.1, savanna: 1, dryForest: 1.3, rainforest: 2, mangrove: 2 });
 const MANGROVE = BIOMES.findIndex((b) => b.id === 'mangrove');
-/** A fully fed catchment: people per km² (temperate farmland). */
-const FARM_FULL = 30;
-/** What a large river adds by irrigation where the climate is dry (aridity below 1), people per km². */
-const IRRIGATION = 60;
+
+const RES = (id: ResourceId) => RESOURCES.findIndex((r) => r.id === id);
+const R_FISH = RES('fish');
+const R_TIMBER = RES('timber');
+const R_STONE = RES('stone');
+const R_CLAY = RES('clay');
+const R_FUEL = RES('fuel');
+/** A neighbour's timber, stone and fuel, and its trade goods, count this much (a short haul). */
+const NEAR = 0.7;
+const NEAR_GOODS = 0.5;
+/** Trade goods (resources.ts, `wealthOf`) of the patch and its best neighbour that make the goods term 1. */
+const GOODS_FULL = 1.2;
+/** A deposit this rich is named among what stands out about a place. */
+const NOTABLE = 0.5;
 
 const ZONE_TABLE = (flat: number, lowland: number, hills: number, mountains: number) => ELEVATION_ZONE_TYPES.map((t) => ({ ocean: 0, flat, lowland, hills, mountains })[t.id]);
-const FARM_ZONE = ZONE_TABLE(1, 1, 0.6, 0.3);
-const STONE = ZONE_TABLE(0.2, 0.3, 0.8, 1);
 const BUILDABLE = ZONE_TABLE(1, 0.9, 0.55, 0.25);
 const DEFENCE = ZONE_TABLE(0, 0.1, 0.6, 0.7);
 const ROUGH = ZONE_TABLE(1, 1, 1.3, 2);
-const CLAY_ZONE = ZONE_TABLE(1, 1, 0, 0);
 /** How much fuel a thermal belt needs (index = BELTS order: polar … tropical). */
 const FUEL_NEED = [1, 1, 0.8, 0.5, 0.1];
 
@@ -227,10 +235,13 @@ export function viable<T extends { score: number }>(list: T[], min: number): T[]
 export class Locations {
   readonly p: LocationParams;
   private cache = new Map<number, RegionLocations>();
+  /** the resource layer the resources factor reads (on the same terrain-less biomes) */
+  readonly resources: Resources;
 
   /**
    * `biomes` must be built without a terrain (like the lakes' one): the locations then use
-   * each zone type's typical height and never change as terrain tiles arrive.
+   * each zone type's typical height and never change as terrain tiles arrive. `resources`
+   * is the resource layer on those biomes; one is made when none is passed.
    */
   constructor(
     readonly world: World,
@@ -239,8 +250,11 @@ export class Locations {
     readonly biomes: Biomes,
     readonly climate: Climate,
     p: LocationParams,
+    resources?: Resources,
   ) {
     if (biomes.terrain) throw new Error('Locations need terrain-less Biomes (zone-typical heights)');
+    if (resources && resources.biomes !== biomes) throw new Error('Locations need the resource layer of their own Biomes');
+    this.resources = resources ?? new Resources(world, rivers, lakes, biomes);
     this.p = { ...p, count: Math.max(0, Math.floor(p.count)), cities: Math.max(0, Math.floor(p.cities)), spacing: Math.max(0, p.spacing) };
   }
 
@@ -329,14 +343,11 @@ export class Locations {
     const harbour = new Uint8Array(n);
     const border = new Uint8Array(n);
     const bayMemo = new Map<number, boolean>();
-    /** is this raw ocean patch mostly enclosed by land (at least 3 land neighbours, and more land than ocean ones)? */
+    /** is this raw ocean patch mostly enclosed by land? */
     const isBay = (o: number): boolean => {
       let v = bayMemo.get(o);
       if (v === undefined) {
-        const nb = w.patchNbrs(w.patch(o));
-        let l = 0;
-        for (const q of nb) if (!w.patchCell(q).ocean) l++;
-        v = l >= 3 && 2 * l > nb.length;
+        v = isBayPatch(w, o);
         bayMemo.set(o, v);
       }
       return v;
@@ -456,7 +467,7 @@ export class Locations {
       }
     }
 
-    // ---- per-patch climate and biome (zone-typical heights), food, travel cost
+    // ---- per-patch climate and biome (zone-typical heights), resources, food, travel cost
     const zt = new Int32Array(n);
     const biome = new Int32Array(n);
     const zone = new Float64Array(n);
@@ -464,6 +475,7 @@ export class Locations {
     const arid = new Float64Array(n);
     const belt = new Int32Array(n);
     const foodHere = new Float64Array(n);
+    const res = roots.map((r) => this.resources.ofPatch(r));
     const sx = new Float64Array(n);
     const sy = new Float64Array(n);
     for (let i = 0; i < n; i++) {
@@ -474,8 +486,8 @@ export class Locations {
       temp[i] = b.t;
       arid[i] = b.aridity;
       belt[i] = b.belt;
-      const irrigation = b.aridity < 1 ? IRRIGATION * sat(river[i] / BIG_RIVER) : 0;
-      foodHere[i] = sat((FARM[b.biome] * FARM_ZONE[b.zoneType] + irrigation) / FARM_FULL);
+      // grain or roots (irrigated by the patch's river where it is dry), herds, orchards, game
+      foodHere[i] = res[i].food;
       const s = w.patch(roots[i]);
       sx[i] = s.x;
       sy[i] = s.y;
@@ -578,24 +590,31 @@ export class Locations {
         }
       }
 
-      // resources
+      // resources: what the resource layer gives the patch and, by a short haul, its neighbours
+      const own = res[i].amount;
       let ring = 2 * foodHere[i];
-      let woodNear = 0;
+      let timberNear = 0;
       let stoneNear = 0;
+      let fuelNear = 0;
+      let goodsNear = 0;
       for (const j of land[i]) {
         ring += foodHere[j];
-        if (WOOD[biome[j]] > woodNear) woodNear = WOOD[biome[j]];
-        if (STONE[zt[j]] > stoneNear) stoneNear = STONE[zt[j]];
+        const near = res[j].amount;
+        if (near[R_TIMBER] > timberNear) timberNear = near[R_TIMBER];
+        if (near[R_STONE] > stoneNear) stoneNear = near[R_STONE];
+        if (near[R_FUEL] > fuelNear) fuelNear = near[R_FUEL];
+        if (res[j].wealth > goodsNear) goodsNear = res[j].wealth;
       }
       // ocean neighbours hold no farmland: a coast has a smaller catchment (and fish instead)
       const food = ring / (2 + land[i].length + seaNbrs[i]);
       const water = Math.max(sat(a / 2), ramp(arid[i], 0.5, 1.5), isCoast ? 0.5 : 0, hasLake ? 1 : 0);
-      const wood = Math.max(WOOD[biome[i]], 0.7 * woodNear);
-      const stone = Math.max(STONE[zt[i]], 0.7 * stoneNear);
-      const clay = CLAY_ZONE[zt[i]] && a >= 1 ? 0.8 : 0.3;
-      const materials = 0.5 * Math.max(wood, stone, clay) + 0.5 * Math.max(wood, 1 - FUEL_NEED[belt[i]]);
-      const fish = Math.max(isHarbour ? 1 : isCoast ? 0.8 : 0, a >= NAVIGABLE ? 0.6 : a >= 2 ? 0.3 : 0, hasLake ? 0.6 : 0);
-      const resources = 0.5 * food + 0.2 * water + 0.2 * materials + 0.1 * fish;
+      // something to build with, and enough to burn for the climate
+      const building = Math.max(own[R_TIMBER], own[R_STONE], own[R_CLAY], NEAR * timberNear, NEAR * stoneNear);
+      const fuel = Math.max(own[R_FUEL], NEAR * fuelNear, 1 - FUEL_NEED[belt[i]]);
+      const materials = 0.5 * building + 0.5 * fuel;
+      const fish = own[R_FISH];
+      const goods = sat((res[i].wealth + NEAR_GOODS * goodsNear) / GOODS_FULL);
+      const resources = 0.45 * food + 0.2 * water + 0.15 * materials + 0.1 * fish + 0.1 * goods;
 
       // geography
       const buildable = BUILDABLE[zt[i]] * (biome[i] === MANGROVE ? 0.5 : 1);
@@ -638,6 +657,15 @@ export class Locations {
       if (DEFENCE[zt[i]] >= 0.6) features.push('high ground');
       else if (oceanFrac[i] >= 0.5) features.push('peninsula');
       if (food >= 0.7) features.push('rich farmland');
+      // the richest deposits of the patch (at most two): a salt works, a mining town
+      let named = 0;
+      for (const hit of res[i].list) {
+        if (named >= 2 || hit.amount < NOTABLE) break;
+        const type = RESOURCES[hit.resource];
+        if (type.kind !== 'deposit' || type.id === 'stone') continue;
+        features.push(type.name.toLowerCase());
+        named++;
+      }
 
       candidates.push({
         patch: root,
@@ -661,6 +689,7 @@ export class Locations {
         water,
         materials,
         fish,
+        goods,
         buildable,
         waterside,
         defence,

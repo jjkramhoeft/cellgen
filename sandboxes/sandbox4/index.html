@@ -118,9 +118,16 @@
           <li><b>Mangrove</b>: a coastal patch (bordering the ocean) in a flat or lowland zone becomes mangrove where it is at least 20 °C and not desert (aridity ≥ 0.5); both are settings. Never inland or in hills or mountains.</li>
           <li>Colour by <b>Biomes</b> (<b>2</b>) to see them; the inspector shows each patch’s biome and the values that picked it.</li>
         </ul>
+        <h3>Resources</h3>
+        <ul>
+          <li>Every <b>patch</b> gets an amount (0–1) for each of <b>24 raw resources</b> in seven groups (food, materials, fuel, salt, metals, luxuries, animals), and the variant that fits it best (“grain: barley”, “timber: teak”, “iron ore: bog iron”).</li>
+          <li><b>Potentials</b> follow the climate and the water: crops by growing-season temperature and rainfall (a river irrigates dry land), pasture, game and timber by biome, fish by coast, river and lake. Spices, stimulants and dyes grow only in some elevation zones.</li>
+          <li><b>Deposits</b> (stone, crystal, salt, ores, gems) are rare hashed finds. Each land elevation zone has a <b>bedrock</b> class that decides what it can hold; copper and tin never share a zone, salt is scarce, and rivers carry gold and tin down from the hills as placers.</li>
+          <li>The inspector lists the resources of the patch under the cursor; the city and town locations are scored on them.</li>
+        </ul>
         <h3>City &amp; town locations</h3>
         <ul>
-          <li>Every region gets about <b>20 potential locations</b> for cities (◆) and towns (●). Each land patch is scored on five factors: <b>resources</b> (food of its catchment, fresh water, wood / stone / clay, fish), <b>geography</b> (buildable ground, a waterside site, defence, depth inside the region), <b>trade &amp; travel</b> (river mouth, harbour, navigable river, confluence, or a central place), <b>climate</b> and <b>prosperity</b> (the prosperity map).</li>
+          <li>Every region gets about <b>20 potential locations</b> for cities (◆) and towns (●). Each land patch is scored on five factors: <b>resources</b> (read from the resource layer: food of its catchment, fresh water, timber / stone / clay and fuel, fish, and trade goods such as salt, ores and luxuries), <b>geography</b> (buildable ground, a waterside site, defence, depth inside the region), <b>trade &amp; travel</b> (river mouth, harbour, navigable river, confluence, or a central place), <b>climate</b> and <b>prosperity</b> (the prosperity map).</li>
           <li>The <b>viability</b> score (0–100) is the weighted mean of the five, scaled down to 0 where there is no fresh water or the temperature is unlivable. The best-scoring patches, kept apart by a spacing, become the locations; the top ones, far apart and well inside the region, are cities (left panel, <b>City &amp; town locations</b>).</li>
           <li>Display → <b>City &amp; town locations</b> (<b>C</b>) shows them, coloured by viability; the <b>Location viability</b> slider hides the ones below a score. Zoom in for the scores, and hover a location (or any land patch) to see its factors in the inspector.</li>
         </ul>

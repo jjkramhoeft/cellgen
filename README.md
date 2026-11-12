@@ -1,6 +1,6 @@
 # cellgen
 
-Procedural world-map generation in the browser, built from Voronoi cells. The site has one sandbox, **Sandbox 4 · Terrain**: an unbounded, deterministic base map from three nested levels of Voronoi cells (regions, elevation zones, patches) with oceans, space-colonization rivers and lakes, a biome per patch (including coastal mangrove) and scored city and town locations per region and a travel network of roads, river routes and sea lanes between them, plus a height map fitted to it and a 3D landscape view. You set the parameters on the left and inspect the result on the right, with zoom, pan, an inspector and statistics.
+Procedural world-map generation in the browser, built from Voronoi cells. The site has one sandbox, **Sandbox 4 · Terrain**: an unbounded, deterministic base map from three nested levels of Voronoi cells (regions, elevation zones, patches) with oceans, space-colonization rivers and lakes, a biome per patch (including coastal mangrove), resources per patch (crops, timber, fish, stone, salt, ores, luxuries) and city and town locations per region scored on them, and a travel network of roads, river routes and sea lanes between them, plus a height map fitted to it and a 3D landscape view. You set the parameters on the left and inspect the result on the right, with zoom, pan, an inspector and statistics.
 
 **Live site:** <https://jjkramhoeft.github.io/cellgen/>
 
@@ -19,7 +19,7 @@ The build follows this general order:
 3. ✅ Height (from rivers, regions and elevation zone types)
 4. ✅ Climate (initial temperature and precipitation, cooled by height)
 5. ✅ Biomes
-6. Resources (research only so far)
+6. ✅ Resources (the raw resources per patch; processed goods and the fantasy layer are not done yet)
 7. ✅ City location candidates
 8. ✅ Travel network (roads, river routes, sea lanes); trade itself is not done yet
 9. Flora and fauna
@@ -28,7 +28,7 @@ The build follows this general order:
 12. Factions
 13. Rulers and leading families
 
-**Next step: resources (6).** It is the first open item and the one the finished steps already wait for: the largest factor of the city locations (resources, 30 %) reads stand-in tables instead of a resource layer, trade has roads but no goods, and the supernatural map feeds nothing. The research is done ([Resources](#resources)).
+**Resources (6) are in place in a first form**: every patch has its raw resources, and the city locations are scored on them ([Resources](#resources)). Still open under that step: the processed goods and the fantasy resources of the research notes (the supernatural map still feeds nothing). The next open items are trade itself (goods, prices and flows on the travel network, step 8) and flora and fauna (9).
 
 ## Getting started
 
@@ -153,24 +153,43 @@ A **supernatural map** is a third noise layer for fantasy game play: how strong 
 
 ### Resources
 
-**Not done yet**; this is the next step of the [roadmap](#roadmap). The plan: every patch gets a set of resources (ore, minerals, fish, wood, farmland and so on) as a pure function of the seed and the patch, like everything else on the map.
+Every patch gets an **amount from 0 to 1 for each of 24 raw resources**, and with it the **variant** that fits the patch best ("grain: barley", "timber: teak", "iron ore: bog iron"), as a pure function of the seed and the patch. A resource is **listed** for a patch from an amount of 0.25; a typical land patch lists about eight. This is the tier-1 set of [game-resources-and-trade.md](docs/research/game-resources-and-trade.md) §5.2, with variants and placement rules from the catalogue in [patch-resources.md](docs/research/patch-resources.md).
 
-The research is in place:
+| Group | Resources |
+|---|---|
+| Food | Grain, produce, orchard, livestock, fish, wild food & game |
+| Materials | Timber, stone, clay & earth, crystal, fibre |
+| Fuel | Fuel |
+| Salt | Salt |
+| Metals | Iron ore, copper ore, tin, silver & lead, gold |
+| Luxuries | Gems & pearls, spices & incense, stimulants & sugar, furs & ivory, dyes |
+| Animals | Horses & pack animals |
 
-- [patch-resources.md](docs/research/patch-resources.md): a catalogue keyed to the map's fields (biome, zone type, height, rivers, lakes, coast, mangrove, the supernatural map). Its design notes split resources into **potentials** (a suitability score every patch has: crops, timber, pasture, fish) and **deposits** (rare hashed point resources: ores, stone, salt), and propose a bedrock class per elevation zone to place the deposits.
-- [game-resources-and-trade.md](docs/research/game-resources-and-trade.md): a game layer of 39 resources in seven groups on top of the catalogue, for settlements, prices and trade.
+There are two kinds:
 
-Until the layer exists, the resources factor of the [city locations](#city-locations) uses biome and zone-type tables from the first note.
+- **Potentials** are what the land can yield; the amount is a suitability.
+  - *Crops* (grain, produce, orchard, fibre, spices, stimulants, dyes): the best of a table of crops, each an ECOCROP trapezoid over the growing-season temperature and the yearly water (0 outside the crop's absolute limits, 1 inside its optimum), times the farmland of the zone type (field crops like flat ground, vines and tea like slopes), the soil of the biome (leached under rainforest, podzol under taiga) and the length of the growing season. A **river irrigates**: it adds 100 mm of water a year per patch it drains beyond the first (up to 1 200 mm), so desert rivers grow wheat and dates. The luxury crops grow only in some elevation zones (a hashed gate per crop and zone), which makes them regional specialities, and spices only in the tropical belt.
+  - *The rest* (livestock, wild food, timber, clay, fuel, furs, horses, fish) come from tables by biome and zone type and from the water of the patch: coast and harbour, river size, a lake.
+- **Deposits** are rare finds: stone, crystal, salt, the ores and gems. Each is a hashed draw per patch against a chance, and the amount is the richness of the deposit.
+  - Every land elevation zone has one **bedrock** class (crystalline shield, fold belt, granite intrusion, volcanic arc, flood basalt, ophiolite, carbonate platform, clastic basin, unconsolidated cover), hashed by weight from its zone type: basins and loose cover under flat land, fold belts and volcanic arcs under mountains. The bedrock decides which stone, ores and gems its patches can hold. Copper and tin come from different classes, so **no zone has both** (bronze needs trade).
+  - **Placers**: gold and tin wash down the rivers. Each river node knows the share of its upstream network that lies in gold-bearing or tin-bearing hills and mountains; where such a river reaches flatter ground, the patch may hold placer gold or stream tin.
+  - **Salt is scarce**: solar pans on dry, warm, low coasts, salt flats in a few of the arid river-poor flat zones, rock salt and brine in a few of the clastic basins. At the defaults about half of the regions have none.
+
+Ocean patches have fish, more on the shelf (next to land), and there seaweed, seals, pearls and coral by the water temperature.
+
+The resources read the rivers and lakes of the patch's region and its biome record. The city locations use them on zone-typical heights (so they never change as terrain tiles arrive); the inspector and the map export use the map's own biomes, at the exact patch height once its terrain tile is computed, so the resources fit the biome shown next to them.
+
+Not done yet: the processed goods (tiers 2 and 3: iron, cloth, tools and so on), the fantasy resources on the supernatural map, quantities and populations, and a resource colour mode on the map (the inspector lists them per patch).
 
 ### City locations
 
 Every region gets a list of about **20 potential city and town locations**, each with a combined **viability score** (0–100). This is the map-level part ("Tier M") of [settlement-siting.md](docs/research/settlement-siting.md) in a first, simpler form: a ranked list of scored sites, not yet a full settlement hierarchy with populations.
 
-Every land patch of the region is a candidate and gets five factor scores, each 0–1, read from the map alone (rivers, lakes, zone types, climate, estimated biomes; no terrain tiles, so the list never changes as tiles arrive):
+Every land patch of the region is a candidate and gets five factor scores, each 0–1, read from the map alone (rivers, lakes, zone types, climate, estimated biomes and the resources on them; no terrain tiles, so the list never changes as tiles arrive):
 
 | Factor | Default weight | What it measures |
 |---|---|---|
-| **Resources** | 30 % | Food of the catchment (farmland by biome and zone type, river irrigation where the climate is dry; the patch and its neighbours), fresh water (river, lake, humid climate; the coast counts half), building material and fuel (wood, stone in hills and mountains, river clay) and fish (coast, harbour, large river, lake). The resource layer does not exist yet, so these come from the biome and zone tables of the research note |
+| **Resources** | 30 % | Read from the [resource layer](#resources): **food** of the catchment (grain, or roots and pulses at four fifths, plus herds, orchards and game; the patch counts twice, then its land neighbours; 45 % of the factor), **fresh water** (river, lake, humid climate; the coast counts half; 20 %), **building material and fuel** (timber, stone or clay, and fuel against what the thermal belt needs; a neighbour's count 0.7; 15 %), **fish** (10 %) and **trade goods** (salt, ores, gems, crystal, spices, stimulants, furs, dyes, horses and cash crops by value, the patch's own plus half of its best neighbour's; 10 %): what a town can specialise in |
 | **Geography** | 15 % | Buildable ground (flat and lowland over hills and mountains; mangrove is swamp), a waterside site (river, harbour, coast, lake), defence (high ground, a peninsula, a confluence) and the depth inside the region (region borders are ridges) |
 | **Trade & travel** | 25 % | The better of a **gateway** (river mouth, sheltered harbour, navigable river, head of navigation, confluence, lake: one dominant feature plus a quarter of the rest) and a **central place** (Hansen accessibility: how much of the region's food lies within a day or two of travel, over land by zone type and vegetation and faster along navigable rivers) |
 | **Climate** | 15 % | Comfort of the temperature (at the zone type's typical height; best between 4 and 24 °C) and of the aridity |
@@ -180,7 +199,7 @@ Every land patch of the region is a candidate and gets five factor scores, each 
 
 **Selection**, inside one region (so it is order-independent): candidates need a score above 0 and must not touch another region's land, which keeps locations apart across region borders without reading the neighbour. First up to **4 cities**: the best scores that lie at least two patches inside the region and 2.5 × the spacing apart. Then **towns**, best first, each at least the **spacing** (20 km) from every location chosen so far. When that leaves fewer than 20, the spacing is relaxed step by step (down to one patch size) and the towns are picked again; regions with little habitable land end up with fewer. Each location sits on its patch's river (at the mouth, or where the river is largest, never in a lake) or else at the patch's site. The count, the number of cities, the spacing and the five weights are settings (left panel, **City & town locations**).
 
-**Display → City & town locations** (`C`) draws them: cities as diamonds, towns as dots, coloured by viability (purple = poor, orange, pale yellow = excellent), with the score next to each when zoomed in. The **Location viability** slider hides every location below a score. The inspector shows a location's rank, score, the five factors with the terms behind each, and what stands out about it ("river mouth", "sheltered harbour", "central place", …); over any other land patch it shows the same breakdown and why it is not a location.
+**Display → City & town locations** (`C`) draws them: cities as diamonds, towns as dots, coloured by viability (purple = poor, orange, pale yellow = excellent), with the score next to each when zoomed in. The **Location viability** slider hides every location below a score. The inspector shows a location's rank, score, the five factors with the terms behind each, and what stands out about it ("river mouth", "sheltered harbour", "central place", and a rich deposit on the patch such as "salt", "iron ore" or "gold"); over any other land patch it shows the same breakdown and why it is not a location.
 
 Not done yet: the settlement hierarchy and populations, fall lines and bridging points (they need the river bed heights), and refining the spot on the height raster (the note's "Tier T"). Roads, river routes and sea lanes between the locations are the [travel network](#travel-network).
 
@@ -209,7 +228,7 @@ Not done yet: trade itself (goods, prices, flows, see [game-resources-and-trade.
 - **Colour by**, in menu order (keys `1`–`9`): map (elevation zone types), **biomes** (one per patch), land & ocean, **ocean genesis** (lone seed, linked seed, link chain, growth pass), **merged cells**, regions, elevation zones, patches, the hierarchy (region hue × elevation zone lightness × patch shading), and as the tenth **height** (hypsometric tint and hillshade; reach it with `]` or the menu). A **Hillshade** overlay works on any colour mode.
 - **3D landscape** (`T`): a WebGL2 height mesh over the current view, draped with the 2D map (rivers and borders included). Drag to orbit, scroll to zoom, Shift- or right-drag to pan. Vertical exaggeration is a setting.
 - **Overlays:** the noise maps (temperature, precipitation, prosperity, supernatural), each 50 % transparent with a legend bar; pixel-exact region, elevation zone and patch borders and the coastline; rivers (width from flow), attractor points (unreached in red) and river roots; lakes; **city and town locations** with a viability slider; the **travel network** between them (roads, river routes, sea lanes; straight lines or following the terrain); ocean seeds and links, growth arrows, merge arrows, sites per level, and a kilometre grid with the origin marked.
-- **Inspector:** hover or click a point to see its region (owned elevation zones, seeds, links, merges), elevation zone (genesis, merged group, neighbours, owned patches), patch, its **biome** (with the temperature, precipitation, height and aridity that picked it) the river under the cursor (flow here, whole river, root, the ocean elevation zone it drains into) and the lake under the cursor (size, area, the river's flow, host patch); every patch says whether it may hold a lake, or why not; the **location** under the cursor, or the patch as a site (viability score and its five factors). Click pins the elevation zone and patch.
+- **Inspector:** hover or click a point to see its region (owned elevation zones, seeds, links, merges), elevation zone (genesis, merged group, neighbours, owned patches), patch, its **biome** (with the temperature, precipitation, height and aridity that picked it), its **resources** (the bedrock of its zone, every listed resource with its variant and amount, and the food and trade goods the locations read), the river under the cursor (flow here, whole river, root, the ocean elevation zone it drains into) and the lake under the cursor (size, area, the river's flow, host patch); every patch says whether it may hold a lake, or why not; the **location** under the cursor, or the patch as a site (viability score and its five factors). Click pins the elevation zone and patch.
 - **Ruler:** Shift+drag or `M` measures a straight-line distance, with travel days for a horse (32–48 km/day), a marching legion (24–32) and a long-distance hiker (16–24).
 - **In view:** ocean share, cell counts, elevation zones per region, patches per elevation zone, seeds and links, ocean elevation zones by genesis, merged groups, rivers and attractors reached, render time, cache size, and a determinism fingerprint of a fixed window around the origin.
 - **Statistics** (collapsed by default): how the map is spread, to spot under-represented biomes while tuning. The share of land per biome (in legend order or largest first, with biomes under 1 % of the land flagged as rare and missing ones listed), the share of each elevation zone type against its weight, a thermal belt × moisture class grid, and min / mean / max with histograms for temperature, precipitation and height; click a min or max to go there. Taken over the current view or over a fixed 2 048 km square at the origin, so that parameter changes compare like with like. Heights come only from tiles that are already computed.
@@ -225,12 +244,13 @@ src/world/     level (stateless warped lattice Voronoi, Gabriel neighbours),
                zones (elevation zone types: ocean, flat, lowland, hills, mountains),
                rivers (per-region space colonization: attractors, coastal roots, flow),
                lakes (per-region lakes after the rivers: eligibility, noise-shaped outlines, clip),
-               locations (per-region city and town locations: five factor scores per patch, combined viability, spaced selection),
+               locations (per-region city and town locations: five factor scores per patch, the resources one from the resource layer, combined viability, spaced selection),
                travel (2 km cost grid per region with estimated heights; per-region roads, river routes and sea lanes between the locations on show),
                terrain (river profiles and the per-tile height pipeline, mean height per patch),
                terrain.worker (height tiles computed off the main thread),
                climate (initial temperature and precipitation maps, prosperity and supernatural maps),
                biomes (height cooling curve, dry flat zones, aridity × thermal belt → biome per patch, coastal mangrove),
+               resources (24 raw resources per patch: crop tables, biome tables, bedrock per zone, hashed deposits, river placers),
                mapstats (time-sliced statistics over a rectangle: biomes, zone types, climate, heights)
 src/render/    source (per-pixel raster source with borders per level, the colour modes),
                overlays (vector overlays: rivers, lakes, locations, travel network, seeds, arrows, grid, ruler),
@@ -248,7 +268,8 @@ tests/         fixture (the frozen parameter baseline the tests run on),
                biomes (belts and aridity classes, cooling curve, dry flat zones favour desert, tile heights,
                        coastal patches, mangrove only on warm, not-desert coasts of flat and lowland zones),
                lakes (only eligible land of their own region, on a river that runs through them, smooth outlines, sizes, no overlaps, frequency, varied shapes, determinism),
-               locations (about 20 per region, scores from five factors, own-region land off the border, spacing, order independence, weights, viability threshold),
+               resources (amounts and variants that fit biome, climate and position, irrigation, placers, bedrock by zone type, tin and copper apart, scarce salt, ocean patches, determinism, exact heights),
+               locations (about 20 per region, scores from five factors, the resources factor from the resource layer, own-region land off the border, spacing, order independence, weights, viability threshold),
                travel (one connected network, one owner per link, routes from place to place, roads off mountains and deserts, boats only from coasts and navigable rivers, order independence, threshold and cities-only),
                mapstats (every sample accounted for, the same in time slices as in one go, sampling stride, heights only from computed tiles)
 ```
@@ -259,7 +280,7 @@ Two scripts run the generator outside the browser, at the default seed and setti
 
 | Command | Writes | Described in |
 |---|---|---|
-| `npm run export-map` (10 to 20 s) | `docs/map-default-structure.json`: Region → ElevationZone → BiomePatch for the four regions that meet at the origin, with type, biome, climate and exact mean height per patch | [docs/map-structure.md](docs/map-structure.md) |
+| `npm run export-map` (10 to 20 s) | `docs/map-default-structure.json`: Region → ElevationZone → BiomePatch for the four regions that meet at the origin, with type and bedrock per zone and biome, climate, exact mean height and **resources** per patch | [docs/map-structure.md](docs/map-structure.md) |
 | `npm run export-network` (about 12 s) | `docs/network-default-structure.json`: the travel network of those four regions and the twelve around them as a graph, with cities and towns as nodes and roads, river routes and sea lanes as weighted links | [docs/network-structure.md](docs/network-structure.md) |
 
 A node's `key` in the network file is the key of its patch in the map file. `docs/map-structure.json` is a small hand-written sample of the map structure, not generator output. Run both scripts again after changing `defaults.json` or the generator; nothing checks that the committed files are current.
@@ -276,8 +297,8 @@ The work builds on these notes in `docs/research/`:
 | [heightmap-from-biomes-and-rivers.md](docs/research/heightmap-from-biomes-and-rivers.md) | Methods that fit a height map to an existing map and river network; Option B is implemented in Sandbox 4 |
 | [sandbox4-tiling.md](docs/research/sandbox4-tiling.md) | Generating Sandbox 4 tile by tile; the terrain part (tiles in a Web Worker) is implemented |
 | [biomes-and-climate.md](docs/research/biomes-and-climate.md) | Biome schemes (Whittaker, Holdridge, Köppen, WWF), aridity, lapse rates; its aridity × thermal belt classifier, height cooling and the mangrove override are implemented |
-| [patch-resources.md](docs/research/patch-resources.md) | A catalogue of about 370 natural resources (food, building materials, wealth) and fantasy resources, keyed to the map's fields; how lakes, mangrove and the supernatural map plug in |
-| [game-resources-and-trade.md](docs/research/game-resources-and-trade.md) | How games choose, place and trade resources, trade theory, and a 39-resource set for the generator |
+| [patch-resources.md](docs/research/patch-resources.md) | A catalogue of about 370 natural resources (food, building materials, wealth) and fantasy resources, keyed to the map's fields; how lakes, mangrove and the supernatural map plug in. Its potentials, deposits, bedrock classes and placer rule are implemented as the resources per patch |
+| [game-resources-and-trade.md](docs/research/game-resources-and-trade.md) | How games choose, place and trade resources, trade theory, and a 39-resource set for the generator; its 24 raw resources are implemented |
 | [settlement-siting.md](docs/research/settlement-siting.md) | Where villages, towns and cities form, and a deterministic siting design for the map (water from rivers and lakes, coasts, mangrove as poor farmland); its map-level scoring is implemented in a first form as the city and town locations |
 
 ## Deployment

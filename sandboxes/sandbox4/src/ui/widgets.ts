@@ -13,6 +13,7 @@ import type { Terrain } from '../world/terrain';
 import { fieldAt, type Climate, type NoiseFieldParams } from '../world/climate';
 import { rampRgb, STOPS, type ClimateField } from '../render/climate';
 import { BELTS, BIOMES, dryThreshold, MANGROVE_BIOME, MANGROVE_ZONES, MOISTURE, type BiomeInfo, type BiomeParams, type Biomes } from '../world/biomes';
+import { BEDROCKS, MIN_AMOUNT, RESOURCE_GROUPS, RESOURCES, type PatchResources, type ResourceGroup, type Resources } from '../world/resources';
 
 /** Packed ABGR pixel → CSS colour. */
 const cssHex = (c: number) => `rgb(${c & 255},${(c >>> 8) & 255},${(c >>> 16) & 255})`;
@@ -181,6 +182,26 @@ function biomeRows(b: BiomeInfo, bp: BiomeParams): string {
   return html + '</div>';
 }
 
+/** Colour of each resource group (the dot in front of a resource). */
+const GROUP_COLORS: Record<ResourceGroup, string> = { food: '#8fbf5a', materials: '#b08d57', fuel: '#d9773c', salt: '#e8e8e2', metals: '#9fb3c8', luxuries: '#c77dd6', animals: '#d9c06a' };
+const KIND_TEXT = { potential: 'a potential: how well the patch suits it', deposit: 'a deposit: how rich it is', both: 'a potential, with deposits on top' };
+
+/** The inspector rows of a patch's resources: its bedrock and every resource listed for it, largest first. */
+function resourceRows(r: PatchResources, estimated: boolean): string {
+  let html = `<div class="lvl"><h4><i style="background:${GROUP_COLORS.materials}"></i>Resources</h4>`;
+  if (r.bedrock >= 0) html += `<div class="kv" title="Bedrock class of the elevation zone, hashed by weight from its zone type. It decides which stone, ores and gems the zone’s patches can hold; copper and tin never share a zone"><span>Bedrock</span><b>${esc(BEDROCKS[r.bedrock].name)}</b></div>`;
+  for (const h of r.list) {
+    const t = RESOURCES[h.resource];
+    const group = RESOURCE_GROUPS.find((g) => g.id === t.group)!.name;
+    html += `<div class="kv" title="${esc(t.name)} · ${group} · ${KIND_TEXT[t.kind]} (0–1) · ${t.value} good"><span><i class="res-dot" style="background:${GROUP_COLORS[t.group]}"></i>${esc(t.name)}</span><b>${esc(h.variant)} · ${h.amount.toFixed(2)}</b></div>`;
+  }
+  if (!r.list.length) html += `<div class="kv" title="No resource reaches an amount of ${MIN_AMOUNT}"><span>Resources</span><b>none</b></div>`;
+  if (!r.ocean) {
+    html += `<div class="kv" title="Food a settlement can count on from this patch (grain or roots, herds, orchards, game), and its trade goods by value (salt, ores, gems, luxuries, cash crops): what the resources factor of the locations reads${estimated ? '. The terrain tile is not computed yet: these follow a typical height for the elevation zone type' : ''}"><span>Food · trade goods</span><b>${r.food.toFixed(2)} · ${r.wealth.toFixed(2)}${estimated ? ' · est. height' : ''}</b></div>`;
+  }
+  return html + '</div>';
+}
+
 /** The locations overlay as the inspector sees it: a location within `reach` metres of the cursor is picked up. */
 export interface LocationProbe {
   locations: Locations;
@@ -191,14 +212,14 @@ export interface LocationProbe {
 
 /** The terms behind each factor of a candidate, for the inspector. */
 const FACTOR_TERMS: Record<Factor, (c: Candidate) => string> = {
-  resources: (c) => `food ${c.food.toFixed(2)} · water ${c.water.toFixed(2)} · materials ${c.materials.toFixed(2)} · fish ${c.fish.toFixed(2)}`,
+  resources: (c) => `food ${c.food.toFixed(2)} · water ${c.water.toFixed(2)} · materials ${c.materials.toFixed(2)} · fish ${c.fish.toFixed(2)} · trade goods ${c.goods.toFixed(2)}`,
   geography: (c) => `buildable ${c.buildable.toFixed(2)} · waterside ${c.waterside.toFixed(2)} · defence ${c.defence.toFixed(2)} · ${c.depth >= NO_BORDER ? 'no land border' : `${c.depth} from the border`}`,
   trade: (c) => `gateway ${c.gateway.toFixed(2)} · central place ${c.centrality.toFixed(2)}`,
   climate: (c) => `temperature comfort ${c.comfort.toFixed(2)}`,
   prosperity: () => 'the prosperity map at the spot',
 };
 const FACTOR_HELP: Record<Factor, string> = {
-  resources: 'Food of the catchment (farmland by biome and zone type, river irrigation in dry land; the patch and its neighbours), fresh water, building material and fuel (wood, stone, clay) and fish',
+  resources: 'From the resource layer: food of the catchment (grain or roots, herds, orchards and game of the patch and its neighbours; a river irrigates dry land), fresh water, building material and fuel (timber, stone, clay, fuel; here or next door), fish, and trade goods (salt, ores, gems, luxuries and cash crops, here or next door)',
   geography: 'Buildable ground (flat and lowland over hills and mountains; mangrove is swamp), a waterside site (river, harbour, coast, lake), defence (high ground, peninsula, confluence) and the depth inside the region',
   trade: 'The better of a gateway (river mouth, sheltered harbour, navigable river, head of navigation, confluence, lake) and a central place (how much of the region’s food lies within a day or two of travel)',
   climate: 'Comfort of the temperature (at the zone type’s typical height) and of the aridity',
@@ -238,7 +259,18 @@ function locationRows(c: Candidate, l: Location | null, rl: RegionLocations, lp:
   return html + '</div>';
 }
 
-export function renderInspector(host: HTMLElement, world: World | null, rivers: Rivers | null, pt: Probe | null, terrain: Terrain | null = null, climate: Climate | null = null, biomes: Biomes | null = null, lakes: Lakes | null = null, loc: LocationProbe | null = null): void {
+export function renderInspector(
+  host: HTMLElement,
+  world: World | null,
+  rivers: Rivers | null,
+  pt: Probe | null,
+  terrain: Terrain | null = null,
+  climate: Climate | null = null,
+  biomes: Biomes | null = null,
+  lakes: Lakes | null = null,
+  loc: LocationProbe | null = null,
+  resources: Resources | null = null,
+): void {
   if (!world || !pt) {
     host.innerHTML = '<p class="muted">Hover the map to inspect a point. Click to pin the elevation zone and patch under the cursor.</p>';
     return;
@@ -333,6 +365,8 @@ export function renderInspector(host: HTMLElement, world: World | null, rivers: 
   }
   html += '</div>';
   if (biomes) html += biomeRows(biomes.ofPatch(c.patch), biomes.p);
+  // a land patch's resources read its region's rivers and lakes: shown once those are computed
+  if (resources && (c.ocean || resources.rivers.has(c.region))) html += resourceRows(resources.ofPatch(c.patch), !c.ocean && !resources.biomes.ofPatch(c.patch).heightExact);
   const nr = rivers?.nearestNode(pt.x, pt.y, rivers.p.step * 1.5);
   if (nr) {
     const { r, k } = nr;
