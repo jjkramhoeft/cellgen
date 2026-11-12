@@ -76,7 +76,7 @@ let climate!: Climate;
 let biomes!: Biomes;
 /** lakes, placed per region after the rivers (rebuilt with the rivers, the climate, the biomes or the lake settings) */
 let lakes!: Lakes;
-/** the resources of the patches on the lakes' terrain-less biomes, as the locations read them (rebuilt with the lakes) */
+/** the resources of the patches on the lakes' terrain-less biomes, as the locations read them (rebuilt with the lakes and the prosperity map) */
 let resources!: Resources;
 /** the same layer on the map's biomes (exact patch heights once a tile is there), for the inspector; see `mapResources` */
 let inspectorResources: Resources | null = null;
@@ -339,12 +339,14 @@ function setParams(delta: Params): void {
     const riv = changed(RIVER_KEYS) || changed(PRECIP_KEYS);
     if (riv) rivers = new Rivers(world, toRiverParams(params, seedFromText(seedText)));
     if (riv || changed(TERRAIN_KEYS)) newTerrain();
-    // the supernatural map feeds nothing yet (only its overlay and the inspector change); prosperity feeds the locations
+    // the supernatural map feeds nothing yet (only its overlay and the inspector change); prosperity feeds the resources and the locations
     if (changed(CLIMATE_KEYS) || changed(PROSPERITY_KEYS) || changed(SUPERNATURAL_KEYS)) newClimate();
     if (riv || changed(TERRAIN_KEYS) || changed(CLIMATE_KEYS) || changed(BIOME_KEYS)) newBiomes();
     // lakes come after the rivers and read the sea-level biomes (climate, dry flat zones)
     const lak = riv || changed(CLIMATE_KEYS) || changed(BIOME_KEYS) || changed(LAKE_KEYS);
     if (lak) newLakes();
+    // resources read the rivers, lakes and biomes, and the prosperity map for the precious and luxury ones
+    if (lak || changed(PROSPERITY_KEYS)) newResources();
     // locations are scored on the rivers, lakes, resources, climate, sea-level biomes and the prosperity map
     if (lak || changed(PROSPERITY_KEYS) || changed(LOCATION_KEYS)) newLocations();
     // the travel network runs between the locations, over the rivers, lakes, biomes and the terrain's slopes
@@ -363,6 +365,7 @@ function regenerate(): void {
   newClimate();
   newBiomes();
   newLakes();
+  newResources();
   newLocations();
   newTravel();
   genId++;
@@ -398,7 +401,16 @@ function newBiomes(): void {
  */
 function newLakes(): void {
   lakes = new Lakes(world, rivers, new Biomes(world, rivers, climate, null, toBiomeParams(params)), toLakeParams(params));
-  resources = new Resources(world, rivers, lakes, lakes.biomes);
+}
+
+/**
+ * The resources of the patches on the current rivers, lakes and their terrain-less biomes,
+ * with the prosperity map of the current climate (it sets how often gold, silver, gems and
+ * luxuries turn up).
+ */
+function newResources(): void {
+  resources = new Resources(world, rivers, lakes, lakes.biomes, climate);
+  inspectorResources = null;
 }
 
 /**
@@ -407,7 +419,7 @@ function newLakes(): void {
  * computed). It shares the river and lake sites of the locations' layer.
  */
 function mapResources(): Resources {
-  if (!inspectorResources || inspectorResources.biomes !== biomes || inspectorResources.lakes !== lakes) inspectorResources = resources.withBiomes(biomes);
+  if (!inspectorResources || inspectorResources.biomes !== biomes) inspectorResources = resources.withBiomes(biomes);
   return inspectorResources;
 }
 

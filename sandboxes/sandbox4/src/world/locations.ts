@@ -10,7 +10,9 @@
  *                             patch and its neighbours), fresh water, building material
  *                             and fuel (timber, stone, clay, fuel; here or next door),
  *                             fish, and trade goods (salt, ores, gems, luxuries and cash
- *                             crops, here or next door: what a town can specialise in)
+ *                             crops, here or next door: what a town can specialise in).
+ *                             Precious metals, gems and luxuries are more frequent where
+ *                             the prosperity map is high, so prosperity counts here too
  *                 geography   buildable ground (flat and lowland over hills and mountains,
  *                             mangrove is swamp), a waterside site (river, harbour, coast,
  *                             lake), defence (hills, peninsula, confluence) and how deep
@@ -254,7 +256,8 @@ export class Locations {
   ) {
     if (biomes.terrain) throw new Error('Locations need terrain-less Biomes (zone-typical heights)');
     if (resources && resources.biomes !== biomes) throw new Error('Locations need the resource layer of their own Biomes');
-    this.resources = resources ?? new Resources(world, rivers, lakes, biomes);
+    if (resources && resources.climate !== climate) throw new Error('Locations need the resource layer of their own Climate');
+    this.resources = resources ?? new Resources(world, rivers, lakes, biomes, climate);
     this.p = { ...p, count: Math.max(0, Math.floor(p.count)), cities: Math.max(0, Math.floor(p.cities)), spacing: Math.max(0, p.spacing) };
   }
 

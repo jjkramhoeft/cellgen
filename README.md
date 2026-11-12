@@ -149,7 +149,7 @@ The **initial climate** is two fBm Perlin-noise maps, independent of the map: te
 
 ### Supernatural
 
-A **supernatural map** is a third noise layer for fantasy game play: how strong magic is at every point (a unitless index, 0 to 100 by default), meant for magic resources and other supernatural features. It is the same fBm of Perlin noise as the climate, with its own seed and much finer features: **feature size 10 km, 3 octaves** (lacunarity 2, gain 0.5) by default, all configurable in the left panel (**Supernatural**). It does not feed anything yet. Turn on **Supernatural overlay** under Display to see it (near black = mundane, deep indigo → violet → magenta → glowing cyan = strong magic); the inspector shows its value under the cursor. A **prosperity map** (1 to 100, 200 km features) is built the same way; it is one of the five factors of the [city locations](#city-locations).
+A **supernatural map** is a third noise layer for fantasy game play: how strong magic is at every point (a unitless index, 0 to 100 by default), meant for magic resources and other supernatural features. It is the same fBm of Perlin noise as the climate, with its own seed and much finer features: **feature size 10 km, 3 octaves** (lacunarity 2, gain 0.5) by default, all configurable in the left panel (**Supernatural**). It does not feed anything yet. Turn on **Supernatural overlay** under Display to see it (near black = mundane, deep indigo → violet → magenta → glowing cyan = strong magic); the inspector shows its value under the cursor. A **prosperity map** (1 to 100, 200 km features) is built the same way; it sets how often gold, silver, gems and luxuries turn up among the [resources](#resources), and it is one of the five factors of the [city locations](#city-locations).
 
 ### Resources
 
@@ -175,7 +175,9 @@ There are two kinds:
   - **Placers**: gold and tin wash down the rivers. Each river node knows the share of its upstream network that lies in gold-bearing or tin-bearing hills and mountains; where such a river reaches flatter ground, the patch may hold placer gold or stream tin.
   - **Salt is scarce**: solar pans on dry, warm, low coasts, salt flats in a few of the arid river-poor flat zones, rock salt and brine in a few of the clastic basins. At the defaults about half of the regions have none.
 
-Ocean patches have fish, more on the shelf (next to land), and there seaweed, seals, pearls and coral by the water temperature.
+**Prosperity sets how often the valuable things turn up.** The [prosperity map](#supernatural) is read at the patch's site and taken from 0 (its minimum) to 1 (its maximum). The deposit chances of **gold, silver & lead and gems & pearls**, and the share of elevation zones in which a **luxury** grows or lives (spices, stimulants, dyes, furs and ivory; also murex, kermes and musk deer), are multiplied by **(2 × prosperity)²**: a quarter in poor land, 1 in the middle, 2.25 in rich land, 4 at the very top. So rich country is rich because it has gold, furs and spices, and poor country has few of them. Furs and ivory are regional like the other luxuries: at the middle of the prosperity map, half of the cold zones (taiga, tundra, cool forest, cold coasts) have fur animals worth trapping and three tenths of the hot zones have ivory, ostriches or big cats; from a prosperity of about 0.7 every cold zone has furs. Food, materials, fuel, salt, iron, copper and tin ignore prosperity, and so does honey, which every fitting patch has anyway. In the four regions of the exported map, the poorest third of the land patches holds 49 such finds, the middle third 66 and the richest third 115.
+
+Ocean patches have fish, more on the shelf (next to land), and there seaweed, seals, pearls and coral by the water temperature (pearls, coral, seals and whales follow the prosperity too).
 
 The resources read the rivers and lakes of the patch's region and its biome record. The city locations use them on zone-typical heights (so they never change as terrain tiles arrive); the inspector and the map export use the map's own biomes, at the exact patch height once its terrain tile is computed, so the resources fit the biome shown next to them.
 
@@ -193,7 +195,7 @@ Every land patch of the region is a candidate and gets five factor scores, each 
 | **Geography** | 15 % | Buildable ground (flat and lowland over hills and mountains; mangrove is swamp), a waterside site (river, harbour, coast, lake), defence (high ground, a peninsula, a confluence) and the depth inside the region (region borders are ridges) |
 | **Trade & travel** | 25 % | The better of a **gateway** (river mouth, sheltered harbour, navigable river, head of navigation, confluence, lake: one dominant feature plus a quarter of the rest) and a **central place** (Hansen accessibility: how much of the region's food lies within a day or two of travel, over land by zone type and vegetation and faster along navigable rivers) |
 | **Climate** | 15 % | Comfort of the temperature (at the zone type's typical height; best between 4 and 24 °C) and of the aridity |
-| **Prosperity** (wealth) | 15 % | The prosperity map at the spot |
+| **Prosperity** (wealth) | 15 % | The prosperity map at the spot. It also reaches the score through the resources factor: prosperous land has more gold, silver, gems and luxuries, which count as trade goods |
 
 **Viability = 100 × need × the weighted mean of the five factors.** `need` is the limiting necessity, min(fresh water, temperature comfort) × 2 capped at 1, so a site with no water or an unlivable temperature scores 0 whatever else it has. A river counts as navigable from 8 patches drained upstream and as large from 80.
 
@@ -250,7 +252,7 @@ src/world/     level (stateless warped lattice Voronoi, Gabriel neighbours),
                terrain.worker (height tiles computed off the main thread),
                climate (initial temperature and precipitation maps, prosperity and supernatural maps),
                biomes (height cooling curve, dry flat zones, aridity × thermal belt → biome per patch, coastal mangrove),
-               resources (24 raw resources per patch: crop tables, biome tables, bedrock per zone, hashed deposits, river placers),
+               resources (24 raw resources per patch: crop tables, biome tables, bedrock per zone, hashed deposits, river placers, prosperity for the precious and luxury ones),
                mapstats (time-sliced statistics over a rectangle: biomes, zone types, climate, heights)
 src/render/    source (per-pixel raster source with borders per level, the colour modes),
                overlays (vector overlays: rivers, lakes, locations, travel network, seeds, arrows, grid, ruler),
@@ -268,7 +270,7 @@ tests/         fixture (the frozen parameter baseline the tests run on),
                biomes (belts and aridity classes, cooling curve, dry flat zones favour desert, tile heights,
                        coastal patches, mangrove only on warm, not-desert coasts of flat and lowland zones),
                lakes (only eligible land of their own region, on a river that runs through them, smooth outlines, sizes, no overlaps, frequency, varied shapes, determinism),
-               resources (amounts and variants that fit biome, climate and position, irrigation, placers, bedrock by zone type, tin and copper apart, scarce salt, ocean patches, determinism, exact heights),
+               resources (amounts and variants that fit biome, climate and position, irrigation, placers, bedrock by zone type, tin and copper apart, scarce salt, prosperity raising gold, silver, gems and luxuries and nothing else, furs by zone, ocean patches, determinism, exact heights),
                locations (about 20 per region, scores from five factors, the resources factor from the resource layer, own-region land off the border, spacing, order independence, weights, viability threshold),
                travel (one connected network, one owner per link, routes from place to place, roads off mountains and deserts, boats only from coasts and navigable rivers, order independence, threshold and cities-only),
                mapstats (every sample accounted for, the same in time slices as in one go, sampling stride, heights only from computed tiles)
@@ -280,7 +282,7 @@ Two scripts run the generator outside the browser, at the default seed and setti
 
 | Command | Writes | Described in |
 |---|---|---|
-| `npm run export-map` (10 to 20 s) | `docs/map-default-structure.json`: Region → ElevationZone → BiomePatch for the four regions that meet at the origin, with type and bedrock per zone and biome, climate, exact mean height and **resources** per patch | [docs/map-structure.md](docs/map-structure.md) |
+| `npm run export-map` (10 to 20 s) | `docs/map-default-structure.json`: Region → ElevationZone → BiomePatch for the four regions that meet at the origin, with type and bedrock per zone and biome, climate, exact mean height, prosperity and **resources** per patch | [docs/map-structure.md](docs/map-structure.md) |
 | `npm run export-network` (about 12 s) | `docs/network-default-structure.json`: the travel network of those four regions and the twelve around them as a graph, with cities and towns as nodes and roads, river routes and sea lanes as weighted links | [docs/network-structure.md](docs/network-structure.md) |
 
 A node's `key` in the network file is the key of its patch in the map file. `docs/map-structure.json` is a small hand-written sample of the map structure, not generator output. Run both scripts again after changing `defaults.json` or the generator; nothing checks that the committed files are current.

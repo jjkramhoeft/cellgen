@@ -17,7 +17,7 @@ its site.
 from a run of sandbox4 at the default seed and settings (`sandboxes/sandbox4/defaults.json`),
 for the four regions that meet at the map origin: lattice cells (−1, −1), (0, −1), (−1, 0)
 and (0, 0). With the defaults of 2026-11-12 it holds 51 elevation zones and 818 biome
-patches (593 land), one patch per line, which list 4 929 resources between them (about 7.7 per
+patches (593 land), one patch per line, which list 4 810 resources between them (about 7.6 per
 land patch).
 
 Regenerate it with `npm run export-map` (scripts/export-map.ts, about 20 s) after changing
@@ -87,10 +87,11 @@ The smallest cell. Has one biome, derived from its climate and height.
 | `precipitation` | Yearly precipitation, mm/yr                                                      |
 | `height`        | Mean land height of the patch, metres (0 for ocean)                              |
 | `coastal`       | `true` for a land patch that borders the ocean                                   |
+| `prosperity`    | The prosperity map at the patch's site, from 0 (the map's minimum) to 1 (its maximum). It sets how often gold, silver, gems and luxuries turn up, see Resource |
 | `resources`     | List of Resource: what the patch holds, largest amount first (may be empty)      |
 
-Ocean patches have `biome: "ocean"` and `null` for the climate fields. They list resources
-too: fish, and next to land seaweed, seals, pearls or coral.
+Ocean patches have `biome: "ocean"` and `null` for the climate fields. They have a
+`prosperity` and list resources too: fish, and next to land seaweed, seals, pearls or coral.
 
 ### Biome ids
 
@@ -142,12 +143,18 @@ of 0.25; most land patches list six to ten of the 24.
 | Luxuries  | `gems`       | Gems & pearls         | deposit   | By bedrock; turquoise and opal in deserts; pearls, coral and amber on coasts |
 | Luxuries  | `spices`     | Spices & incense      | potential | Tropical belt only, and only in some zones                         |
 | Luxuries  | `stimulants` | Stimulants & sugar    | potential | Sugar cane, tea, coffee, cacao, tobacco in some zones; honey       |
-| Luxuries  | `furs`       | Furs & ivory          | potential | Furs in taiga, tundra and cool forest; ivory and feathers in some hot zones |
+| Luxuries  | `furs`       | Furs & ivory          | potential | Furs in some zones of taiga, tundra and cool forest; ivory and feathers in some hot zones |
 | Luxuries  | `dyes`       | Dyes                  | both      | Dye crops in some zones; murex and kermes as rare finds            |
 | Animals   | `horses`     | Horses & pack animals | potential | Grassland and steppe (horses), deserts (camels), hills (mules)     |
 
 A potential is a suitability every patch has; a deposit is a rare hashed find; `both` is a
 potential with deposits on top.
+
+**Prosperity.** The chances of `silverLead`, `gold` and `gems`, and the share of elevation
+zones in which `spices`, `stimulants`, `dyes` and `furs` occur, are multiplied by
+(2 × `prosperity`)²: 0.25 at a prosperity of 0.25, 1 at 0.5, 2.25 at 0.75 and 4 at 1. At 0.5,
+half of the cold zones have furs and three tenths of the hot zones have ivory. The other
+resources do not read it, nor does honey (under `stimulants`).
 
 ### Bedrock ids
 

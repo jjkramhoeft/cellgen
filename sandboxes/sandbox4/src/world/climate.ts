@@ -6,8 +6,9 @@
  * are the starting point for biomes, not the result of the terrain.
  *
  * A prosperity map (a unitless index, 1 to 100 by default) is built the same way. It does
- * not feed the biomes or rivers; it is one of the five factors of the city and town
- * locations (locations.ts).
+ * not feed the biomes or rivers; it sets how often precious metals, gems and luxuries turn
+ * up among the resources (resources.ts) and is one of the five factors of the city and
+ * town locations (locations.ts).
  *
  * So is a supernatural map (a unitless index, 0 to 100 by default, with much finer
  * features: 10 km). It feeds nothing yet either; it is there for magic resources and other

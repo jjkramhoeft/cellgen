@@ -107,7 +107,7 @@
         <ul>
           <li>An <b>initial temperature map</b> (−10 to 30 °C by default) and an <b>initial precipitation map</b> (100 to 12 000 mm per year on a log scale, so the middle is about 1 100), each an fBm of <b>Perlin noise</b> with its own feature size, octaves, lacunarity, gain and range (left panel, <b>Climate</b> sections).</li>
           <li>Turn on <b>Temperature overlay</b> or <b>Precipitation overlay</b> under Display to draw them <b>50 % transparent on top</b> of the map and rivers; the inspector shows both values under the cursor.</li>
-          <li>A <b>prosperity map</b> (1 to 100 by default, unitless) built the same way, with its own seed and parameters (left panel, <b>Prosperity</b>). It is one of the five factors of the city and town locations; turn on <b>Prosperity overlay</b> under Display to see it (dark purple = poor, gold = prosperous).</li>
+          <li>A <b>prosperity map</b> (1 to 100 by default, unitless) built the same way, with its own seed and parameters (left panel, <b>Prosperity</b>). It sets how often gold, silver, gems and luxuries turn up among the resources, and it is one of the five factors of the city and town locations; turn on <b>Prosperity overlay</b> under Display to see it (dark purple = poor, gold = prosperous).</li>
           <li>A <b>supernatural map</b> (0 to 100 by default, unitless): how strong magic is, for magic resources and other fantasy game play. The same Perlin fBm with its own seed and much finer features (10 km, 3 octaves by default; left panel, <b>Supernatural</b>). It does not affect anything yet; turn on <b>Supernatural overlay</b> under Display to see it (near black = mundane, violet → glowing cyan = strong magic).</li>
         </ul>
         <h3>Biomes</h3>
@@ -123,6 +123,7 @@
           <li>Every <b>patch</b> gets an amount (0–1) for each of <b>24 raw resources</b> in seven groups (food, materials, fuel, salt, metals, luxuries, animals), and the variant that fits it best (“grain: barley”, “timber: teak”, “iron ore: bog iron”).</li>
           <li><b>Potentials</b> follow the climate and the water: crops by growing-season temperature and rainfall (a river irrigates dry land), pasture, game and timber by biome, fish by coast, river and lake. Spices, stimulants and dyes grow only in some elevation zones.</li>
           <li><b>Deposits</b> (stone, crystal, salt, ores, gems) are rare hashed finds. Each land elevation zone has a <b>bedrock</b> class that decides what it can hold; copper and tin never share a zone, salt is scarce, and rivers carry gold and tin down from the hills as placers.</li>
+          <li><b>Prosperity</b> sets how often the valuable ones turn up: gold, silver &amp; lead, gems &amp; pearls, spices, stimulants, dyes, furs and ivory. A quarter as often where the prosperity map is at a quarter of its range, 2.25 times as often at three quarters.</li>
           <li>The inspector lists the resources of the patch under the cursor; the city and town locations are scored on them.</li>
         </ul>
         <h3>City &amp; town locations</h3>

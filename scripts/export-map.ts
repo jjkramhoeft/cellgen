@@ -11,7 +11,8 @@
  *
  * Every biome patch lists its resources (world/resources.ts), read on the same exact-height
  * biomes, so they fit the biome and climate written next to them; every land elevation zone
- * names the bedrock that places its deposits.
+ * names the bedrock that places its deposits, and every patch the prosperity that sets how
+ * often its precious metals, gems and luxuries turn up.
  *
  * Run through scripts/export-map.mjs (`npm run export-map`), which loads this file with
  * Vite so the `@shared` alias and the JSON import resolve as they do in the app.
@@ -50,6 +51,8 @@ interface PatchOut {
   precipitation: number | null;
   height: number;
   coastal: boolean;
+  /** the prosperity map at the patch's site, 0–1 between its minimum and maximum */
+  prosperity: number;
   /** the patch's resources, largest amount first */
   resources: ResourceOut[];
 }
@@ -118,7 +121,7 @@ export function exportMap(): MapExport {
   const b = new Biomes(w, rv, cl, t, toBiomeParams(d));
   // lakes read terrain-less biomes (as in the app); the resources read the exact-height ones
   const lk = new Lakes(w, rv, new Biomes(w, rv, cl, null, toBiomeParams(d)), toLakeParams(d));
-  const res = new Resources(w, rv, lk, b);
+  const res = new Resources(w, rv, lk, b, cl);
 
   const regionKeys = REGIONS.map(([i, j]) => packKey(i, j));
   // the biomes read exact patch heights only from computed tiles
@@ -158,7 +161,7 @@ export function exportMap(): MapExport {
     if (cell.elevationZone !== zk) throw new Error(`patch ${pk} resolves to zone ${cell.elevationZone}, not ${zk}`);
     const info = b.ofPatch(pk);
     const head = { key: pk, i: s.i, j: s.j, x: r0(s.x), y: r0(s.y), biome: BIOMES[info.biome].id };
-    if (info.ocean) return { ...head, belt: null, moisture: null, aridity: null, temperature: null, precipitation: null, height: 0, coastal: false, resources: resourcesOut(pk) };
+    if (info.ocean) return { ...head, belt: null, moisture: null, aridity: null, temperature: null, precipitation: null, height: 0, coastal: false, prosperity: r2(res.ofPatch(pk).prosperity), resources: resourcesOut(pk) };
     land++;
     if (!info.heightExact) estimated++;
     return {
@@ -170,6 +173,7 @@ export function exportMap(): MapExport {
       precipitation: r0(info.p),
       height: r0(info.height),
       coastal: info.coastal,
+      prosperity: r2(res.ofPatch(pk).prosperity),
       resources: resourcesOut(pk),
     };
   };

@@ -36,11 +36,11 @@ With the defaults of 2026-11-12:
 
 | | Block (16 regions) | Core (4 regions) |
 |---|---|---|
-| Nodes | 198 (39 cities, 159 towns) | 34 |
-| Links | 393 (267 road, 98 river, 28 sea) | 61 between two core nodes, 81 touching one |
-| Route length | 13 859 km (8 630 road, 3 415 river, 1 814 sea) | |
+| Nodes | 200 (39 cities, 161 towns) | 38 |
+| Links | 393 (269 road, 95 river, 29 sea) | 67 between two core nodes, 87 touching one |
+| Route length | 13 718 km (8 550 road, 3 330 river, 1 838 sea) | |
 
-The graph is one connected component. A node has 1 to 9 links (median 4). 71 pairs of nodes
+The graph is one connected component. A node has 1 to 9 links (median 4). 69 pairs of nodes
 have both a road and a water link, 66 links cross a region border and 2 join two cities. 26
 links leave the block and are left out.
 

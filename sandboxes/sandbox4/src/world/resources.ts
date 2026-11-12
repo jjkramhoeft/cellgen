@@ -32,6 +32,17 @@
  *                            upstream network that lies in lode-bearing hills and
  *                            mountains (per region, from the river tree).
  *
+ *   Prosperity   the prosperity map (climate.ts) at the patch's site sets how often the
+ *                valuable things turn up: gold, silver & lead, gems & pearls, and the
+ *                luxuries (spices, stimulants, dyes, furs and ivory). Their deposit
+ *                chances and the share of zones a luxury crop grows in are multiplied by
+ *                (2 x prosperity)^2, prosperity taken from 0 (the map's minimum) to 1: a
+ *                quarter in poor land, 1 in the middle, 2.25 in rich land, 4 at the top.
+ *                Furs and ivory are regional too: fur animals worth trapping in half of
+ *                the cold zones, ivory and big cats in three tenths of the hot ones, at
+ *                the middle of the prosperity map.
+ *                Everything else (food, materials, fuel, salt, iron, copper, tin) ignores it.
+ *
  * Ocean patches have fish, and on the shelf (next to land) seaweed, seals, pearls and coral.
  *
  * Deterministic: a pure function of the seed, the parameters and the patch. The river and
@@ -42,6 +53,7 @@
  */
 import { hash4, toUnit } from '@shared/core/hash';
 import { BELTS, BIOMES, type BiomeId, type BiomeInfo, type Biomes } from './biomes';
+import type { Climate } from './climate';
 import type { Lakes } from './lakes';
 import { keyI, keyJ } from './level';
 import type { Rivers } from './rivers';
@@ -157,6 +169,20 @@ const FURS = resourceIndex('furs');
 const DYES = resourceIndex('dyes');
 const HORSES = resourceIndex('horses');
 
+/** The resources whose frequency follows the prosperity map: the precious metals, gems and the luxuries. */
+export const PROSPERITY_RESOURCES: ResourceId[] = ['silverLead', 'gold', 'gems', 'spices', 'stimulants', 'furs', 'dyes'];
+const PROSPEROUS = RESOURCES.map((r) => PROSPERITY_RESOURCES.includes(r.id));
+
+/**
+ * How much more often the PROSPERITY_RESOURCES turn up at a prosperity of 0–1 (the
+ * prosperity map between its minimum and maximum): (2 x prosperity)^2, so 0.25 at a
+ * quarter, 1 in the middle, 2.25 at three quarters and 4 at the top.
+ */
+export function prosperityBoost(prosperity: number): number {
+  const p = prosperity < 0 ? 0 : prosperity > 1 ? 1 : prosperity;
+  return 4 * p * p;
+}
+
 /** A resource is listed for a patch from this amount. */
 export const MIN_AMOUNT = 0.25;
 
@@ -188,6 +214,7 @@ const ST_BEDROCK = 0x5e01;
 const ST_PLAYA = 0x5e02;
 const ST_EVAPORITE = 0x5e03;
 const ST_IVORY = 0x5e04;
+const ST_FUR = 0x5e05;
 const ST_PICK = 0x5e10;
 const ST_GATE = 0x5e100;
 const ST_DEPOSIT = 0x5e400;
@@ -272,6 +299,9 @@ export interface PatchResources {
   /** food a settlement can count on from the patch, 0–1 (`foodOf`), and its trade goods (`wealthOf`) */
   food: number;
   wealth: number;
+  /** the prosperity map at the patch's site, 0–1 between its minimum and maximum, and what it makes of the chances of the PROSPERITY_RESOURCES (`prosperityBoost`) */
+  prosperity: number;
+  boost: number;
   site: PatchSite;
 }
 
@@ -473,6 +503,8 @@ const WOOD = BIOME_TABLE({ ocean: 0, ice: 0, tundra: 0, coldSteppe: 0.08, taiga:
 const FUR = BIOME_TABLE({ ocean: 0, ice: 0, tundra: 0.5, coldSteppe: 0.15, taiga: 0.85, coldDesert: 0, grassland: 0, shrubland: 0, mixedForest: 0.3, broadleaf: 0.1, tempRainforest: 0.2, hotDesert: 0, thornScrub: 0.25, savanna: 0.4, dryForest: 0.35, rainforest: 0.35, mangrove: 0 });
 /** Share of the hot-land elevation zones with elephants, ostriches or big cats worth hunting. */
 const IVORY_ZONES = 0.3;
+/** Share of the cold-land elevation zones (and of the cold sea's patches) with fur animals worth trapping, at the middle of the prosperity map. */
+const FUR_ZONES = 0.5;
 /** Horses and pack animals, 0–1. */
 const MOUNTS = BIOME_TABLE({ ocean: 0, ice: 0, tundra: 0, coldSteppe: 0.9, taiga: 0, coldDesert: 0.5, grassland: 0.9, shrubland: 0.3, mixedForest: 0.15, broadleaf: 0.15, tempRainforest: 0, hotDesert: 0.5, thornScrub: 0.4, savanna: 0.3, dryForest: 0.1, rainforest: 0, mangrove: 0 });
 const MOUNT_ZONE = ZONE_TABLE(1, 1, 0.7, 0.4);
@@ -581,6 +613,8 @@ interface Env {
   highland: boolean;
   /** a river on flat ground: floodplain */
   floodplain: boolean;
+  /** factor on the chances of the PROSPERITY_RESOURCES, from the prosperity map */
+  boost: number;
   amount: number[];
   variant: string[];
 }
@@ -596,8 +630,12 @@ function put(e: Env, r: number, amount: number, variant: string): void {
   }
 }
 
-/** A deposit: present with `chance` (hashed per patch and kind), its richness hashed in [0.35, 1] × `rich`. */
+/**
+ * A deposit: present with `chance` (hashed per patch and kind), its richness hashed in
+ * [0.35, 1] × `rich`. The chance of a precious metal, gem or luxury follows the prosperity.
+ */
 function deposit(e: Env, r: number, kind: D, chance: number, variant: string, rich = 1): void {
+  if (PROSPEROUS[r]) chance *= e.boost;
   if (chance <= 0 || unit(e.seed, ST_DEPOSIT + kind, e.patch) >= chance) return;
   put(e, r, rich * (0.35 + 0.65 * unit(e.seed, ST_RICH + kind, e.patch)), variant);
 }
@@ -607,7 +645,7 @@ function pick(e: Env, r: number, options: string[]): string {
   return options[hash4(e.seed, ST_PICK + r, keyI(e.patch), keyJ(e.patch)) % options.length];
 }
 
-function cropScore(e: Env, c: Crop): number {
+function cropScore(e: Env, c: Crop, boost: number): number {
   let s = trap(e.tg, c.t[0], c.t[1], c.t[2], c.t[3]);
   if (s <= 0) return 0;
   let water = e.b.p;
@@ -623,14 +661,16 @@ function cropScore(e: Env, c: Crop): number {
   if (c.needs === 'highland' && !e.highland) return 0;
   if (c.k !== undefined) s *= c.k;
   if (s <= 0) return 0;
-  if (c.gate !== undefined && unit(e.seed, ST_GATE + c.n, e.zone) >= c.gate) return 0;
+  // a regional speciality: only in some zones, in more of them where the land is prosperous
+  if (c.gate !== undefined && unit(e.seed, ST_GATE + c.n, e.zone) >= c.gate * boost) return 0;
   return s;
 }
 
 /** The best crop of a table becomes the resource's amount and variant. */
 function crops(e: Env, r: number, table: Crop[]): void {
+  const boost = PROSPEROUS[r] ? e.boost : 1;
   for (const c of table) {
-    const s = cropScore(e, c);
+    const s = cropScore(e, c, boost);
     if (s > e.amount[r]) put(e, r, s, c.name);
   }
 }
@@ -939,7 +979,8 @@ function gems(e: Env): void {
 function furs(e: Env): void {
   const { id, zt, b, site } = e;
   let a = FUR[b.biome];
-  if (b.belt === TROPICAL && unit(e.seed, ST_IVORY, e.zone) >= IVORY_ZONES) a = 0;
+  // a regional speciality, in more of the zones where the land is prosperous: ivory and skins in the hot lands, furs in the cold
+  const here = b.belt === TROPICAL ? unit(e.seed, ST_IVORY, e.zone) < IVORY_ZONES * e.boost : unit(e.seed, ST_FUR, e.zone) < FUR_ZONES * e.boost;
   let v: string;
   switch (id) {
     case 'taiga':
@@ -983,7 +1024,7 @@ function furs(e: Env): void {
     a = 0.3;
     v = 'seals';
   }
-  if (a > 0 && v) put(e, FURS, a, v);
+  if (here && a > 0 && v) put(e, FURS, a, v);
   if (zt === MOUNTAINS && b.belt === BOREAL) deposit(e, FURS, D.muskDeer, 0.03, 'musk deer');
 }
 
@@ -1056,21 +1097,22 @@ export function wealthOf(amount: number[]): number {
   return s;
 }
 
-function finish(patch: number, ocean: boolean, bedrock: number, amount: number[], variant: string[], site: PatchSite): PatchResources {
+function finish(patch: number, ocean: boolean, bedrock: number, amount: number[], variant: string[], site: PatchSite, prosperity: number): PatchResources {
   const list: ResourceHit[] = [];
   for (let r = 0; r < amount.length; r++) {
     if (amount[r] >= MIN_AMOUNT) list.push({ resource: r, amount: amount[r], variant: variant[r] });
     else if (amount[r] <= 0) variant[r] = '';
   }
   list.sort((a, b) => b.amount - a.amount || a.resource - b.resource);
-  return { patch, ocean, bedrock, amount, variant, list, food: foodOf(amount), wealth: wealthOf(amount), site };
+  return { patch, ocean, bedrock, amount, variant, list, food: foodOf(amount), wealth: wealthOf(amount), prosperity, boost: prosperityBoost(prosperity), site };
 }
 
 /**
  * The resources of a land patch from its biome record, the (merged) elevation zone it
- * lies in, that zone's bedrock and its river and lake site. A pure function.
+ * lies in, that zone's bedrock, its river and lake site and the prosperity there (0–1; the
+ * middle, 0.5, leaves every chance as it is). A pure function.
  */
-export function landResources(seed: number, b: BiomeInfo, zone: number, bedrock: number, site: PatchSite): PatchResources {
+export function landResources(seed: number, b: BiomeInfo, zone: number, bedrock: number, site: PatchSite, prosperity = 0.5): PatchResources {
   const zt = b.zoneType;
   const gain = SEASON_GAIN * (24 - b.t0);
   const e: Env = {
@@ -1087,6 +1129,7 @@ export function landResources(seed: number, b: BiomeInfo, zone: number, bedrock:
     irr: (site.river > 1 ? IRRIGATION_MM * (Math.min(site.river, IRRIGATION_FULL) - 1) * IRRIGATION_ZONE[zt] : 0) + (site.lake > 0 ? 2 * IRRIGATION_MM : 0),
     highland: b.t0 >= BELTS[TROPICAL].min && b.belt === TEMPERATE,
     floodplain: site.river >= 1 && zt <= LOWLAND,
+    boost: prosperityBoost(prosperity),
     amount: RESOURCES.map(() => 0),
     variant: RESOURCES.map(() => ''),
   };
@@ -1111,15 +1154,16 @@ export function landResources(seed: number, b: BiomeInfo, zone: number, bedrock:
   furs(e);
   dyes(e);
   horses(e);
-  return finish(b.key, false, bedrock, e.amount, e.variant, site);
+  return finish(b.key, false, bedrock, e.amount, e.variant, site, prosperity);
 }
 
 /**
  * The resources of an ocean patch: fish everywhere (more on the shelf, next to land), and
  * on the shelf seaweed, seals and whales in cold water, pearls and coral in warm water.
- * `t0` is the sea-level temperature at its site.
+ * `t0` is the sea-level temperature at its site, `prosperity` (0–1) makes the pearls, the
+ * coral and the seals and whales more or less frequent.
  */
-export function oceanResources(seed: number, patch: number, t0: number, shelf: boolean): PatchResources {
+export function oceanResources(seed: number, patch: number, t0: number, shelf: boolean, prosperity = 0.5): PatchResources {
   const amount = RESOURCES.map(() => 0);
   const variant = RESOURCES.map(() => '');
   const set = (r: number, a: number, v: string) => {
@@ -1128,20 +1172,23 @@ export function oceanResources(seed: number, patch: number, t0: number, shelf: b
       variant[r] = v;
     }
   };
+  const boost = prosperityBoost(prosperity);
+  // seals and whales: in some patches of the cold sea, more of them where it is prosperous
+  const furs = unit(seed, ST_FUR, patch) < FUR_ZONES * boost;
   const roll = (r: number, kind: D, chance: number, v: string) => {
-    if (unit(seed, ST_DEPOSIT + kind, patch) < chance) set(r, 0.35 + 0.65 * unit(seed, ST_RICH + kind, patch), v);
+    if (unit(seed, ST_DEPOSIT + kind, patch) < chance * boost) set(r, 0.35 + 0.65 * unit(seed, ST_RICH + kind, patch), v);
   };
   if (shelf) {
     set(FISH, 0.9, t0 < 4 ? 'cod banks' : t0 < 11 ? 'herring' : t0 < 18 ? 'sardine and anchovy' : 'reef fish and shellfish');
     if (t0 < 12) set(WILD, 0.3, 'edible seaweed and kelp');
-    if (t0 < 3) set(FURS, 0.4, 'seals');
+    if (t0 < 3 && furs) set(FURS, 0.4, 'seals');
     if (t0 >= 20) roll(GEMS, D.seaPearl, 0.05, 'pearl oyster');
     else if (t0 >= 11) roll(GEMS, D.seaCoral, 0.03, 'precious red coral');
   } else {
     set(FISH, 0.5, t0 < 8 ? 'cod banks' : t0 < 16 ? 'herring' : 'tuna and large pelagics');
-    if (t0 < 6) set(FURS, 0.3, 'whales');
+    if (t0 < 6 && furs) set(FURS, 0.3, 'whales');
   }
-  return finish(patch, true, -1, amount, variant, NO_SITE);
+  return finish(patch, true, -1, amount, variant, NO_SITE, prosperity);
 }
 
 // ------------------------------------------------------------------ the layer
@@ -1161,12 +1208,21 @@ export class Resources {
     readonly rivers: Rivers,
     readonly lakes: Lakes,
     readonly biomes: Biomes,
+    /** the climate whose prosperity map sets how often precious metals, gems and luxuries turn up */
+    readonly climate: Climate,
     private readonly siteCache = new Map<number, Map<number, PatchSite>>(),
   ) {}
 
   /** The same layer on other Biomes (the map's, at exact patch heights), sharing the river and lake sites. */
   withBiomes(biomes: Biomes): Resources {
-    return new Resources(this.world, this.rivers, this.lakes, biomes, this.siteCache);
+    return new Resources(this.world, this.rivers, this.lakes, biomes, this.climate, this.siteCache);
+  }
+
+  /** The prosperity map at a point, 0–1 between its minimum and maximum (0.5 when the map is flat). */
+  prosperityAt(x: number, y: number): number {
+    const p = this.climate.p.prosperity;
+    const span = p.max - p.min;
+    return span > 0 ? sat((this.climate.prosperityAt(x, y) - p.min) / span) : 0.5;
   }
 
   /** Bedrock (index into BEDROCKS) of an elevation zone (merged root); −1 for ocean. */
@@ -1183,8 +1239,10 @@ export class Resources {
     if (hit) return hit;
     const info = this.biomes.ofPatch(c.patch);
     let r: PatchResources;
-    if (c.ocean) r = oceanResources(w.p.seed, c.patch, info.t0, this.touchesLand(c.patch));
-    else r = landResources(w.p.seed, info, c.elevationZone, bedrockOf(w.p.seed, c.elevationZone, info.zoneType), this.sites(c.region).get(c.patch) ?? NO_SITE);
+    // the prosperity is read at the patch's site, like its climate
+    const prosperity = this.prosperityAt(info.x, info.y);
+    if (c.ocean) r = oceanResources(w.p.seed, c.patch, info.t0, this.touchesLand(c.patch), prosperity);
+    else r = landResources(w.p.seed, info, c.elevationZone, bedrockOf(w.p.seed, c.elevationZone, info.zoneType), this.sites(c.region).get(c.patch) ?? NO_SITE, prosperity);
     // an estimated height may still change: keep only what is final
     if (c.ocean || info.heightExact || !this.biomes.terrain) {
       if (this.cache.size >= CACHE) this.cache.clear();

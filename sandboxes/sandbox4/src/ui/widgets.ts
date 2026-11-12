@@ -196,6 +196,7 @@ function resourceRows(r: PatchResources, estimated: boolean): string {
     html += `<div class="kv" title="${esc(t.name)} · ${group} · ${KIND_TEXT[t.kind]} (0–1) · ${t.value} good"><span><i class="res-dot" style="background:${GROUP_COLORS[t.group]}"></i>${esc(t.name)}</span><b>${esc(h.variant)} · ${h.amount.toFixed(2)}</b></div>`;
   }
   if (!r.list.length) html += `<div class="kv" title="No resource reaches an amount of ${MIN_AMOUNT}"><span>Resources</span><b>none</b></div>`;
+  html += `<div class="kv" title="The prosperity map at the patch’s site, from 0 (its minimum) to 1 (its maximum), and the factor it puts on how often gold, silver &amp; lead, gems &amp; pearls and the luxuries (spices, stimulants, dyes, furs and ivory) turn up: (2 × prosperity)² [clim.pros.*]"><span>Prosperity · rare finds</span><b>${r.prosperity.toFixed(2)} · × ${r.boost.toFixed(2)}</b></div>`;
   if (!r.ocean) {
     html += `<div class="kv" title="Food a settlement can count on from this patch (grain or roots, herds, orchards, game), and its trade goods by value (salt, ores, gems, luxuries, cash crops): what the resources factor of the locations reads${estimated ? '. The terrain tile is not computed yet: these follow a typical height for the elevation zone type' : ''}"><span>Food · trade goods</span><b>${r.food.toFixed(2)} · ${r.wealth.toFixed(2)}${estimated ? ' · est. height' : ''}</b></div>`;
   }

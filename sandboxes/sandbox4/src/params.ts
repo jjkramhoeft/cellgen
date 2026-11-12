@@ -419,11 +419,11 @@ export const CLIMATE_KEYS = new Set(CLIMATE_SECTIONS.flatMap((sec) => sec.params
 /** Precipitation keys: they also feed the rivers (river-poor dry flat zones). */
 export const PRECIP_KEYS = new Set([...CLIMATE_KEYS].filter((k) => k.startsWith('clim.p.')));
 
-/** Prosperity map: Perlin noise like the climate. It feeds only the city and town locations (no biome or river rebuild). */
+/** Prosperity map: Perlin noise like the climate. It feeds the resources and the city and town locations (no biome or river rebuild). */
 export const PROSPERITY_SECTION: Section = climateSection(
   'pros',
   'Prosperity',
-  'Prosperity map (unitless index, 1 to 100 by default): fBm of Perlin noise with its own seed, independent of the climate and the map. It is one of the five factors of the city and town locations. Shown with Display → Prosperity overlay and in the inspector.',
+  'Prosperity map (unitless index, 1 to 100 by default): fBm of Perlin noise with its own seed, independent of the climate and the map. It sets how often the valuable resources turn up (gold, silver & lead, gems & pearls, spices, stimulants, dyes, furs and ivory: a quarter as often at a quarter of the range, 2.25 times as often at three quarters) and it is one of the five factors of the city and town locations. Shown with Display → Prosperity overlay and in the inspector.',
   '',
   0,
   1000,

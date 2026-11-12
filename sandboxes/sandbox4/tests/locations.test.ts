@@ -198,7 +198,7 @@ describe('city and town locations', { timeout: 120_000 }, () => {
     expect(richGoods / rich).toBeGreaterThan(poorGoods / poor + 0.25);
     // the locations read their own layer, or one passed in on the same biomes
     const [r] = landRegions(w, 1);
-    const shared = new Resources(w, rv, lk, bio);
+    const shared = new Resources(w, rv, lk, bio, cl);
     expect(digest(new Locations(w, rv, lk, bio, cl, loc.p, shared).get(r))).toEqual(digest(loc.get(r)));
     expect(() => new Locations(w, rv, lk, bio, cl, loc.p, shared.withBiomes(new Biomes(w, rv, cl, null, bio.p)))).toThrow(/own Biomes/);
   });

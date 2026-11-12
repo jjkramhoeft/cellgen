@@ -7,7 +7,7 @@ import { Biomes, BIOMES, classify, type BiomeId, type BiomeInfo } from '../src/w
 import { Climate } from '../src/world/climate';
 import { Lakes } from '../src/world/lakes';
 import { keyI, keyJ, packKey } from '../src/world/level';
-import { BEDROCKS, bedrockOf, foodOf, landResources, MIN_AMOUNT, oceanResources, resourceIndex, RESOURCES, Resources, wealthOf, type BedrockId, type PatchResources, type PatchSite, type ResourceId } from '../src/world/resources';
+import { BEDROCKS, bedrockOf, foodOf, landResources, MIN_AMOUNT, oceanResources, PROSPERITY_RESOURCES, prosperityBoost, resourceIndex, RESOURCES, Resources, wealthOf, type BedrockId, type PatchResources, type PatchSite, type ResourceId } from '../src/world/resources';
 import { Rivers } from '../src/world/rivers';
 import { Terrain } from '../src/world/terrain';
 import { World } from '../src/world/world';
@@ -22,7 +22,7 @@ function setup(over: Params = {}, seed = SEED) {
   const cl = new Climate(toClimateParams(p, seed));
   const bio = new Biomes(w, rv, cl, null, toBiomeParams(p));
   const lk = new Lakes(w, rv, bio, toLakeParams(p));
-  const res = new Resources(w, rv, lk, bio);
+  const res = new Resources(w, rv, lk, bio, cl);
   return { p, w, rv, cl, bio, lk, res };
 }
 
@@ -42,6 +42,8 @@ const ROCK = (id: BedrockId) => BEDROCKS.findIndex((b) => b.id === id);
 const biomeId = (b: BiomeInfo): BiomeId => BIOMES[b.biome].id;
 const listed = (r: PatchResources, id: ResourceId) => r.list.find((h) => h.resource === R(id));
 const SITE: PatchSite = { river: 0, mouth: 0, lake: 0, harbour: false, goldLoad: 0, tinLoad: 0 };
+/** Poor, middling and rich land on the prosperity map. */
+const levels3 = [0.2, 0.5, 0.8];
 
 /** A biome record for a made-up land patch: sea-level temperature t0, temperature t, precipitation p, zone type. */
 function info(t: number, p: number, zone: string, over: Partial<BiomeInfo> = {}): BiomeInfo {
@@ -278,10 +280,121 @@ describe('patch resources', { timeout: 120_000 }, () => {
     for (const id of ['livestock', 'clay', 'timber', 'fuel'] as const) expect(share(id)).toBeGreaterThan(0.5);
   });
 
+  it('prosperity sets how often gold, silver, gems and luxuries turn up, and nothing else', () => {
+    expect(prosperityBoost(0.5)).toBe(1);
+    expect(prosperityBoost(0.25)).toBe(0.25);
+    expect(prosperityBoost(0.75)).toBe(2.25);
+    expect(prosperityBoost(1)).toBe(4);
+    expect(prosperityBoost(0)).toBe(0);
+    expect(prosperityBoost(-3)).toBe(0);
+    expect(prosperityBoost(7)).toBe(4);
+    expect(PROSPERITY_RESOURCES.slice().sort()).toEqual(['dyes', 'furs', 'gems', 'gold', 'silverLead', 'spices', 'stimulants']);
+
+    // the same patches in poor, middling and rich land: fold-belt mountains (lodes, veins, gems),
+    // (and bears), carbonate hills (lead and zinc) and a savanna plain (spices, sugar, dyes, ivory)
+    const cases: [BiomeInfo, BedrockId][] = [
+      [info(9, 900, 'mountains'), 'foldBelt'],
+      [info(11, 800, 'hills'), 'carbonate'],
+      [info(25, 1000, 'lowland'), 'clastic'],
+    ];
+    const levels = [0.2, 0.5, 0.8];
+    const count = levels.map(() => RESOURCES.map(() => 0));
+    const follows = new Set(PROSPERITY_RESOURCES.map(R));
+    for (const [base, rock] of cases) {
+      for (let k = 0; k < 700; k++) {
+        const b = { ...base, key: packKey(k, 21) };
+        const at = levels.map((pr) => landResources(SEED, b, packKey(k, 11), ROCK(rock), { ...SITE, river: 3 }, pr));
+        at.forEach((r, l) => {
+          expect(r.prosperity).toBe(levels[l]);
+          expect(r.boost).toBe(prosperityBoost(levels[l]));
+          // honey is everywhere and cheap: not a find
+          for (const h of r.list) if (h.variant !== 'honey and beeswax') count[l][h.resource]++;
+        });
+        for (let res = 0; res < RESOURCES.length; res++) {
+          if (follows.has(res)) {
+            // richer land never loses a find, and never has less of it
+            expect(at[1].amount[res]).toBeGreaterThanOrEqual(at[0].amount[res]);
+            expect(at[2].amount[res]).toBeGreaterThanOrEqual(at[1].amount[res]);
+          } else {
+            expect(at[0].amount[res]).toBe(at[1].amount[res]);
+            expect(at[2].amount[res]).toBe(at[1].amount[res]);
+            expect(at[0].variant[res]).toBe(at[2].variant[res]);
+          }
+        }
+        // the middle of the prosperity map is the default: every chance as it is
+        expect(at[1].amount).toEqual(landResources(SEED, b, packKey(k, 11), ROCK(rock), { ...SITE, river: 3 }).amount);
+      }
+    }
+    for (const id of PROSPERITY_RESOURCES) {
+      const [poor, mid, rich] = levels.map((_, l) => count[l][R(id)]);
+      expect(mid).toBeGreaterThan(10);
+      expect(poor).toBeLessThan(0.6 * mid);
+      expect(rich).toBeGreaterThan(1.4 * mid);
+    }
+
+    // on the map: read at the patch's site, and the rich third of the land holds most of the finds
+    const s = setup();
+    const all = survey(s, landRegions(s.w, 40, 600000));
+    const pros = s.cl.p.prosperity;
+    const rare = (r: PatchResources) => r.list.filter((h) => follows.has(h.resource) && h.variant !== 'honey and beeswax').length;
+    for (const { r, b } of all) {
+      expect(r.prosperity).toBe(s.res.prosperityAt(b.x, b.y));
+      expect(r.prosperity).toBeCloseTo((s.cl.prosperityAt(b.x, b.y) - pros.min) / (pros.max - pros.min), 12);
+      expect(r.boost).toBe(prosperityBoost(r.prosperity));
+    }
+    const sorted = all.slice().sort((x, y) => x.r.prosperity - y.r.prosperity);
+    const third = Math.floor(sorted.length / 3);
+    const finds = (rows: typeof all) => rows.reduce((a, x) => a + rare(x.r), 0);
+    const poorest = finds(sorted.slice(0, third));
+    const richest = finds(sorted.slice(sorted.length - third));
+    expect(richest).toBeGreaterThan(100);
+    expect(richest).toBeGreaterThan(2.5 * poorest);
+    // pearls, seals and whales follow it at sea too
+    let poorSea = 0;
+    let richSea = 0;
+    let poorSeals = 0;
+    let midSeals = 0;
+    for (let k = 0; k < 600; k++) {
+      if (listed(oceanResources(SEED, packKey(k, 5), 1, true, 0.2), 'furs')) poorSeals++;
+      if (listed(oceanResources(SEED, packKey(k, 5), 1, true, 0.5), 'furs')) midSeals++;
+      expect(listed(oceanResources(SEED, packKey(k, 5), 1, true, 0.8), 'furs')?.variant).toBe('seals');
+      if (listed(oceanResources(SEED, packKey(k, 5), 25, true, 0.2), 'gems')) poorSea++;
+      if (listed(oceanResources(SEED, packKey(k, 5), 25, true, 0.8), 'gems')) richSea++;
+    }
+    expect(richSea).toBeGreaterThan(4 * poorSea + 10);
+    expect(poorSeals).toBeLessThan(90);
+    expect(midSeals).toBeGreaterThan(240);
+    expect(midSeals).toBeLessThan(360);
+  });
+
+  it('furs are a regional speciality of the cold lands: by zone, in more zones where the land is prosperous', () => {
+    const taiga = info(0, 600, 'lowland');
+    expect(BIOMES[taiga.biome].id).toBe('taiga');
+    const share = levels3.map((pr) => {
+      let n = 0;
+      for (let z = 0; z < 600; z++) {
+        // every patch of a zone agrees: the zone has fur animals or it has not
+        const a = listed(landResources(SEED, { ...taiga, key: packKey(z, 1) }, packKey(z, 40), ROCK('shield'), SITE, pr), 'furs');
+        const b = listed(landResources(SEED, { ...taiga, key: packKey(z, 2) }, packKey(z, 40), ROCK('shield'), SITE, pr), 'furs');
+        expect(!!a).toBe(!!b);
+        if (a) {
+          expect(a.amount).toBe(0.85);
+          n++;
+        }
+      }
+      return n / 600;
+    });
+    expect(share[0]).toBeLessThan(0.15);
+    expect(share[1]).toBeGreaterThan(0.4);
+    expect(share[1]).toBeLessThan(0.6);
+    expect(share[2]).toBe(1);
+  });
+
   it('gives ocean patches fish, more on the shelf, and the right catch for the water', () => {
-    const shelf = oceanResources(SEED, packKey(2, 2), 2, true);
-    const open = oceanResources(SEED, packKey(2, 2), 2, false);
-    const warm = oceanResources(SEED, packKey(2, 2), 25, true);
+    // at the top of the prosperity map every cold patch has its seals or whales
+    const shelf = oceanResources(SEED, packKey(2, 2), 2, true, 1);
+    const open = oceanResources(SEED, packKey(2, 2), 2, false, 1);
+    const warm = oceanResources(SEED, packKey(2, 2), 25, true, 1);
     expect(shelf.ocean).toBe(true);
     expect(shelf.bedrock).toBe(-1);
     expect(shelf.amount[R('fish')]).toBeGreaterThan(open.amount[R('fish')]);
@@ -355,14 +468,14 @@ describe('patch resources', { timeout: 120_000 }, () => {
       const b = exact.ofPatch(pk);
       expect(b.heightExact).toBe(true);
       const r = onMap.ofPatch(pk);
-      expect(r.amount).toEqual(landResources(s.w.p.seed, b, s.w.patchCell(pk).elevationZone, r.bedrock, r.site).amount);
+      expect(r.amount).toEqual(landResources(s.w.p.seed, b, s.w.patchCell(pk).elevationZone, r.bedrock, r.site, r.prosperity).amount);
       if (r.amount.some((a, i) => a !== before[k][i])) changed++;
     }
     // exact heights move the climate of some patches, and with it their crops
     expect(changed).toBeGreaterThan(0);
     // the terrain-less layer never changes as tiles arrive
     expect(patches.map((pk) => s.res.ofPatch(pk).amount)).toEqual(before);
-    expect(patches.map((pk) => new Resources(s.w, s.rv, s.lk, s.bio).ofPatch(pk).amount)).toEqual(before);
+    expect(patches.map((pk) => new Resources(s.w, s.rv, s.lk, s.bio, s.cl).ofPatch(pk).amount)).toEqual(before);
   });
 
   it('any key of a merged patch gives the resources of its root', () => {

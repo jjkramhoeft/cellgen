@@ -33,6 +33,7 @@
               "precipitation": 820,
               "height": 152,
               "coastal": false,
+              "prosperity": 0.58,
               "resources": [
                 { "id": "grain", "amount": 0.95, "variant": "bread wheat" },
                 { "id": "timber", "amount": 0.9, "variant": "oak" },
@@ -56,6 +57,7 @@
               "precipitation": 610,
               "height": 131,
               "coastal": false,
+              "prosperity": 0.55,
               "resources": [
                 { "id": "grain", "amount": 0.85, "variant": "barley" },
                 { "id": "livestock", "amount": 0.7, "variant": "sheep" },
@@ -78,6 +80,7 @@
               "precipitation": 350,
               "height": 118,
               "coastal": true,
+              "prosperity": 0.61,
               "resources": [
                 { "id": "livestock", "amount": 1, "variant": "cattle" },
                 { "id": "horses", "amount": 0.9, "variant": "horses" },
@@ -112,6 +115,7 @@
               "precipitation": 780,
               "height": 620,
               "coastal": false,
+              "prosperity": 0.47,
               "resources": [
                 { "id": "stone", "amount": 0.92, "variant": "slate" },
                 { "id": "timber", "amount": 0.8, "variant": "fir" },
@@ -134,6 +138,7 @@
               "precipitation": 900,
               "height": 1450,
               "coastal": false,
+              "prosperity": 0.44,
               "resources": [
                 { "id": "stone", "amount": 0.88, "variant": "slate" },
                 { "id": "furs", "amount": 0.85, "variant": "sable and marten" },
@@ -155,6 +160,7 @@
               "precipitation": 700,
               "height": 2300,
               "coastal": false,
+              "prosperity": 0.41,
               "resources": [
                 { "id": "stone", "amount": 0.75, "variant": "marble" },
                 { "id": "furs", "amount": 0.5, "variant": "fox and Arctic fox" },
@@ -187,6 +193,7 @@
               "precipitation": null,
               "height": 0,
               "coastal": false,
+              "prosperity": 0.5,
               "resources": [
                 { "id": "fish", "amount": 0.9, "variant": "herring" },
                 { "id": "wildFood", "amount": 0.3, "variant": "edible seaweed and kelp" }
@@ -206,6 +213,7 @@
               "precipitation": null,
               "height": 0,
               "coastal": false,
+              "prosperity": 0.52,
               "resources": [
                 { "id": "fish", "amount": 0.5, "variant": "herring" }
               ]
