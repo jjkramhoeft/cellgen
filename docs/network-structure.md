@@ -32,16 +32,16 @@ near the outer edge of the block can have fewer links here than on the map.
 settings when zoomed in. Raising the viability or showing the cities only gives a different
 network, not a subset of this one, because the links are decided among the locations on show.
 
-With the defaults of 2026-11-11:
+With the defaults of 2026-11-12:
 
 | | Block (16 regions) | Core (4 regions) |
 |---|---|---|
-| Nodes | 168 (37 cities, 131 towns) | 32 |
-| Links | 295 (227 road, 41 river, 27 sea) | 52 between two core nodes, 68 touching one |
-| Route length | 10 972 km (7 587 road, 1 509 river, 1 876 sea) | |
+| Nodes | 169 (38 cities, 131 towns) | 31 |
+| Links | 331 (222 road, 77 river, 32 sea) | 54 between two core nodes, 71 touching one |
+| Route length | 12 687 km (7 697 road, 2 836 river, 2 155 sea) | |
 
-The graph is one connected component. A node has 1 to 8 links (median 4). 31 pairs of nodes
-have both a road and a water link, 52 links cross a region border and 4 join two cities. 17
+The graph is one connected component. A node has 1 to 8 links (median 4). 60 pairs of nodes
+have both a road and a water link, 58 links cross a region border and 4 join two cities. 19
 links leave the block and are left out.
 
 Regenerate it with `npm run export-network` (scripts/export-network.ts, about 12 s) after
@@ -104,7 +104,7 @@ the viability threshold are not nodes.
 | `coast`     | The patch borders the ocean: the location has a sea harbour                          |
 | `harbour`   | The coast is that of an enclosed bay (a sheltered harbour)                           |
 | `onRiver`   | The spot is on a river                                                               |
-| `navigable` | The patch's river is navigable (drains at least 20 patches upstream)                 |
+| `navigable` | The patch's river is navigable (drains at least 8 patches upstream)                  |
 | `features`  | What stands out about the place, see below                                           |
 
 `features` holds any of: `mouth of a navigable river`, `river mouth`, `sheltered harbour`,
@@ -230,12 +230,12 @@ has the design reasoning.
 What this means for the graph:
 
 - It is sparse: links only join neighbours under travel cost, and a link that cheaper ones
-  can replace is gone. The default export links 264 pairs of its 168 nodes, about 1.6 per
+  can replace is gone. The default export links 271 pairs of its 169 nodes, about 1.6 per
   node.
-- It is connected wherever travel is possible at all, by road or by water. One node of the
-  default export has water links only; the 15 nodes with a single link all hang on by a road.
+- It is connected wherever travel is possible at all, by road or by water. Three nodes of the
+  default export have water links only; of the 6 nodes with a single link, 5 hang on by a road.
 - It is not a tree. A third link between three neighbours survives when the detour over the
-  other two costs more than 1.6 × as much, which leaves 50 triangles in the default export.
+  other two costs more than 1.6 × as much, which leaves 51 triangles in the default export.
 - The pruning saw the locations outside the block too, so the block is a window on a larger
   network, not a network built for the block alone.
 

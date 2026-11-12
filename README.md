@@ -176,7 +176,7 @@ Every land patch of the region is a candidate and gets five factor scores, each 
 | **Climate** | 15 % | Comfort of the temperature (at the zone type's typical height; best between 4 and 24 °C) and of the aridity |
 | **Prosperity** (wealth) | 15 % | The prosperity map at the spot |
 
-**Viability = 100 × need × the weighted mean of the five factors.** `need` is the limiting necessity, min(fresh water, temperature comfort) × 2 capped at 1, so a site with no water or an unlivable temperature scores 0 whatever else it has. A river counts as navigable from 20 patches drained upstream and as large from 80.
+**Viability = 100 × need × the weighted mean of the five factors.** `need` is the limiting necessity, min(fresh water, temperature comfort) × 2 capped at 1, so a site with no water or an unlivable temperature scores 0 whatever else it has. A river counts as navigable from 8 patches drained upstream and as large from 80.
 
 **Selection**, inside one region (so it is order-independent): candidates need a score above 0 and must not touch another region's land, which keeps locations apart across region borders without reading the neighbour. First up to **4 cities**: the best scores that lie at least two patches inside the region and 2.5 × the spacing apart. Then **towns**, best first, each at least the **spacing** (20 km) from every location chosen so far. When that leaves fewer than 20, the spacing is relaxed step by step (down to one patch size) and the towns are picked again; regions with little habitable land end up with fewer. Each location sits on its patch's river (at the mouth, or where the river is largest, never in a lake) or else at the patch's site. The count, the number of cities, the spacing and the five weights are settings (left panel, **City & town locations**).
 
@@ -191,7 +191,7 @@ A **travel network** connects the cities and towns that are on show (those at or
 | Kind | Where | Cost, in km of open flat road |
 |---|---|---|
 | **Road** | Any land | Per km: elevation zone type (flat 1, lowland 1.15, hills 1.8, **mountains 4**) × biome (grassland 1, forest 1.3, rainforest 2.2, mangrove 3, **deserts 3.5–4, ice 5**) × slope (1 + (slope / 5 %)², at most 13 ×) × height (twice at 1 500 m) × 8 across a lake; + 3 km to cross a navigable river |
-| **River route** | Navigable rivers (20 patches drained upstream, as for the locations) | 0.4 per km, + 6 km at each end for loading |
+| **River route** | Navigable rivers (8 patches drained upstream, as for the locations) | 0.4 per km, + 6 km at each end for loading |
 | **Sea lane** | Open sea, from the harbour of every coastal location and through every river mouth up the navigable rivers | 0.3 per km (0.6 right at the shore, so lanes keep clear of capes), + 12 km at each end |
 
 All of it runs on a **2 km grid** per region, which needs no terrain tile: heights are estimated the way the height map builds them, coarsely (river beds rise upstream from the sea by the stream-power law, the land rises from every river and the coast at its zone type's hillslope). So rivers are the valleys and region borders the ridges, as in the height map, and the network never changes as tiles arrive.

@@ -233,7 +233,7 @@ function locationRows(c: Candidate, l: Location | null, rl: RegionLocations, lp:
     html += `<div class="kv" title="Necessities: the score is scaled by min(water, temperature comfort) × 2, capped at 1"><span>Limited by</span><b>${what} · × ${c.need.toFixed(2)}</b></div>`;
   }
   if (c.features.length) html += `<div class="kv" title="${esc(c.features.join(', '))}"><span>Stands out</span><b>${esc(c.features.join(', '))}</b></div>`;
-  if (c.river > 0) html += `<div class="kv" title="The largest river in the patch: patches it drains upstream (navigable from 20, large from 80)${c.mouth > 0 ? '; it meets the sea here' : ''}"><span>River</span><b>${c.river.toFixed(1)} patches upstream${c.mouth > 0 ? ' · mouth' : ''}</b></div>`;
+  if (c.river > 0) html += `<div class="kv" title="The largest river in the patch: patches it drains upstream (navigable from 8, large from 80)${c.mouth > 0 ? '; it meets the sea here' : ''}"><span>River</span><b>${c.river.toFixed(1)} patches upstream${c.mouth > 0 ? ' · mouth' : ''}</b></div>`;
   html += `<div class="kv" title="The spot: on the patch’s river (its mouth, or where it is largest) when it has one, otherwise the patch’s site"><span>Spot</span><b>${(c.x / 1000).toFixed(1)}, ${(c.y / 1000).toFixed(1)} km · ${c.onRiver ? 'on the river' : 'patch site'}</b></div>`;
   return html + '</div>';
 }

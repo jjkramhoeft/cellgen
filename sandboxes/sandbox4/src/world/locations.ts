@@ -150,7 +150,7 @@ export const CITY_DEPTH = 2;
 /** The spacing is relaxed by this factor per round, down to one patch size. */
 const RELAX = 0.85;
 /** A river is navigable / large from this many patches drained upstream. */
-export const NAVIGABLE = 20;
+export const NAVIGABLE = 8;
 export const BIG_RIVER = 80;
 /** One day of travel on open flat land, km: the distance scale of the central-place term. */
 const DAY_KM = 35;
