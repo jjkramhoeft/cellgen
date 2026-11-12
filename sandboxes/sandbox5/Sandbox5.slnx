@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Sandbox5.Api/Sandbox5.Api.csproj" />
+    <Project Path="src/Sandbox5.Domain/Sandbox5.Domain.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Sandbox5.Tests/Sandbox5.Tests.csproj" />
+  </Folder>
+</Solution>

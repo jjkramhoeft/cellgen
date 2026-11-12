@@ -13,6 +13,7 @@
     "new-sandbox": "node scripts/new-sandbox.mjs",
     "export-map": "node scripts/export-map.mjs",
     "export-network": "node scripts/export-network.mjs",
+    "export-sandbox5-golden": "node scripts/export-sandbox5-golden.mjs",
     "biome-chart": "node scripts/biome-chart.mjs"
   },
   "devDependencies": {

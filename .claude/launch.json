@@ -4,8 +4,28 @@
     {
       "name": "cellgen-dev",
       "runtimeExecutable": "npx",
-      "runtimeArgs": ["vite", "--port", "5174", "--strictPort"],
+      "runtimeArgs": [
+        "vite",
+        "--port",
+        "5174",
+        "--strictPort"
+      ],
       "port": 5174
+    },
+    {
+      "name": "sandbox5-api",
+      "runtimeExecutable": "dotnet",
+      "runtimeArgs": [
+        "run",
+        "--project",
+        "sandboxes/sandbox5/src/Sandbox5.Api",
+        "-c",
+        "Release",
+        "--no-launch-profile",
+        "--urls",
+        "http://localhost:5250"
+      ],
+      "port": 5250
     }
   ]
 }

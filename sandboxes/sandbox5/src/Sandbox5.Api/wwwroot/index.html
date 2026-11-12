@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Sandbox 5 · Map service · cellgen</title>
+    <meta name="description" content="Sandbox 5: the cellgen world map generated in C#, served as PNG tiles and JSON, with a pan and zoom viewer and a data inspector." />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath fill='%2321918c' d='M16 2l12 7v14l-12 7-12-7V9z'/%3E%3Cpath fill='%23fde725' d='M16 9l6 3.5v7L16 23l-6-3.5v-7z'/%3E%3C/svg%3E" />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <header id="topbar">
+      <a class="brand" href="./" title="Sandbox 5">
+        <svg viewBox="0 0 32 32" width="22" height="22" aria-hidden="true"><path fill="#21918c" d="M16 2l12 7v14l-12 7-12-7V9z" /><path fill="#fde725" d="M16 9l6 3.5v7L16 23l-6-3.5v-7z" /></svg>
+        <span class="name">cellgen</span>
+        <span class="tag">Sandbox 5 · Map service (C#)</span>
+      </a>
+      <div class="group">
+        <label class="seed" title="World seed: the same seed always gives the same map"><span>Seed</span><input id="seed" type="text" spellcheck="false" autocomplete="off" maxlength="64" /></label>
+        <button class="btn icon" id="random" title="Random seed (R)" aria-label="Random seed">⚄</button>
+        <button class="btn" id="default-seed" title="Back to the seed of defaults.json">Default</button>
+      </div>
+      <div class="group">
+        <label class="inline" for="color">Colour by</label>
+        <select id="color" title="Colour mode (keys 1–9, [ and ])"></select>
+      </div>
+      <div class="group right">
+        <span id="busy" class="busy" hidden>generating…</span>
+        <button class="btn" id="share" title="Copy a link to this view">Share link</button>
+        <a class="btn" id="png" target="_blank" rel="noopener" title="This view as one PNG from the API">PNG</a>
+        <a class="btn" href="api" target="_blank" rel="noopener" title="The REST API index (JSON)">API</a>
+        <button class="btn icon" id="help-btn" title="Help (?)" aria-label="Help">?</button>
+      </div>
+    </header>
+
+    <aside id="left" class="panel">
+      <section class="sec static">
+        <div class="sec-head"><h3>Layers</h3></div>
+        <div class="sec-body" id="layers"></div>
+      </section>
+      <section class="sec static">
+        <div class="sec-head"><h3>Legend</h3></div>
+        <div class="sec-body">
+          <p class="sec-help" id="mode-help"></p>
+          <div id="legend" class="legend"></div>
+          <div class="legend" id="legend-features"></div>
+        </div>
+      </section>
+      <section class="sec static">
+        <div class="sec-head"><h3>Map</h3></div>
+        <div class="sec-body">
+          <div class="kv"><span>Seed value</span><b id="seed-value">–</b></div>
+          <div class="kv"><span>Fingerprint</span><b id="fingerprint" title="FNV-1a over the cells and oceans on a fixed grid around the origin: equal to Sandbox 4's for the same seed and parameters">–</b></div>
+          <div class="kv"><span>Settings</span><b><a href="api/settings" target="_blank" rel="noopener">defaults.json</a></b></div>
+          <div class="kv"><span>Catalogues</span><b><a href="api/catalog" target="_blank" rel="noopener">api/catalog</a></b></div>
+        </div>
+      </section>
+    </aside>
+
+    <main id="stage">
+      <div id="map" tabindex="0" aria-label="Map: drag to pan, scroll to zoom, click to inspect">
+        <div id="tiles"></div>
+        <div id="pin-marker" hidden></div>
+      </div>
+      <div id="zoom-box">
+        <button class="btn icon" id="zoom-in" title="Zoom in (+)" aria-label="Zoom in">+</button>
+        <button class="btn icon" id="zoom-out" title="Zoom out (−)" aria-label="Zoom out">−</button>
+        <button class="btn icon" id="home" title="Back to the origin (0)" aria-label="Origin">⌂</button>
+      </div>
+      <div id="note" hidden></div>
+      <div id="scale"><i></i><span></span></div>
+      <footer id="status">
+        <span id="st-pos">–</span>
+        <span id="st-zoom">–</span>
+        <span id="st-hover" class="muted"></span>
+      </footer>
+    </main>
+
+    <aside id="right" class="panel">
+      <section class="sec static">
+        <div class="sec-head">
+          <h3>Inspector</h3>
+          <span class="head-tools">
+            <button class="btn small" id="raw-toggle" title="Show the JSON the API returned for this point" hidden>JSON</button>
+            <button class="btn small" id="unpin" title="Clear the selection (Esc)" hidden>Clear</button>
+          </span>
+        </div>
+        <div class="sec-body" id="inspector">
+          <p class="muted empty">Click the map to inspect a point: its region, elevation zone and patch, the biome with its climate and height, the resources, and the river, lake or location there.</p>
+        </div>
+      </section>
+    </aside>
+
+    <dialog id="help">
+      <h2>Sandbox 5 · Map service</h2>
+      <p>The cellgen world map, generated on the server by a C# domain model and delivered through a REST API: map images as PNG tiles and map data as JSON. This page is a small viewer on top of that API.</p>
+      <h3>Map</h3>
+      <ul>
+        <li><b>Drag</b> to pan, <b>scroll</b> or <kbd>+</kbd> <kbd>−</kbd> to zoom, <b>click</b> to inspect a point.</li>
+        <li><kbd>0</kbd> origin · arrows pan · <kbd>R</kbd> random seed · <kbd>1</kbd>–<kbd>9</kbd> colour mode · <kbd>[</kbd> <kbd>]</kbd> previous / next colour mode.</li>
+        <li><kbd>B</kbd> zone borders · <kbd>N</kbd> patch borders · <kbd>V</kbd> rivers · <kbd>C</kbd> locations · <kbd>P</kbd> travel network · <kbd>H</kbd> hillshade · <kbd>Esc</kbd> clear the selection.</li>
+      </ul>
+      <h3>API</h3>
+      <ul>
+        <li><code>GET api/map/tiles/{z}/{x}/{y}.png</code> and <code>api/map/image.png</code>: map images.</li>
+        <li><code>GET api/map/at?x=&amp;y=</code>: everything at a point (what the inspector shows).</li>
+        <li><code>GET api/map/regions/{i},{j}</code>, <code>…/rivers</code>, <code>…/lakes</code>, <code>…/locations</code>, <code>…/travel</code>: one region's data.</li>
+        <li><code>GET api/map/structure</code> and <code>api/map/network</code>: the exports documented in <code>docs/</code>.</li>
+        <li>The full list: <a href="api" target="_blank" rel="noopener">api</a>.</li>
+      </ul>
+      <div class="dlg-actions"><button class="btn primary" id="help-close">Close</button></div>
+    </dialog>
+
+    <script type="module" src="app.js"></script>
+  </body>
+</html>

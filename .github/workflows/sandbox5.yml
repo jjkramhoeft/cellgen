@@ -1,0 +1,26 @@
+name: Sandbox 5 tests
+
+# The C# map service is not deployed with the site; this only runs its tests.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'sandboxes/sandbox5/**'
+      - '.github/workflows/sandbox5.yml'
+  pull_request:
+    paths:
+      - 'sandboxes/sandbox5/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - run: dotnet test sandboxes/sandbox5/Sandbox5.slnx -c Release

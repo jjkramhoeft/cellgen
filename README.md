@@ -4,6 +4,8 @@ Procedural world-map generation in the browser, built from Voronoi cells. The si
 
 **Live site:** <https://jjkramhoeft.github.io/cellgen/>
 
+**Sandbox 5 · Map service** is the same generator in C#, behind a domain model and a REST API that delivers the map as PNG images and as JSON, with a demo site that pans, zooms and inspects it. It runs as a local service and is not part of the site: see [Sandbox 5](#sandbox-5--map-service-c).
+
 Sandboxes 1 to 3 were earlier experiments and have been removed. Sandbox 4 contains everything from Sandbox 3; Sandboxes 1 and 2 remain in the git history.
 
 ## Goal
@@ -45,6 +47,13 @@ npm run preview    # serve the built dist/ locally
 
 Two more scripts write the default world to JSON, see [Exported data](#exported-data).
 
+Sandbox 5 needs the .NET 10 SDK instead:
+
+```bash
+dotnet run --project sandboxes/sandbox5/src/Sandbox5.Api   # http://localhost:5250: demo site and REST API
+dotnet test sandboxes/sandbox5                              # the C# tests (about 20 s)
+```
+
 ## How it is built
 
 - TypeScript and Vite, with no UI framework and no runtime dependencies.
@@ -66,14 +75,17 @@ shared/ui/                  schema-driven parameter panel, HTML escaping, base t
 shared/tests/               tests for the shared core and for the defaults binding
 sandboxes/registry.ts       title, summary and status of every sandbox (the text on the landing page)
 sandboxes/<id>/             one sandbox: index.html, defaults.json, src/, tests/  → served at /sandboxes/<id>/
+sandboxes/sandbox5/         the C# map service: defaults.json, domain model, REST API, demo site, tests
+                            (a .NET solution, not a page of the site; see sandboxes/sandbox5/README.md)
 sandboxes/_template/        skeleton copied by the scaffold script (not built or listed)
 scripts/new-sandbox.mjs     scaffolder
-scripts/export-*.mjs, .ts   write the default map and travel network to docs/ as JSON (see Exported data)
+scripts/export-*.mjs, .ts   write the default map and travel network to docs/ as JSON (see Exported data),
+                            and the golden data the Sandbox 5 tests compare with
 docs/                       structure of the exported map and network (.md) and the exported JSON
 docs/research/              research notes behind the sandboxes
 sandbox3.md                 the original spec of the three-level base map (used by Sandbox 4)
-.github/workflows/          test, build and deploy to GitHub Pages
-.claude/launch.json         dev-server entry for the Claude Code preview (port 5174)
+.github/workflows/          test, build and deploy to GitHub Pages; the Sandbox 5 tests
+.claude/launch.json         dev-server entries for the Claude Code preview (the site on port 5174, Sandbox 5 on 5250)
 ```
 
 `sandbox3.md` and the exported data use older or longer names for two of the levels: the spec's *Biomes* and *Subbiomes* are today's **elevation zones** and **patches**, and the JSON calls a patch a `BiomePatch`.
@@ -287,6 +299,21 @@ Two scripts run the generator outside the browser, at the default seed and setti
 
 A node's `key` in the network file is the key of its patch in the map file. `docs/map-structure.json` is a small hand-written sample of the map structure, not generator output. Run both scripts again after changing `defaults.json` or the generator; nothing checks that the committed files are current.
 
+## Sandbox 5 · Map service (C#)
+
+The Sandbox 4 generator in C#, as a service ([sandboxes/sandbox5/README.md](sandboxes/sandbox5/README.md) has the details):
+
+- **Domain model** (`Sandbox5.Domain`): `WorldMap` → `Region` → `ElevationZone` → `Patch`, with the biomes, resources, bedrocks and zone types as catalogues, and the rivers, lakes, city and town locations and the travel network per region. The generation layers are ports of `sandboxes/sandbox4/src/world` and give **bit-identical results**: the tests compare them with values from the TypeScript generator, down to every height cell, resource amount and travel route, and at Sandbox 4's defaults the C# exports equal `docs/map-default-structure.json` and `docs/network-default-structure.json`.
+- **Settings** in `sandboxes/sandbox5/defaults.json`, in the format every sandbox uses and with **the same values as Sandbox 4's**: the seed and every generation parameter, plus the display defaults the images use. So it starts with the same map as Sandbox 4. The file is validated when it is loaded and re-read when it changes.
+- **REST API** (`Sandbox5.Api`): map images as PNG (`/api/map/tiles/{z}/{x}/{y}.png` and `/api/map/image.png`, drawn like the Sandbox 4 canvas, with colour modes and layers as query parameters) and map data as JSON (`/api/map/at?x=&y=` for a point; a region with its zones and patches, rivers, lakes, locations and travel links; the two documented exports). `/api` lists everything.
+- **Demo site** at the root of the service: a pan and zoom map of the tiles, a layer panel and legend, and an inspector that shows what the API knows about a clicked point.
+
+```bash
+dotnet run --project sandboxes/sandbox5/src/Sandbox5.Api   # then open http://localhost:5250
+```
+
+`npm run export-sandbox5-golden` regenerates the golden data of its tests from the TypeScript generator.
+
 ## Research
 
 The work builds on these notes in `docs/research/`:
@@ -305,4 +332,4 @@ The work builds on these notes in `docs/research/`:
 
 ## Deployment
 
-`.github/workflows/deploy.yml` runs on every push to `main`: it runs the tests, builds, and publishes `dist/` to GitHub Pages. To set it up in a fork, go to **Settings → Pages → Source** in the repository and choose **GitHub Actions**. The build uses a relative base path, so it works under any repository name.
+`.github/workflows/deploy.yml` runs on every push to `main`: it runs the tests, builds, and publishes `dist/` to GitHub Pages. Sandbox 5 is not deployed; `.github/workflows/sandbox5.yml` runs its tests when its files change. To set it up in a fork, go to **Settings → Pages → Source** in the repository and choose **GitHub Actions**. The build uses a relative base path, so it works under any repository name.
