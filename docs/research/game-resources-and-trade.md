@@ -1,6 +1,6 @@
 # Game Resources and Trade: What Games Use, Why, and a Resource Set for the Generator
 
-*Research date: 2026-11-10. Scope: the same question as `patch-resources.md` (what does the land give, and where), asked from a **game-design** point of view. §2 surveys how RPGs, grand strategy, 4X, RTS and city or colony builders choose, place, consume and trade resources. §3 distils a cross-game taxonomy and the typical resource counts. §4 collects the economic-geography ideas that games use or approximate (comparative advantage, transport cost, central places, von Thünen rings, location theory) and how designers applied them. §5 proposes a game-level resource set of 37 resources in three tiers for `sandboxes/sandbox4`, maps it onto the ~370 rows of `patch-resources.md` §4, assigns each to a level of the map hierarchy, and sketches deterministic models for "thriving", deliberate deficits, prices and flows. The constraint carried over from the earlier notes is that the map is infinite, lazily evaluated and bit-exact.*
+*Research date: 2026-11-10. Scope: the same question as `patch-resources.md` (what does the land give, and where), asked from a **game-design** point of view. §2 surveys how RPGs, grand strategy, 4X, RTS and city or colony builders choose, place, consume and trade resources. §3 distils a cross-game taxonomy and the typical resource counts. §4 collects the economic-geography ideas that games use or approximate (comparative advantage, transport cost, central places, von Thünen rings, location theory) and how designers applied them. §5 proposes a game-level resource set of 39 resources in three tiers for `sandboxes/sandbox4`, maps it onto the ~370 rows of `patch-resources.md` §4, assigns each to a level of the map hierarchy, and sketches deterministic models for "thriving", deliberate deficits, prices and flows. The constraint carried over from the earlier notes is that the map is infinite, lazily evaluated and bit-exact.*
 
 **How to read the citations**
 
@@ -151,7 +151,7 @@ A second axis, the one city builders and Victoria 3 use, groups by what a good *
 - Victoria 3 hides 52 goods behind 15 needs and substitution (V3-N): the player reasons about needs, the simulation about goods.
 - Working memory holds only a handful of items at once: Miller 1956 ("seven, plus or minus two") and Cowan 2001 (about four chunks) [unverified: not read in this pass]. That supports **6–8 visible categories** even when there are 30–50 goods underneath.
 
-**Design note.** Two numbers follow: about **6–8 groups** the player thinks in, and **20–40 goods** the simulation tracks. §5 uses 7 groups and 37 goods.
+**Design note.** Two numbers follow: about **6–8 groups** the player thinks in, and **20–40 goods** the simulation tracks. §5 uses 7 groups and 39 goods.
 
 ### 3.4 Scarcity by design
 
@@ -246,15 +246,17 @@ Everything in §5 is my own design, built on the sources above and on the catalo
 
 ### 5.1 Principles
 
-1. **Two layers.** The catalogue's ~370 rows stay as the *realism layer*: they decide *what* a patch holds and give names and flavour ("this valley's grain is rye"). A smaller *game layer* of 37 resources is what settlements, prices and trade use. Each catalogue row maps to exactly one game resource (§5.3).
+1. **Two layers.** The catalogue's ~370 rows stay as the *realism layer*: they decide *what* a patch holds and give names and flavour ("this valley's grain is rye"). A smaller *game layer* of 39 resources is what settlements, prices and trade use. Each catalogue row maps to exactly one game resource (§5.3).
 2. **Seven groups for the player.** Food, Materials, Fuel, Metals, Salt, Luxuries, Animals. The player reasons in groups; the simulation tracks resources (§3.3).
 3. **Three tiers.** Raw (from the land), intermediate (one processing step, placed by Weber's rule), finished (consumed by people and armies). At most 3 inputs per output (§3.2, KP).
 4. **Potentials, deposits, enablers.** As in the catalogue §7.1: potentials are suitability scores every patch has; deposits are rare hashed point resources; enablers (river, coast, harbour, water power) multiply both.
 5. **Deterministic and local.** Every value is a pure function of the seed, the parameters and a bounded neighbourhood, using only + − × ÷ and comparisons (bit-exactness rule, `biomes-and-climate.md` §7).
 
-### 5.2 The game resource set (37)
+### 5.2 The game resource set (39)
 
-**Tier 1, raw (23).**
+*Crystal (tier 1) and Glass (tier 2) were added on 2026-11-12 at the owner's request; the set was 37 before. EU4 also carries Glass as a trade good (EU4-TG, §2.1).*
+
+**Tier 1, raw (24).**
 
 | Group | Game resource | Kind | Value | Notes |
 |---|---|---|---|---|
@@ -267,6 +269,7 @@ Everything in §5 is my own design, built on the sources above and on the catalo
 | Materials | **Timber** | Potential | Bulk | Construction, ships, charcoal |
 | Materials | **Stone** | Deposit (common in Hi/Mo) | Bulk | Quarries; deficit in flat land |
 | Materials | **Clay & earth** | Potential | Bulk | Bricks, pottery, adobe; nearly everywhere |
+| Materials | **Crystal** | Deposit | Trade | Mined rock crystal and pure quartz sand; the silica for Glass |
 | Materials | **Fibre** | Potential | Bulk/Trade | Flax, hemp, cotton, jute |
 | Fuel | **Fuel** | Potential + deposit (coal, peat) | Bulk | Firewood, peat, dung, coal |
 | Salt | **Salt** | Deposit (coast potential in dry warm climates) | Trade | Deliberately sparse |
@@ -282,7 +285,7 @@ Everything in §5 is my own design, built on the sources above and on the catalo
 | Luxuries | **Dyes** | Potential / deposit | Trade | |
 | Animals | **Horses & pack animals** | Potential (GR, CS, HD, CD) | Strategic | Cavalry, caravans, ploughs |
 
-**Tier 2, intermediate (8).** Placed where the material index says (§4.3).
+**Tier 2, intermediate (9).** Placed where the material index says (§4.3).
 
 | Resource | Inputs | Placed at | Why it matters |
 |---|---|---|---|
@@ -292,6 +295,7 @@ Everything in §5 is my own design, built on the sources above and on the catalo
 | **Cloth** | Fibre or Livestock (wool) | Fibre or flock zone; water power (#379) bonus | Main manufactured trade good (catalogue §6.1) |
 | **Leather** | Livestock + tannin (oak, acacia, mangrove bark) | Pastoral zone with tannin | Pairs steppe with forest |
 | **Bricks & lime** | Clay or limestone + Fuel | Clay or limestone site | Turns fuel into building material |
+| **Glass** | Crystal + Fuel + a flux (plant ash #320 or natron #171) | Where Crystal and Fuel are within a short haul | Windows, bottles, vessels; like Iron it needs two places, so it creates trade |
 | **Preserved food** | Fish or Livestock + Salt | Fishing coasts, dairy zones | The main salt sink |
 | **Naval stores** | Timber (pine, larch, fir) | Conifer forest near water | Ships; a classic boreal export |
 
@@ -323,6 +327,7 @@ Zone, biome and belt codes as in `patch-resources.md` §4.0. "Level" says where 
 | Timber | #247–278 | Forest biomes (TA, MF, BL, TR, DF, RF); mangrove poles in MG (#276); thin in WS, SV; none in HD, CD, GR, CS, TU, IC | Patch potential |
 | Stone | #294–307 | Common deposit in Hi, Mo; uncommon in Lo; rare in Fl (glacial boulders only) | Patch deposit |
 | Clay & earth | #291–293, #308–309 | Fl, Lo, `fp`; kaolin (#309) as a rare deposit | Patch potential |
+| Crystal | #311, #371 (quartz crystal only) | Quartz veins and cavities in Hi, Mo, more on *volcanic* ground; pure quartz sand as an uncommon deposit on `cst` dunes and Lo rivers | Patch deposit |
 | Fibre | #212–226 | Flax, hemp in MF, BL, GR; cotton in SV, TS (irrigated), DF; jute on tropical `fp` | Patch potential |
 | Fuel | #323–330, #286 | Wood in forests; mangrove charcoal in MG (#276); peat in Bo/Te Hu–PHu flats (*peat bog*); dung in CS, GR, CD, Mo; coal as a deposit on *clastic basin* | Potential + deposit |
 | Salt | #166–171 | Solar salt on `cst` in Ar–SAr warm belts; playa salt in `isSparseFlat` Arid zones; rock salt and brine on *evaporite* bedrock | Patch deposit |
@@ -331,7 +336,7 @@ Zone, biome and belt codes as in `patch-resources.md` §4.0. "Level" says where 
 | Tin | #341–342 | VR lode on *granite intrusion*; stream tin downstream along rivers | Patch deposit (river-propagated) |
 | Silver & lead | #336, #348–350 | Mo, Hi; *fold belt*, *carbonate platform* | Patch deposit |
 | Gold | #332–335 | Placers where the river leaves Mo/Hi zones (catalogue §7.3 placer rule); lodes in Mo | Patch deposit (river-propagated) |
-| Gems & pearls | #159–162, #363–376 | VR deposits by bedrock; pearls on warm `cst` | Patch deposit |
+| Gems & pearls | #159–162, #363–376 (of #371 only amethyst and agate) | VR deposits by bedrock; pearls on warm `cst` | Patch deposit |
 | Spices & incense | #177–190, #198, #200–211 | RF, DF lowland; incense in TS, HD uplands | Patch potential (rare) |
 | Stimulants & sugar | #107, #174–175, #191–197 | Tea and coffee in `hiT`; cacao in RF; tobacco in BL Te-w; sugar cane on Tr `fp`; honey widespread (low value) | Patch potential |
 | Furs & ivory | #122–139, #142 | Furs in TA, TU, MF; ivory in SV, RF, DF and on polar coasts | Patch potential |
@@ -339,7 +344,7 @@ Zone, biome and belt codes as in `patch-resources.md` §4.0. "Level" says where 
 | Horses & pack animals | #98–101, #105 | GR, CS (horses); HD, CD (camels); Mo (mules) | Zone aggregate |
 | Enablers (not goods) | #378–385 | River, navigable river, water power, springs, aquifer, harbour; a lake (`Lake.patch`) as fresh water and a sheltered landing | Patch flags |
 
-Tanning bark (#241–245, including mangrove bark #243 in MG), resins (#205), plant ash (#320) and limestone (#297) feed the intermediates and need no separate game resource.
+Tanning bark (#241–245, including mangrove bark #243 in MG), resins (#205), plant ash (#320) and limestone (#297) feed the intermediates and need no separate game resource. The Glass flux is plant ash, or natron (#171), which is counted under Salt.
 
 ### 5.4 Which level of the hierarchy owns what
 
@@ -392,11 +397,11 @@ access = 1 + 0.5 × coast + 0.5 × navigableRiver    (all + − × ÷)
 | Tier | Settlement | Needs (game resources) | Analogue |
 |---|---|---|---|
 | Subsistence | Village (patch) | Grain or Produce or Livestock or Fish or Wild food; Fuel; Salt; Clay & earth or Timber or Stone | Victoria 3 Basic Food, Heating, Crude Items (V3-N) |
-| Comfort | Market town (zone) | + Tools, Clothing, Drink & oil, Preserved food, Bricks & lime | Victoria 3 Standard Clothing, Household Items, Intoxicants |
+| Comfort | Market town (zone) | + Tools, Clothing, Drink & oil, Preserved food, Bricks & lime, Glass | Victoria 3 Standard Clothing, Household Items, Intoxicants |
 | Luxury | City (region) | + Spices & incense, Stimulants & sugar, Furs & ivory, Dyes, Fine goods, Horses | Victoria 3 Luxury Drinks, Luxury Items |
 | Military (any) | Garrisons, armies | Arms & armour, Horses, Preserved food; Naval stores and Timber for fleets | Bannerlord garrison and militia (MB2-E); Civ VI Material resources (CIV6-C) |
 
-Use substitution as Victoria 3 does: a need accepts any good in its list (V3-N). That keeps 37 resources from turning into 37 separate shortages.
+Use substitution as Victoria 3 does: a need accepts any good in its list (V3-N). That keeps 39 resources from turning into 39 separate shortages.
 
 ### 5.7 Price and flow models for a deterministic, lazy map
 
@@ -420,7 +425,7 @@ The weighting is a market-potential index in the spirit of Harris 1954 [unverifi
 - Run a fixed number of rounds (1–3), each round reading only the previous round's state, over a bounded neighbourhood.
 - Cache per region like the river pass, so a region's flows are a pure function of its k-ring.
 
-**Value density.** Give each resource a base value and a weight class: Bulk (grain, timber, stone, fuel, salt, ore), Trade (cloth, iron, wine), Luxury (spices, furs, fine goods). With the mode costs of §4.2, bulk goods then travel far only by water, luxuries go anywhere, and von Thünen-like rings appear around cities without being placed (§4.4).
+**Value density.** Give each resource a base value and a weight class: Bulk (grain, timber, stone, fuel, salt, ore), Trade (cloth, iron, wine, glass), Luxury (spices, furs, fine goods). With the mode costs of §4.2, bulk goods then travel far only by water, luxuries go anywhere, and von Thünen-like rings appear around cities without being placed (§4.4).
 
 **Starting calibration.**
 
@@ -448,7 +453,7 @@ The weighting is a market-potential index in the spirit of Harris 1954 [unverifi
 5. **Technology.** Coal, late metals (catalogue #358–362) and Victoria-style industry need a technology level. Leave dormant or omit?
 6. **Bedrock attribute.** Rules 2–3 (iron, bronze) need the catalogue's proposed bedrock class (§7.3 there). Without it, deposits stay climate-and-zone hashes and tin/copper separation must be enforced by a separate hash salt.
 7. **Fantasy share.** Should the fantasy layer's three game resources be a toggle, and should they ever be a region's signature export?
-8. **Player-facing count.** Seven groups and 37 resources is a guess from §3.3. It should be tested with the inspector before it is fixed.
+8. **Player-facing count.** Seven groups and 39 resources is a guess from §3.3. It should be tested with the inspector before it is fixed.
 
 ---
 
@@ -457,7 +462,7 @@ The weighting is a market-potential index in the spirit of Harris 1954 [unverifi
 | If the map has… | The game layer gives… |
 |---|---|
 | Flat or lowland, temperate, river | Grain surplus, Clay, Fibre, a market town; exports Grain or Cloth; imports Stone, Salt, Iron |
-| Hills or mountains | Stone, ores, Livestock, water power; imports Grain and Salt; exports metals |
+| Hills or mountains | Stone, ores, Crystal, Livestock, water power; imports Grain and Salt; exports metals and, with Fuel nearby, Glass |
 | Boreal forest | Timber, Fuel, Furs, Naval stores, bog Iron; imports Salt and Grain |
 | Steppe, cold or hot desert | Horses, Livestock, Salt (playas); imports Timber, Fuel, Grain, Iron |
 | Tropical lowland | Spices, Stimulants, Dyes, Timber; imports Salt, Iron, Cloth |

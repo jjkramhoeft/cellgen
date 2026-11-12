@@ -158,7 +158,7 @@ A **supernatural map** is a third noise layer for fantasy game play: how strong 
 The research is in place:
 
 - [patch-resources.md](docs/research/patch-resources.md): a catalogue keyed to the map's fields (biome, zone type, height, rivers, lakes, coast, mangrove, the supernatural map). Its design notes split resources into **potentials** (a suitability score every patch has: crops, timber, pasture, fish) and **deposits** (rare hashed point resources: ores, stone, salt), and propose a bedrock class per elevation zone to place the deposits.
-- [game-resources-and-trade.md](docs/research/game-resources-and-trade.md): a game layer of 37 resources in seven groups on top of the catalogue, for settlements, prices and trade.
+- [game-resources-and-trade.md](docs/research/game-resources-and-trade.md): a game layer of 39 resources in seven groups on top of the catalogue, for settlements, prices and trade.
 
 Until the layer exists, the resources factor of the [city locations](#city-locations) uses biome and zone-type tables from the first note.
 
@@ -277,7 +277,7 @@ The work builds on these notes in `docs/research/`:
 | [sandbox4-tiling.md](docs/research/sandbox4-tiling.md) | Generating Sandbox 4 tile by tile; the terrain part (tiles in a Web Worker) is implemented |
 | [biomes-and-climate.md](docs/research/biomes-and-climate.md) | Biome schemes (Whittaker, Holdridge, Köppen, WWF), aridity, lapse rates; its aridity × thermal belt classifier, height cooling and the mangrove override are implemented |
 | [patch-resources.md](docs/research/patch-resources.md) | A catalogue of about 370 natural resources (food, building materials, wealth) and fantasy resources, keyed to the map's fields; how lakes, mangrove and the supernatural map plug in |
-| [game-resources-and-trade.md](docs/research/game-resources-and-trade.md) | How games choose, place and trade resources, trade theory, and a 37-resource set for the generator |
+| [game-resources-and-trade.md](docs/research/game-resources-and-trade.md) | How games choose, place and trade resources, trade theory, and a 39-resource set for the generator |
 | [settlement-siting.md](docs/research/settlement-siting.md) | Where villages, towns and cities form, and a deterministic siting design for the map (water from rivers and lakes, coasts, mangrove as poor farmland); its map-level scoring is implemented in a first form as the city and town locations |
 
 ## Deployment
